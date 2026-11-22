@@ -470,6 +470,17 @@ void DrawStoryLayer(eco::WorldContext& world) {
         text_y += 20;
     }
 
+    if (char_budget == 0 && visible_chars >= line->text.size()) {
+        const char* continue_hint = "[E / INVIO] CONTINUA";
+        const int hint_w = MeasureUiText(continue_hint, 12);
+        DrawTextShadow(
+            continue_hint,
+            static_cast<int>(dlg_box.x + dlg_box.width) - hint_w - 18,
+            static_cast<int>(dlg_box.y + dlg_box.height) - 18,
+            12,
+            pal::kJadeGlow);
+    }
+
     // Suggerimenti compatti in basso a destra: [H] Cronologia (N) | [N] Avanti
     const int queued = story.QueuedLineCount();
     const char* right_hint =

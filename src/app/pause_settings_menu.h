@@ -24,6 +24,8 @@ struct GraphicsSettings {
     bool show_fps = false;
     bool compact_tutorial = false; // true = avanzamento dialoghi piu' rapido
     int audio_volume_index = 3;    // 0: 0% (Muto), 1: 25%, 2: 50%, 3: 75%, 4: 100%
+    int music_volume_index = 4;
+    int effects_volume_index = 4;
     bool ambient_audio = true;     // true: Ambiente + Interazioni, false: Solo Interazioni
     std::string gpu_preference = "auto";
     std::string initial_gpu_preference = "auto";
@@ -49,6 +51,12 @@ void ToggleAppFullscreen(GraphicsSettings& settings);
 
 class PauseSettingsMenu {
 public:
+    enum class SettingsCategory : int {
+        Game = 0,
+        Graphics = 1,
+        Audio = 2
+    };
+
     void OpenPause() noexcept;
     void OpenSettingsDirect() noexcept;
     void Close() noexcept;
@@ -74,6 +82,7 @@ private:
     bool opened_from_title_ = false;
     int pause_cursor_ = 0;
     int settings_cursor_ = 0;
+    SettingsCategory settings_category_ = SettingsCategory::Game;
     float save_feedback_timer_ = 0.0f;
     std::string save_feedback_msg_{};
 };

@@ -118,10 +118,15 @@ void SetCellFlat(
     SetCellFlat(cells, kRows, kCols, 15, 2, TileId::ExitPortal);
     SetCellFlat(cells, kRows, kCols, 15, 3, TileId::ExitPortal);
 
-    // Ascending spiral clocktower galleries (every vertical step = 2 tiles)
-    FillRectFlat(cells, kRows, kCols, 14, 14, 10, 15, TileId::Wall); // Tier 1
+    // Percorso principale continuo: scalini alternati e ballatoi con salto verticale <= 2 tile.
+    // Aggiunti gradini intermedi per evitare zone morte e rendere leggibile la salita.
+    FillRectFlat(cells, kRows, kCols, 15, 15, 7, 8, TileId::Wall);   // Gradino d'ingresso
+    FillRectFlat(cells, kRows, kCols, 14, 14, 9, 16, TileId::Wall);  // Tier 1
+    FillRectFlat(cells, kRows, kCols, 13, 13, 16, 17, TileId::Wall); // Passaggio verso Est
     FillRectFlat(cells, kRows, kCols, 12, 12, 17, 23, TileId::Wall); // Tier 2
+    FillRectFlat(cells, kRows, kCols, 11, 11, 15, 16, TileId::Wall); // Gradino centrale
     FillRectFlat(cells, kRows, kCols, 10, 10, 11, 18, TileId::Wall); // Tier 3
+    FillRectFlat(cells, kRows, kCols, 9, 9, 9, 10, TileId::Wall);    // Passaggio verso il nucleo
     FillRectFlat(cells, kRows, kCols, 8, 8, 10, 20, TileId::Wall);   // Tier 4 Central Pendulum Gallery
     FillRectFlat(cells, kRows, kCols, 6, 6, 3, 9, TileId::Wall);     // Tier 5 West Belfry (Relic)
     FillRectFlat(cells, kRows, kCols, 6, 6, 21, 27, TileId::Wall);   // Tier 5 East Belfry (Relic)

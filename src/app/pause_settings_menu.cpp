@@ -120,11 +120,24 @@ constexpr std::array<VolumeOption, 5> kVolumeOptions = {{
     return "< Auto (Predefinita di Sistema) >";
 }
 
-void AdjustSettingValue(GraphicsSettings& settings, int row, int dir) {
+void AdjustSettingValue(
+    GraphicsSettings& settings,
+    PauseSettingsMenu::SettingsCategory category,
+    int row,
+    int dir) {
     if (dir == 0) {
         return;
     }
-    switch (row) {
+    switch (category) {
+        case PauseSettingsMenu::SettingsCategory::Game:
+            if (row == 0) {
+                settings.compact_tutorial = !settings.compact_tutorial;
+            } else if (row == 1) {
+                settings.show_fps = !settings.show_fps;
+            }
+            break;
+        case PauseSettingsMenu::SettingsCategory::Graphics:
+            switch (row) {
         case 0: { // Modalita' schermo
             ToggleAppFullscreen(settings);
             break;
@@ -177,18 +190,28 @@ void AdjustSettingValue(GraphicsSettings& settings, int row, int dir) {
             settings.show_fps = !settings.show_fps;
             break;
         }
-        case 8: { // Volume Audio
+        default:
+            break;
+            }
+            break;
+        case PauseSettingsMenu::SettingsCategory::Audio:
+            if (row == 0) {
             const int n = static_cast<int>(kVolumeOptions.size());
             settings.audio_volume_index = (settings.audio_volume_index + dir + n) % n;
             ApplyGraphicsSettingsToRuntime(settings);
-            break;
-        }
-        case 9: { // Paesaggio Sonoro
+            } else if (row == 1) {
+            const int n = static_cast<int>(kVolumeOptions.size());
+            settings.music_volume_index = (settings.music_volume_index + dir + n) % n;
+            ApplyGraphicsSettingsToRuntime(settings);
+            } else if (row == 2) {
+            const int n = static_cast<int>(kVolumeOptions.size());
+            settings.effects_volume_index = (settings.effects_volume_index + dir + n) % n;
+            ApplyGraphicsSettingsToRuntime(settings);
+            } else if (row == 3) {
             settings.ambient_audio = !settings.ambient_audio;
             ApplyGraphicsSettingsToRuntime(settings);
             break;
-        }
-        default:
+            }
             break;
     }
     (void)SaveGraphicsSettings(settings);
@@ -244,6 +267,12 @@ bool LoadGraphicsSettings(GraphicsSettings& settings, const std::string& path) {
         } else if (key == "audio_volume_index") {
             settings.audio_volume_index =
                 std::clamp(ParseIntSetting(val, 3), 0, static_cast<int>(kVolumeOptions.size()) - 1);
+        } else if (key == "music_volume_index") {
+            settings.music_volume_index =
+                std::clamp(ParseIntSetting(val, 4), 0, static_cast<int>(kVolumeOptions.size()) - 1);
+        } else if (key == "effects_volume_index") {
+            settings.effects_volume_index =
+                std::clamp(ParseIntSetting(val, 4), 0, static_cast<int>(kVolumeOptions.size()) - 1);
         } else if (key == "ambient_audio") {
             settings.ambient_audio = (ParseIntSetting(val, 1) != 0);
         } else if (key == "gpu_preference") {
@@ -275,6 +304,8 @@ bool SaveGraphicsSettings(const GraphicsSettings& settings, const std::string& p
     out << "show_fps=" << (settings.show_fps ? 1 : 0) << "\n";
     out << "compact_tutorial=" << (settings.compact_tutorial ? 1 : 0) << "\n";
     out << "audio_volume_index=" << settings.audio_volume_index << "\n";
+    out << "music_volume_index=" << settings.music_volume_index << "\n";
+    out << "effects_volume_index=" << settings.effects_volume_index << "\n";
     out << "ambient_audio=" << (settings.ambient_audio ? 1 : 0) << "\n";
     out << "gpu_preference=" << settings.gpu_preference << "\n";
     return out.good();
@@ -315,7 +346,20 @@ void ApplyGraphicsSettingsToRuntime(const GraphicsSettings& settings) {
         0,
         static_cast<int>(kVolumeOptions.size()) - 1);
     const float vol = kVolumeOptions[static_cast<std::size_t>(vol_idx)].level;
-    ApplyGlobalAudioSettings(vol, vol <= 0.001f, settings.ambient_audio);
+    const int music_idx = std::clamp(
+        settings.music_volume_index,
+        0,
+        static_cast<int>(kVolumeOptions.size()) - 1);
+    const int effects_idx = std::clamp(
+        settings.effects_volume_index,
+        0,
+        static_cast<int>(kVolumeOptions.size()) - 1);
+    ApplyGlobalAudioSettings(
+        vol,
+        vol <= 0.001f,
+        settings.ambient_audio,
+        kVolumeOptions[static_cast<std::size_t>(music_idx)].level,
+        kVolumeOptions[static_cast<std::size_t>(effects_idx)].level);
 
     if (IsWindowReady()) {
         const int idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
@@ -456,6 +500,18 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         if (settings.audio_volume_index > 0) {
             PlayUiSfx(SfxId::UiClick, 0.55f, 1.05f);
         }
+    }
+
+    // Avanzamento esplicito dei dialoghi: un tasto chiarisce il ritmo e evita attese passive.
+    if (!is_open_ &&
+        (journal == nullptr || !journal->IsOpen()) &&
+        !ctx.world.calibration_modal.is_open &&
+        ctx.world.story.HasActiveDialogue() &&
+        (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) ||
+         IsKeyPressed(KEY_E) || IsKeyPressed(KEY_SPACE)) &&
+        ctx.world.story.LineElapsed() > 0.12f) {
+        ctx.world.story.AdvanceDialogue();
+        PlayUiSfx(SfxId::UiClick, 0.35f, 1.12f);
     }
 
     // Avanzamento rapido dei dialoghi se il giocatore attiva il ritmo sintetico
@@ -602,10 +658,33 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                 break;
         }
     } else {
-        // --- SOTTOMENU IMPOSTAZIONI SCHERMO, GPU & AUDIO (10 Opzioni + Indietro) ---
-        constexpr int kOptionCount = 10;
-        const bool gpu_changed = (settings.gpu_preference != settings.initial_gpu_preference);
-        const int kSettingsRowCount = kOptionCount + (gpu_changed ? 2 : 1);
+        // --- SOTTOMENU IMPOSTAZIONI A SCHEDE ---
+        const bool gpu_changed =
+            settings_category_ == SettingsCategory::Graphics &&
+            settings.gpu_preference != settings.initial_gpu_preference;
+        int kOptionCount = 2;
+        if (settings_category_ == SettingsCategory::Graphics) {
+            kOptionCount = 8;
+        } else if (settings_category_ == SettingsCategory::Audio) {
+            kOptionCount = 4;
+        }
+        const int kSettingsRowCount =
+            kOptionCount + (settings_category_ == SettingsCategory::Graphics && gpu_changed ? 2 : 1);
+
+        if (IsKeyPressed(KEY_A)) {
+            const int category =
+                (static_cast<int>(settings_category_) + 2) % 3;
+            settings_category_ = static_cast<SettingsCategory>(category);
+            settings_cursor_ = 0;
+            PlayUiSfx(SfxId::UiClick, 0.45f, 0.94f);
+        }
+        if (IsKeyPressed(KEY_D)) {
+            const int category =
+                (static_cast<int>(settings_category_) + 1) % 3;
+            settings_category_ = static_cast<SettingsCategory>(category);
+            settings_cursor_ = 0;
+            PlayUiSfx(SfxId::UiClick, 0.45f, 1.06f);
+        }
 
         if (up_pressed) {
             settings_cursor_ = (settings_cursor_ - 1 + kSettingsRowCount) % kSettingsRowCount;
@@ -618,12 +697,13 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
 
         if (settings_cursor_ < kOptionCount) {
             if (left_pressed) {
-                AdjustSettingValue(settings, settings_cursor_, -1);
+                AdjustSettingValue(settings, settings_category_, settings_cursor_, -1);
             } else if (right_pressed || confirm_pressed) {
-                AdjustSettingValue(settings, settings_cursor_, +1);
+                AdjustSettingValue(settings, settings_category_, settings_cursor_, +1);
             }
         } else if (confirm_pressed) {
-            if (gpu_changed && settings_cursor_ == kOptionCount) {
+            if (settings_category_ == SettingsCategory::Graphics &&
+                gpu_changed && settings_cursor_ == kOptionCount) {
                 (void)SaveGraphicsSettings(settings);
                 if (IsGameplayStateActive(ctx)) {
                     (void)eco::SaveWorldToFile(ctx.world);
@@ -645,10 +725,24 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
+        for (int tab = 0; tab < 3; ++tab) {
+            const Rectangle tab_rect{
+                static_cast<float>(bx + 26 + tab * 258),
+                static_cast<float>(by + 50),
+                238.0f,
+                34.0f
+            };
+            if (CheckCollisionPointRec(mouse, tab_rect) && mouse_clicked) {
+                settings_category_ = static_cast<SettingsCategory>(tab);
+                settings_cursor_ = 0;
+                PlayUiSfx(SfxId::UiClick, 0.48f, 1.0f);
+            }
+        }
+
         for (int i = 0; i < kOptionCount; ++i) {
             const Rectangle row_rect{
                 static_cast<float>(bx + 26),
-                static_cast<float>(by + 60 + i * 42),
+                static_cast<float>(by + 98 + i * 42),
                 static_cast<float>(box_w - 52),
                 35.0f
             };
@@ -658,7 +752,11 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                 }
                 if (mouse_clicked) {
                     const float mid_x = row_rect.x + row_rect.width * 0.65f;
-                    AdjustSettingValue(settings, i, (mouse.x < mid_x) ? -1 : +1);
+                        AdjustSettingValue(
+                            settings,
+                            settings_category_,
+                            i,
+                            (mouse.x < mid_x) ? -1 : +1);
                 }
             }
         }
@@ -669,7 +767,10 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
             240.0f,
             36.0f
         };
-        const int back_row_index = gpu_changed ? (kOptionCount + 1) : kOptionCount;
+        const int back_row_index =
+            (settings_category_ == SettingsCategory::Graphics && gpu_changed)
+                ? (kOptionCount + 1)
+                : kOptionCount;
         if (CheckCollisionPointRec(mouse, back_rect)) {
             if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
                 settings_cursor_ = back_row_index;
@@ -813,47 +914,81 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
                 static_cast<float>(box_w),
                 static_cast<float>(box_h)},
             44,
-            "IMPOSTAZIONI SCHERMO, GPU, GRAFICA & AUDIO",
+            "IMPOSTAZIONI",
             pal::kAccentClean);
+
+        const char* tab_labels[3] = {"GIOCO [A/D]", "GRAFICA [A/D]", "AUDIO [A/D]"};
+        for (int tab = 0; tab < 3; ++tab) {
+            const Rectangle tab_rect{
+                static_cast<float>(bx + 26 + tab * 258),
+                static_cast<float>(by + 50),
+                238.0f,
+                34.0f
+            };
+            const bool active = tab == static_cast<int>(settings_category_);
+            DrawSectionCard(tab_rect, active ? pal::kAccentClean : pal::kUiBorderBronze, active);
+            const int tw = MeasureUiText(tab_labels[tab], 14);
+            DrawTextShadow(
+                tab_labels[tab],
+                static_cast<int>(tab_rect.x + (tab_rect.width - tw) * 0.5f),
+                static_cast<int>(tab_rect.y) + 9,
+                14,
+                active ? RAYWHITE : pal::kParchmentText);
+        }
 
         const int res_idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
         const int fps_idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
         const int vol_idx = std::clamp(settings.audio_volume_index, 0, static_cast<int>(kVolumeOptions.size()) - 1);
+        const int music_idx = std::clamp(settings.music_volume_index, 0, static_cast<int>(kVolumeOptions.size()) - 1);
+        const int effects_idx = std::clamp(settings.effects_volume_index, 0, static_cast<int>(kVolumeOptions.size()) - 1);
 
         const std::string monitor_str = FormatMonitorLabel(settings.monitor_index);
         const std::string gpu_str = FormatGpuLabel(settings.gpu_preference);
 
-        const std::array<const char*, 10> row_titles = {
-            "Modalita' Schermo [F11]",
-            "Monitor Schermo Intero",
-            "GPU / Scheda Grafica",
-            "Risoluzione Finestra",
-            "Frequenza Fotogrammi (FPS)",
-            "Particelle & Effetti Atmosferici",
-            "Stile Font Interfaccia",
-            "Contatore FPS a Schermo",
-            "Volume Audio [M Muto]",
-            "Paesaggio Sonoro"
-        };
+        int row_count = 2;
+        std::array<const char*, 8> row_titles{};
+        std::array<const char*, 8> row_values{};
+        if (settings_category_ == SettingsCategory::Game) {
+            row_titles[0] = "Avanzamento Dialoghi";
+            row_values[0] = settings.compact_tutorial ? "< Sintetico (3,2 s) >" : "< Manuale / Automatico >";
+            row_titles[1] = "Contatore FPS";
+            row_values[1] = settings.show_fps ? "< Attivo >" : "< Disattivato >";
+        } else if (settings_category_ == SettingsCategory::Graphics) {
+            row_count = 8;
+            const std::array<const char*, 8> titles = {
+                "Modalita' Schermo [F11]", "Monitor Schermo Intero", "GPU / Scheda Grafica",
+                "Risoluzione Finestra", "Frequenza Fotogrammi (FPS)",
+                "Particelle & Effetti Atmosferici", "Stile Font Interfaccia",
+                "Contatore FPS a Schermo"
+            };
+            const std::array<const char*, 8> values = {
+                settings.fullscreen ? "< Schermo Intero >" : "< Finestra Ridimensionabile >",
+                monitor_str.c_str(), gpu_str.c_str(),
+                kResolutions[static_cast<std::size_t>(res_idx)].label,
+                kFpsOptions[static_cast<std::size_t>(fps_idx)].label,
+                ParticleQualityLabel(settings.particle_quality),
+                settings.clean_ttf_font ? "< Noto Sans HD (Nitido) >" : "< Pixel Bitmap (Retro) >",
+                settings.show_fps ? "< Attivo (Mostra FPS) >" : "< Disattivato >"
+            };
+            row_titles = titles;
+            row_values = values;
+        } else {
+            row_count = 4;
+            row_titles[0] = "Volume Generale [M Muto]";
+            row_values[0] = kVolumeOptions[static_cast<std::size_t>(vol_idx)].label;
+            row_titles[1] = "Musica & Ambiente";
+            row_values[1] = kVolumeOptions[static_cast<std::size_t>(music_idx)].label;
+            row_titles[2] = "Effetti di Gioco";
+            row_values[2] = kVolumeOptions[static_cast<std::size_t>(effects_idx)].label;
+            row_titles[3] = "Paesaggio Sonoro";
+            row_values[3] = settings.ambient_audio ? "< Ambiente + Interazioni >" : "< Solo Interazioni >";
+        }
 
-        const std::array<const char*, 10> row_values = {
-            settings.fullscreen ? "< Schermo Intero >" : "< Finestra Ridimensionabile >",
-            monitor_str.c_str(),
-            gpu_str.c_str(),
-            kResolutions[static_cast<std::size_t>(res_idx)].label,
-            kFpsOptions[static_cast<std::size_t>(fps_idx)].label,
-            ParticleQualityLabel(settings.particle_quality),
-            settings.clean_ttf_font ? "< Noto Sans HD (Nitido) >" : "< Pixel Bitmap (Retro) >",
-            settings.show_fps ? "< Attivo (Mostra FPS) >" : "< Disattivato >",
-            kVolumeOptions[static_cast<std::size_t>(vol_idx)].label,
-            settings.ambient_audio ? "< Ambiente + Interazioni >" : "< Solo Interazioni >"
-        };
-
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < row_count; ++i) {
             const bool selected = (settings_cursor_ == i);
             const Rectangle row_rect{
                 static_cast<float>(bx + 26),
-                static_cast<float>(by + 60 + i * 42),
+                static_cast<float>(by + 98 + i * 42),
                 static_cast<float>(box_w - 52),
                 35.0f
             };
@@ -878,7 +1013,9 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
         }
 
         // Riga informativa GPU OpenGL attualmente attiva
-        const bool gpu_changed = (settings.gpu_preference != settings.initial_gpu_preference);
+        const bool gpu_changed =
+            settings_category_ == SettingsCategory::Graphics &&
+            settings.gpu_preference != settings.initial_gpu_preference;
         const std::string gpu_status =
             std::string("GPU Attiva Ora: ") +
             (settings.active_gpu_renderer.empty() ? std::string("OpenGL") : settings.active_gpu_renderer) +
@@ -891,7 +1028,8 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             gpu_changed ? pal::kAmberGlow : Color{148, 206, 214, 230});
 
         // Pulsanti in basso
-        const int back_row_index = gpu_changed ? 11 : 10;
+        const int back_row_index =
+            gpu_changed ? (row_count + 1) : row_count;
         const bool back_selected = (settings_cursor_ == back_row_index);
         const Rectangle back_rect{
             static_cast<float>(bx + 26),
@@ -904,7 +1042,7 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
         DrawTextShadow(back_label, static_cast<int>(back_rect.x) + 20, static_cast<int>(back_rect.y) + 9, 15, RAYWHITE);
 
         if (gpu_changed) {
-            const bool apply_selected = (settings_cursor_ == 10);
+            const bool apply_selected = (settings_cursor_ == row_count);
             const Rectangle apply_rect{
                 static_cast<float>(bx + 282),
                 static_cast<float>(by + box_h - 52),
