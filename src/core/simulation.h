@@ -77,9 +77,15 @@ struct WorldContext {
     Machine solar_machine = Machine::CreateDefaultSolar();
     Machine hydro_machine = Machine::CreateDefaultHydro();
     Machine purifier_machine = Machine::CreateDefaultSolar({1128.0f, 432.0f});
+    Machine thermal_machine = Machine::CreateDefaultSolar({1128.0f, 216.0f});
     CalibrationModalState calibration_modal{};
     bool calibrating_purifier = false;
+    bool calibrating_thermal = false;
     ArchitectNpc architect_npc{};
+    ArchitectNpc rosa_npc{};
+    Vec2 gaia_terminal_pos{1128.0f, 648.0f};
+    bool gaia_terminal_unlocked = false;
+    bool demo_mode = true; // true = Demo Atti I-III; false = Campagna Completa Atti I-V
     EmpiricalScanReading last_scan{};
     float sim_time = 0.0f;
     float scan_pulse_timer = 0.0f;

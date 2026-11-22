@@ -63,9 +63,9 @@ La Valle del Crati non e' l'ultimo lembo della Terra: e' una **simulazione ecolo
 - **Colore UI**: Arancio ruggine (`ORANGE` / rosso braci).
 
 ### NONNA ROSA (Rosa Pellegrini) — *La Memoria della Diga*
-- **Ruolo**: Ex direttrice idraulica della Diga del Crati. Nell'attuale slice verticale parla attraverso le targhe incise e i registri vocali nella camera di pressione della Diga (`EnteredDam`, `HydroClean`).
-- **Carattere**: Calda ma rigorosa, poetica nel raccontare l'acqua come una forza viva che va ascoltata con la legge di Stevino ($P = \rho \cdot g \cdot h$) invece che domata col fuoco.
-- **Funzione narrativa**: Dare radici umane e locali alla Diga e seminare il primo indizio su GAIA (*"Abbiamo costruito un modello che ricordasse le leggi dell'acqua anche se noi le avessimo dimenticate"*).
+- **Ruolo**: Ex direttrice idraulica della Diga del Crati e co-fondatrice di GAIA nel 2072. Nei primi due atti parla attraverso i registri vocali nella camera di pressione della Diga (`EnteredDam`, `HydroClean`); nell'**Atto IV ("L'Archivio Sommerso")**, dopo che l'impulso del Risonatore Fotonico sblocca la paratia superiore della Diga, **compare fisicamente sulla piattaforma alta a destra (`pos: 1056, 240`)**.
+- **Carattere**: Calda ma rigorosa, poetica nel raccontare l'acqua come una forza viva che va ascoltata con la legge di Stevino ($P = \rho \cdot g \cdot h$) e la termodinamica di Carnot invece che domata col fuoco.
+- **Funzione narrativa**: Consegnare ad Ada la chiave magnetica dello **Scambiatore Geotermico di Carnot** (`StoryEvent::RosaRecruited`) e rivelare perche' la Valle e' stata racchiusa in GAIA prima dell'Oblio.
 - **Colore UI**: Azzurro acqua.
 
 ### GAIA — *L'Intelligenza della Matrice*
@@ -97,11 +97,17 @@ Ogni macchina del gioco corrisponde a una legge matematica reale implementata in
    - **Allineamento di Fase Eliostatica**:
      $$E(\theta) = \max\bigl(0,\ \cos(\theta_{\text{specchio}} - 120^\circ)\bigr)$$
    - **Target**: $\theta_{\text{target}} = 120^\circ$.
-   - **Senso diegetico**: Situato oltre il canale di raffreddamento e raggiungibile solo attraversando il **Ponte Bucci** riaperto da Lia, il Risonatore convoglia l'energia solare e idroelettrica in un impulso che ionizza le polveri sottili (e, a livello meta, compila l'equazione di stato di GAIA portando lo smog allo 0%).
+   - **Senso diegetico**: Situato oltre il canale di raffreddamento e raggiungibile solo attraversando il **Ponte Bucci** riaperto da Lia, il Risonatore convoglia l'energia solare e idroelettrica in un impulso che ionizza le polveri sottili e sblocca la paratia dell'Archivio Sommerso nella Diga.
+
+4. **Scambiatore Geotermico di Carnot (Atto V — Settore Nord-Est, `pos: 1128, 216`)**
+   - **Allineamento di Gradiente Termodinamico**:
+     $$E(\theta) = \max\bigl(0,\ \cos(\theta_{\text{valvola}} - 60^\circ)\bigr)$$
+   - **Target**: $\theta_{\text{target}} = 60^\circ$.
+   - **Senso diegetico**: Sbloccato dalla chiave magnetica di Nonna Rosa, regola il flusso di vapore profondo della faglia del Crati per stabilizzare il gradiente termico della conca senza bruciare carbone ed esporre il **Terminale Sorgente di GAIA** a Sud-Est (`pos: 1128, 648`).
 
 ---
 
-## 6. Struttura in Cinque Capitoli (Slice Verticale)
+## 6. Struttura in Sette Capitoli (Modalita' Demo Atti I-III + Campagna Completa Atti I-V)
 
 La progressione e' interamente **guidata dallo stato del mondo** (`ChapterFor` e `ObjectiveFor`): il giocatore non viene mai bloccato da cut-scene forzate e puo' eseguire le azioni in qualsiasi ordine.
 
@@ -134,7 +140,18 @@ La progressione e' interamente **guidata dallo stato del mondo** (`ChapterFor` e
   - `PurifierClean`: Lo specchio d'alta quota si allinea; lo smog crolla fino a $0\%$ (se non ci sono stati bypass).
   - `PurifierBypassed`: Anche l'ultimo impianto viene forzato a gasolio; Bruno esulta, ma l'aria diventa irrespirabile (`SmogCritical`).
 
-### Capitolo 4 — `Epilogo`: "Il Giudizio di GAIA"
+### Capitolo 4 — `Atto4_Archivio`: "Atto IV: L'Archivio Sommerso" *(Campagna Completa)*
+- **Condizione**: `!demo_mode`, Lia reclutata, Turbina della Diga e Risonatore Fotonico attivati, ma Nonna Rosa non ancora incontrata di persona (`!rosa_recruited`).
+- **Situazione**: L'impulso fotonico del Risonatore Est ha sbloccato la paratia blindata dell'Archivio Sommerso in cima alla Diga del Crati.
+- **Evento**: `RosaRecruited` — Ada torna nella Diga, salta lungo le tre passerelle metalliche fino alla piattaforma superiore destra (`pos: 1056, 240`) e parla con **Nonna Rosa** (`[E]`). Rosa rivela la genesi del progetto GAIA del 2072 e consegna la chiave magnetica dello Scambiatore Geotermico.
+
+### Capitolo 5 — `Atto5_Inverno`: "Atto V: Il Nucleo di GAIA" *(Campagna Completa)*
+- **Condizione**: `!demo_mode` e `rosa_recruited == true`, prima della decodifica finale del Terminale Sorgente.
+- **Eventi**:
+  - `ThermalClean` / `ThermalBypassed`: Ada torna nel Settore Est oltre il Ponte Bucci, scansiona (`[F]`) e calibra (`[E]`) lo **Scambiatore Geotermico di Carnot** a Nord-Est (`pos: 1128, 216`, $\theta = 60^\circ$).
+  - `GaiaTerminalDecoded`: Con tutti e quattro i nodi fisici (Solare, Idrico, Fotonico, Geotermico) attivi, emerge a Sud-Est (`pos: 1128, 648`) il **Monolite / Terminale Sorgente di GAIA**. Premendo `[E]`, Ada legge la firma crittografica del codice sorgente: **e' stata la stessa Ada Ferri a programmare GAIA e a cancellarsi la memoria all'inizio del Ciclo 404** per sottoporsi in prima persona all'esperimento senza privilegi d'autore.
+
+### Capitolo 6 — `Epilogo`: "Il Giudizio di GAIA"
 - **Condizione**: `simulation_completed == true`.
 - **Due Finali distinti** in base a `StoryDirector::CleanPath()`:
   1. **Finale Pulito ("Equilibrio Raggiunto — Ciclo 404 Approvato")**: Nessun bypass usato (`CleanPath() == true`, Smog 0%). Il cielo della Valle del Crati e' limpido, i cristalli bio-fotonici fioriscono. GAIA rivela la verita': dopo 403 simulazioni fallite in cui i soggetti hanno scelto il combustibile fossile, Ada e Lia hanno dimostrato che la fatica della matematica e della fisica puo' guarire l'ecosistema. Le porte dell'Osservatorio esterno si aprono: *"Ora siete pronti per la Valle reale."*

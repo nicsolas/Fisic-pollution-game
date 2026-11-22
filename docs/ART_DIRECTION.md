@@ -86,3 +86,13 @@ Per evitare qualsiasi sovrapposizione con `story_ui.cpp` (dell'ingegnere):
 - **Angolo Alto-Destra (`x = kWindowWidth - 360, y = 58`)**: Pannello compatto **Scanner & Telemetria** (compare quando lo scanner è attivo o in Fase 2/3, così non collide mai con l'obiettivo a sinistra).
 - **Fascia Inferiore (`y = kWindowHeight - 130 .. kWindowHeight`)**: **LASCIATA LIBERA** per il box dialoghi a macchina da scrivere di `DrawStoryLayer` (rimossa la vecchia barra `architect_npc.last_dialogue` e rimosso il vecchio banner di vittoria centrale, ora gestiti da `story_ui`).
 - **Modal di Calibrazione**: centrato con sfondo oscurato, ridisegnato con `DrawPanel` e `DrawTextShadow`, mantenendo **identici** tasti, slider, pulsanti e gestione dei click mouse.
+
+
+---
+
+## 9. Espansione Visiva v0.3.0 (Atti IV e V: Nonna Rosa, Scambiatore Geotermico e Nucleo GAIA)
+
+Quando la partita gira in modalita' **Campagna Completa (Atti I-V)** (`!world.demo_mode`), il renderer procedurale aggiunge tre nuovi elementi diegetici:
+1. **Nonna Rosa (`DrawNonnaRosaNpc`)** sulla piattaforma superiore destra della Diga del Crati (`{1056, 240}`): capelli bianchi/argento raccolti in uno chignon, occhiali tondi azzurri, cappotto tecnico blu idraulico con colletto ambra e tablet idrometrico.
+2. **Scambiatore Geotermico di Carnot (`DrawGeothermalApparatus`)** nel quadrante Nord-Est oltre il Ponte Bucci (`{1128, 216}`): pozzo geotermico circolare con anelli in rame/ottone, nucleo termico pulsante, valvola rotante orientata rispetto al gradiente ottimale (`60 deg`) e vapore pulito (o fumo denso in caso di bypass).
+3. **Terminale Sorgente di GAIA (`DrawGaiaSourceTerminal`)** nel quadrante Sud-Est (`{1128, 648}`): monolite esagonale in ossidiana con anelli olografici orbitanti e schermo a onda sinusoidale verde matrice, collegato da condotte energetiche al Risonatore Fotonico.

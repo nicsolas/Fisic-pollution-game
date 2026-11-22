@@ -3,7 +3,7 @@
 namespace eco {
 
 // Tutti i testi destinati al rendering usano esclusivamente caratteri ASCII (codici 32..126)
-// con apostrofi (e', piu', perche', cosi') per compatibilita' con il font bitmap di Raylib.
+// con apostrofi (e', piu', perche', cosi') per compatibilita' universale con entrambi i font.
 
 const char* ChapterTitle(Chapter c) {
     switch (c) {
@@ -15,6 +15,10 @@ const char* ChapterTitle(Chapter c) {
             return "ATTO II // LA PRESSIONE DEL CRATI";
         case Chapter::Atto3_Codice:
             return "ATTO III // OLTRE IL PONTE BUCCI";
+        case Chapter::Atto4_Archivio:
+            return "ATTO IV // L'ARCHIVIO SOMMERSO";
+        case Chapter::Atto5_Inverno:
+            return "ATTO V // IL NUCLEO DI GAIA";
         case Chapter::Epilogo:
             return "EPILOGO // IL GIUDIZIO DI GAIA";
     }
@@ -88,6 +92,14 @@ std::vector<DialogueLine> DialogueForEvent(StoryEvent e, const StorySnapshot& s)
             };
 
         case StoryEvent::PurifierClean:
+            if (!s.demo_mode) {
+                return {
+                    {"ADA", "Specchio eliostatico a 120 gradi! Il fascio violetto ionizza le polveri sopra il Ponte Bucci!"},
+                    {"NONNA ROSA", "[RADIO DIGA] Ada, Lia! L'impulso fotonico ha sbloccato la paratia superiore qui nella Diga!"},
+                    {"LIA", "E' Nonna Rosa in persona! Era chiusa nell'Archivio Sommerso in cima alle passerelle della Diga!"},
+                    {"ADA", "Torniamo subito al portale [DIGA] a nord e saliamo sulla piattaforma alta a destra per parlarle [E]!"}
+                };
+            }
             if (s.solar != MachineState::BypassedDirty && s.hydro != MachineState::BypassedDirty) {
                 return {
                     {"ADA", "Specchio eliostatico a 120 gradi! Il fascio violetto ionizza le polveri sopra il Ponte Bucci!"},
@@ -103,6 +115,13 @@ std::vector<DialogueLine> DialogueForEvent(StoryEvent e, const StorySnapshot& s)
             };
 
         case StoryEvent::PurifierBypassed:
+            if (!s.demo_mode) {
+                return {
+                    {"BRUNO", "[RADIO] Bruciatori ausiliari al massimo! Corrente anche alla torre Est senza un solo coseno!"},
+                    {"NONNA ROSA", "[RADIO DIGA] Chi sta avvelenando i condotti?! La paratia dell'Archivio si e' aperta, scendete qui!"},
+                    {"ADA", "Nonna Rosa e' viva sulla passerella alta della Diga! Torniamo al portale [DIGA] a nord per parlarle."}
+                };
+            }
             return {
                 {"BRUNO", "[RADIO] Bruciatori ausiliari al massimo! Corrente anche alla torre Est senza un solo coseno!"},
                 {"LIA", "Hai attaccato un motore diesel a un risonatore fotonico?! Guarda che nube tossica sul ponte!"},
@@ -117,6 +136,38 @@ std::vector<DialogueLine> DialogueForEvent(StoryEvent e, const StorySnapshot& s)
                 {"ADA", "Non si respira piu'... Devo ricalibrare gli impianti con la fisica pulita [E] prima che sia tardi!"}
             };
 
+        case StoryEvent::RosaRecruited:
+            return {
+                {"NONNA ROSA", "Piccola Ada... Sei salita fin quassu'! Sapevo che la legge di Stevino ti avrebbe guidata."},
+                {"NONNA ROSA", "Nel 2072 abbiamo chiuso la Valle dentro GAIA per impedire che l'Oblio cancellasse la termodinamica."},
+                {"NONNA ROSA", "Prendi questa chiave magnetica: sblocca lo Scambiatore Geotermico di Carnot a nord-est del ponte."},
+                {"ADA", "Un quarto impianto a 60 gradi! Torniamo nella Valle, calibriamo il pozzo geotermico e apriamo GAIA!"}
+            };
+
+        case StoryEvent::ThermalClean:
+            return {
+                {"ADA", "Valvola di Carnot allineata a 60 gradi! Il vapore geotermico stabilizza la temperatura della conca!"},
+                {"LIA", "Guarda a sud-est del giardino, Ada! Dal terreno e' emerso il Monolite Sorgente di GAIA!"},
+                {"GAIA", "// GAIA [SYS]: Quarto vincolo termodinamico soddisfatto. Terminale Sorgente sbloccato a Sud-Est."},
+                {"ADA", "E' il nucleo centrale della simulazione. Raggiungiamo il Terminale a sud-est e premiamo [E]!"}
+            };
+
+        case StoryEvent::ThermalBypassed:
+            return {
+                {"BRUNO", "[RADIO] Caldaia a carbone attivo iniettata direttamente nel pozzo geotermico! Calore a volonta'!"},
+                {"NONNA ROSA", "[RADIO] Ada, che dolore... Bruciare scorie dentro una sorgente di Carnot ferisce le falde del Crati."},
+                {"GAIA", "// GAIA [WARN]: Equilibrio termico forzato con entropia fossile. Terminale Sorgente aperto a Sud-Est."},
+                {"ADA", "Il Terminale di GAIA a sud-est e' attivo, ma il cielo e' denso di cenere. Andiamo a leggere il verdetto [E]."}
+            };
+
+        case StoryEvent::GaiaTerminalDecoded:
+            return {
+                {"GAIA", "// GAIA [ROOT]: Accesso autore riconosciuto. Bentornata nel tuo codice sorgente, Dottoressa Ada Ferri."},
+                {"ADA", "La firma digitale del 2072... Ero io la direttrice del progetto GAIA insieme a Nonna Rosa!"},
+                {"LIA", "Tu hai cancellato la tua memoria all'inizio del Ciclo 404 per metterti alla prova come tutti noi!"},
+                {"GAIA", "// GAIA [ROOT]: Compilazione completata. Apertura delle paratie dell'Osservatorio Reale in corso..."}
+            };
+
         case StoryEvent::Count:
             break;
     }
@@ -127,7 +178,7 @@ Objective ObjectiveFor(Chapter c, const StorySnapshot& s) {
     if (c == Chapter::Epilogo || s.simulation_completed) {
         return {
             "Simulazione Completata - Valle Decifrata",
-            "Esplora la Matrice con [V] (Fase 1-3) o leggi GAIA."
+            "Esplora la Matrice con [V] (Fase 1-3) o apri il Menu [ESC]."
         };
     }
 
@@ -183,6 +234,44 @@ Objective ObjectiveFor(Chapter c, const StorySnapshot& s) {
         };
     }
 
+    if (c == Chapter::Atto4_Archivio) {
+        if (s.mode == GameMode::Overworld) {
+            return {
+                "Raggiungi Nonna Rosa nella Diga del Crati",
+                "Entra nel portale [DIGA] a nord: l'Archivio alto si e' aperto!"
+            };
+        }
+        if (s.hydro == MachineState::Broken) {
+            return {
+                "Attiva prima la Turbina della Diga",
+                "Calibra la turbina in basso [E] prima di salire da Nonna Rosa."
+            };
+        }
+        return {
+            "Parla con Nonna Rosa sulla Piattaforma Alta",
+            "Salta [SPAZIO] fino alla passerella in alto a destra e premi [E]."
+        };
+    }
+
+    if (c == Chapter::Atto5_Inverno) {
+        if (s.mode == GameMode::Structure) {
+            return {
+                "Torna al Settore Est della Valle",
+                "Esci dalla Diga [EXIT / TAB] con la chiave geotermica di Rosa."
+            };
+        }
+        if (s.thermal == MachineState::Broken) {
+            return {
+                "Calibra lo Scambiatore Geotermico (Carnot)",
+                "A Nord-Est oltre il ponte: scansiona [F] e calibra a 60 deg [E]."
+            };
+        }
+        return {
+            "Decodifica il Terminale Sorgente di GAIA",
+            "Raggiungi il Monolite a Sud-Est oltre il ponte e premi [E]."
+        };
+    }
+
     return {
         "Esplora la Valle del Crati",
         "Usa lo Scanner Empirico [F] e calibra gli impianti [E]."
@@ -197,7 +286,7 @@ std::vector<std::string> IntroCrawl() {
         "Il fumo ha coperto i colli, avvelenato il fiume Crati e spento i laboratori sul Ponte Bucci.",
         "Ma nell'Osservatorio Ovest la ricercatrice Ada Ferri si risveglia con uno Scanner Empirico.",
         "Le macchine del campus non sono morte: attendono qualcuno che ricordi le leggi della fisica.",
-        "L'angolo dei fotoni. La pressione dell'acqua. La frequenza di risonanza dell'atmosfera.",
+        "L'angolo dei fotoni. La pressione dell'acqua. La risonanza e il ciclo termico di Carnot.",
         "Ogni impianto ti porra' una scelta: la fatica del calcolo pulito o il bypass a combustione.",
         "Misura con [F], calibra con [E], risveglia la rete degli scienziati.",
         "E scopri chi sta davvero osservando le equazioni della Valle..."
@@ -211,17 +300,17 @@ std::vector<std::string> EndingText(bool clean_path) {
             "Lo smog nella Valle del Crati si dissolve fino allo 0%. Il fiume scorre limpido sotto il Ponte Bucci.",
             "Sul visore di Fase 3 i vettori verdi di GAIA si ricompongono in un'unica equazione armonica.",
             "// GAIA: 'Per 403 simulazioni gli umani hanno scelto la scorciatoia del carbonio, bruciando il futuro.'",
-            "// GAIA: 'Voi avete misurato l'ombra, ascoltato la pressione dell'acqua e usato la legge del coseno.'",
-            "// GAIA: 'Il test dell'Osservatorio Unical e' superato. Le paratie del rifugio reale si stanno aprendo.'",
-            "Ada Ferri e Lia Moretti escono alla luce del vero sole calabrese, con le formule nella memoria.",
-            "FINALE PULITO - La conoscenza scientifica ha guarito la Valle. (Premi [V] o continua a esplorare)"
+            "// GAIA: 'Tu, Ada, ti eri tolta la memoria per dimostrare che la scienza puo' vincere senza trucchi.'",
+            "// GAIA: 'Solare, Stevino, Risonanza e Carnot: il test dell'Unical e' superato. Le paratie si aprono.'",
+            "Ada Ferri, Lia Moretti e Nonna Rosa escono alla luce del vero sole calabrese.",
+            "FINALE PULITO - La conoscenza scientifica ha guarito la Valle. (Premi [V] o [ESC] per esplorare)"
         };
     }
     return {
         "=== EQUILIBRIO COMPROMESSO // CICLO 404 ARCHIVIATO ===",
         "Gli impianti della Valle sono attivi, ma una cappa color ruggine resta sospesa sopra il Ponte Bucci.",
         "Dalla radio, Bruno Ceneri brinda al gasolio: 'Visto, dottoressa? Basta bruciare e tutto gira!'",
-        "Lia osserva i tralicci anneriti in silenzio, mentre il cielo artificiale della conca sfarfalla.",
+        "Lia e Nonna Rosa osservano i tralicci anneriti in silenzio, mentre il cielo artificiale sfarfalla.",
         "// GAIA: 'Bilancio energetico raggiunto tramite combustione fossile. Degrado biosfera: irreversibile.'",
         "// GAIA: 'Anche nel Ciclo 404 la fretta ha sconfitto la matematica. Le porte del rifugio restano chiuse.'",
         "// GAIA: 'Inizializzazione Ciclo 405... Forse la prossima volta avrete la pazienza di calcolare.'",

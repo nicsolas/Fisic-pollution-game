@@ -1,4 +1,5 @@
 #include <raylib.h>
+#include <rlgl.h>
 
 #include <algorithm>
 #include <charconv>
@@ -310,6 +311,7 @@ struct WindowedOptions {
     float pollution = -1.0f;       // <0: valore di default
     bool open_pause = false;
     bool open_settings = false;
+    bool demo_mode = false;        // false = Campagna Completa (Atti I-V); true = Demo Classica (Atti I-III)
 };
 
 int RunWindowed(const WindowedOptions& opt) {
@@ -341,9 +343,11 @@ int RunWindowed(const WindowedOptions& opt) {
         };
 
         eco::app::GraphicsSettings graphics_settings{};
+        graphics_settings.demo_mode = opt.demo_mode;
         eco::app::ApplyGraphicsSettingsToRuntime(graphics_settings);
         eco::app::PauseSettingsMenu pause_menu{};
 
+        world.demo_mode = opt.demo_mode;
         world.EnsureInitialized();
         if (opt.pollution >= 0.0f) {
             world.ecosystem.pollution_level = eco::Clamp(opt.pollution, eco::kMinEcoValue, eco::kMaxEcoValue);
@@ -371,18 +375,21 @@ int RunWindowed(const WindowedOptions& opt) {
 
         while (!WindowShouldClose() && !ctx.quit_requested &&
                (smoke_frames < 0 || frame_count < smoke_frames)) {
-            // Calcola letterbox 16:9 e rimappa automaticamente la posizione del mouse
-            // dalle coordinate reali della finestra/schermo intero allo spazio virtuale 1280x720.
-            const int screen_w = std::max(1, GetScreenWidth());
-            const int screen_h = std::max(1, GetScreenHeight());
+            // Calcola letterbox 16:9 usando GetRenderWidth()/GetRenderHeight() (le reali dimensioni
+            // del framebuffer OpenGL, che a differenza di GetScreenWidth() non soffrono del bug di
+            // disallineamento di SetWindowSize() su Wayland/X11 in Raylib 5.5).
+            const int fb_w = std::max(1, GetRenderWidth());
+            const int fb_h = std::max(1, GetRenderHeight());
             const float scale = std::min(
-                static_cast<float>(screen_w) / static_cast<float>(eco::kWindowWidth),
-                static_cast<float>(screen_h) / static_cast<float>(eco::kWindowHeight));
+                static_cast<float>(fb_w) / static_cast<float>(eco::kWindowWidth),
+                static_cast<float>(fb_h) / static_cast<float>(eco::kWindowHeight));
             const float dest_w = static_cast<float>(eco::kWindowWidth) * scale;
             const float dest_h = static_cast<float>(eco::kWindowHeight) * scale;
-            const float dest_x = (static_cast<float>(screen_w) - dest_w) * 0.5f;
-            const float dest_y = (static_cast<float>(screen_h) - dest_h) * 0.5f;
+            const float dest_x = (static_cast<float>(fb_w) - dest_w) * 0.5f;
+            const float dest_y = (static_cast<float>(fb_h) - dest_h) * 0.5f;
 
+            // Mouse: le coordinate di input sono relative alla finestra logica (GetScreenWidth)
+            // ma se il compositor non ha ancora notificato il resize usiamo fb_w/fb_h coerenti.
             if (scale > 1e-4f) {
                 SetMouseOffset(static_cast<int>(-dest_x), static_cast<int>(-dest_y));
                 SetMouseScale(1.0f / scale, 1.0f / scale);
@@ -413,8 +420,17 @@ int RunWindowed(const WindowedOptions& opt) {
             pause_menu.DrawOverlay(ctx, graphics_settings);
             EndTextureMode();
 
-            // Presenta la canvas scalata in letterbox sulla finestra (o schermo intero)
+            // Presenta la canvas scalata in letterbox sulla finestra (o schermo intero),
+            // forzando esplicitamente il viewport e la matrice ortografica di rlgl su (fb_w, fb_h)
+            // per neutralizzare qualsiasi disallineamento tra CORE.Window.screen e CORE.Window.render.
             BeginDrawing();
+            rlViewport(0, 0, fb_w, fb_h);
+            rlMatrixMode(RL_PROJECTION);
+            rlLoadIdentity();
+            rlOrtho(0.0, static_cast<double>(fb_w), static_cast<double>(fb_h), 0.0, 0.0, 1.0);
+            rlMatrixMode(RL_MODELVIEW);
+            rlLoadIdentity();
+
             ClearBackground(Color{6, 10, 16, 255});
             const Rectangle src_rec{
                 0.0f,
@@ -492,6 +508,8 @@ int main(int argc, char** argv) {
             opt.open_pause = true;
         } else if (arg == "--open-settings") {
             opt.open_settings = true;
+        } else if (arg == "--demo") {
+            opt.demo_mode = true;
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             std::cerr << "Usage: eco_proto [--headless-e2e | --smoke-frames N [--screenshot FILE]] [--skip-title] [--scene title|overworld|structure] [--pollution N]\n";

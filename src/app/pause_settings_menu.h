@@ -12,15 +12,17 @@ enum class ParticleQuality : int {
 
 struct GraphicsSettings {
     bool fullscreen = false;
-    int resolution_index = 0; // 0: 1280x720, 1: 1600x900, 2: 1920x1080
+    int resolution_index = 1; // 0: 1024x576, 1: 1280x720, 2: 1600x900, 3: 1920x1080
     int fps_index = 0;        // 0: 60 FPS, 1: 120 FPS, 2: 144 FPS, 3: Illimitato
     ParticleQuality particle_quality = ParticleQuality::High;
     bool clean_ttf_font = true;
     bool show_fps = false;
     bool compact_tutorial = false; // true = dialoghi veloci + solo prima battuta essenziale per evento
+    bool demo_mode = false;        // false = Campagna Completa (Atti I-V); true = Demo Originale (Atti I-III)
 };
 
 void ApplyGraphicsSettingsToRuntime(const GraphicsSettings& settings);
+void ApplySafeWindowResolution(GraphicsSettings& settings);
 void ToggleAppFullscreen(GraphicsSettings& settings);
 
 class PauseSettingsMenu {

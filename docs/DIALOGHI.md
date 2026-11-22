@@ -13,6 +13,8 @@
 | `Chapter::Atto1_Luce` | `"ATTO I // LA LEGGE DEL COSENO"` |
 | `Chapter::Atto2_Acqua` | `"ATTO II // LA PRESSIONE DEL CRATI"` |
 | `Chapter::Atto3_Codice` | `"ATTO III // OLTRE IL PONTE BUCCI"` |
+| `Chapter::Atto4_Archivio` | `"ATTO IV // L'ARCHIVIO SOMMERSO"` |
+| `Chapter::Atto5_Inverno` | `"ATTO V // IL NUCLEO DI GAIA"` |
 | `Chapter::Epilogo` | `"EPILOGO // IL GIUDIZIO DI GAIA"` |
 
 ---
@@ -139,6 +141,30 @@ Gli obiettivi sono calcolati dallo stato attuale (`StorySnapshot`) con fallback 
 - **GAIA**: `"// GAIA [ALERT]: Smog atmosferico oltre il 70%! Collasso della fotosintesi nella conca del Crati."`
 - **BRUNO**: `"[RADIO] E' solo un po' di foschia industriale, dottoressa! Metti la mascherina e goditi i megawatt!"`
 - **ADA**: `"Non si respira piu'... Devo ricalibrare gli impianti con la fisica pulita [E] prima che sia tardi!"`
+
+### `StoryEvent::RosaRecruited` (4 battute — Atto IV, Piattaforma Alta della Diga)
+- **NONNA ROSA**: `"Piccola Ada... Sei salita fin quassu'! Sapevo che la legge di Stevino ti avrebbe guidata."`
+- **NONNA ROSA**: `"Nel 2072 abbiamo chiuso la Valle dentro GAIA per impedire che l'Oblio cancellasse la termodinamica."`
+- **NONNA ROSA**: `"Prendi questa chiave magnetica: sblocca lo Scambiatore Geotermico di Carnot a nord-est del ponte."`
+- **ADA**: `"Un quarto impianto a 60 gradi! Torniamo nella Valle, calibriamo il pozzo geotermico e apriamo GAIA!"`
+
+### `StoryEvent::ThermalClean` (4 battute — Atto V, Scambiatore Geotermico a 60 deg)
+- **ADA**: `"Valvola di Carnot allineata a 60 gradi! Il vapore geotermico stabilizza la temperatura della conca!"`
+- **LIA**: `"Guarda a sud-est del giardino, Ada! Dal terreno e' emerso il Monolite Sorgente di GAIA!"`
+- **GAIA**: `"// GAIA [SYS]: Quarto vincolo termodinamico soddisfatto. Terminale Sorgente sbloccato a Sud-Est."`
+- **ADA**: `"E' il nucleo centrale della simulazione. Raggiungiamo il Terminale a sud-est e premiamo [E]!"`
+
+### `StoryEvent::ThermalBypassed` (4 battute — Atto V, Bypass Carbone sul Geotermico)
+- **BRUNO**: `"[RADIO] Caldaia a carbone attivo iniettata direttamente nel pozzo geotermico! Calore a volonta'!"`
+- **NONNA ROSA**: `"[RADIO] Ada, che dolore... Bruciare scorie dentro una sorgente di Carnot ferisce le falde del Crati."`
+- **GAIA**: `"// GAIA [WARN]: Equilibrio termico forzato con entropia fossile. Terminale Sorgente aperto a Sud-Est."`
+- **ADA**: `"Il Terminale di GAIA a sud-est e' attivo, ma il cielo e' denso di cenere. Andiamo a leggere il verdetto [E]."`
+
+### `StoryEvent::GaiaTerminalDecoded` (4 battute — Atto V, Monolite Sorgente di GAIA)
+- **GAIA**: `"// GAIA [ROOT]: Accesso autore riconosciuto. Bentornata nel tuo codice sorgente, Dottoressa Ada Ferri."`
+- **ADA**: `"La firma digitale del 2072... Ero io la direttrice del progetto GAIA insieme a Nonna Rosa!"`
+- **LIA**: `"Tu hai cancellato la tua memoria all'inizio del Ciclo 404 per metterti alla prova come tutti noi!"`
+- **GAIA**: `"// GAIA [ROOT]: Compilazione completata. Apertura delle paratie dell'Osservatorio Reale in corso..."`
 
 ---
 

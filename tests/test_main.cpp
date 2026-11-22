@@ -969,12 +969,14 @@ void TestStoryDirector() {
     s.simulation_completed = true;
     CHECK(eco::ChapterFor(s) == eco::Chapter::Epilogo);
 
-    // 2. ChapterTitle & ObjectiveFor non-empty across all chapters
-    const std::array<eco::Chapter, 5> chapters = {
+    // 2. ChapterTitle & ObjectiveFor non-empty across all 7 chapters (including Atto4 & Atto5)
+    const std::array<eco::Chapter, 7> chapters = {
         eco::Chapter::Prologo,
         eco::Chapter::Atto1_Luce,
         eco::Chapter::Atto2_Acqua,
         eco::Chapter::Atto3_Codice,
+        eco::Chapter::Atto4_Archivio,
+        eco::Chapter::Atto5_Inverno,
         eco::Chapter::Epilogo
     };
     for (eco::Chapter c : chapters) {
@@ -986,6 +988,25 @@ void TestStoryDirector() {
     CHECK(!eco::IntroCrawl().empty());
     CHECK(!eco::EndingText(true).empty());
     CHECK(!eco::EndingText(false).empty());
+
+    // 2b. Full Campaign (demo_mode = false) ChapterFor & StoryEvent progression (Atto IV & Atto V)
+    eco::StorySnapshot full_snap{};
+    full_snap.demo_mode = false;
+    full_snap.solar = eco::MachineState::CleanActive;
+    full_snap.architect_recruited = true;
+    full_snap.hydro = eco::MachineState::CleanActive;
+    CHECK(eco::ChapterFor(full_snap) == eco::Chapter::Atto3_Codice);
+
+    full_snap.purifier = eco::MachineState::CleanActive;
+    CHECK(eco::ChapterFor(full_snap) == eco::Chapter::Atto4_Archivio);
+
+    full_snap.rosa_recruited = true;
+    CHECK(eco::ChapterFor(full_snap) == eco::Chapter::Atto5_Inverno);
+
+    full_snap.thermal = eco::MachineState::CleanActive;
+    full_snap.gaia_terminal_unlocked = true;
+    full_snap.simulation_completed = true;
+    CHECK(eco::ChapterFor(full_snap) == eco::Chapter::Epilogo);
 
     // 3. StoryDirector one-shot events, queue, Tick, AdvanceDialogue, CleanPath
     eco::StoryDirector dir;
@@ -1038,6 +1059,79 @@ void TestStoryDirector() {
     snap.pollution_level = 72.0f;
     dir.Observe(snap);
     CHECK(dir.EventFired(eco::StoryEvent::SmogCritical));
+
+    // 4. Full Campaign E2E on WorldContext (Atto IV Nonna Rosa, Atto V Geothermal & GAIA Terminal)
+    eco::WorldContext full_world;
+    full_world.demo_mode = false;
+    full_world.Reset();
+    CHECK(!full_world.demo_mode); // Reset() preserves demo_mode
+    full_world.EnsureInitialized();
+
+    eco::Player* p0 = full_world.players.GetPlayer(0);
+    CHECK(p0 != nullptr && p0->active);
+
+    // Calibrate Solar, Recruit Lia, Calibrate Hydro, Calibrate Purifier
+    full_world.solar_machine.state = eco::MachineState::CleanActive;
+    full_world.ecosystem.ApplyCleanActivation(35.0f, 15.0f);
+    full_world.architect_npc.recruited = true;
+    full_world.ecosystem.SetArchitectRecruited(true);
+    full_world.hydro_machine.state = eco::MachineState::CleanActive;
+
+    p0->pos = full_world.purifier_machine.pos;
+    eco::AllPlayersInput in{};
+    in.players[0].interact_pressed = true;
+    (void)full_world.StepWorld(in, eco::kFixedDt);
+    CHECK(full_world.calibration_modal.is_open && full_world.calibrating_purifier);
+    full_world.calibration_modal.SetParameter(full_world.purifier_machine.target_param, full_world.purifier_machine);
+    in = {};
+    in.players[0].confirm_pressed = true;
+    (void)full_world.StepWorld(in, eco::kFixedDt);
+    CHECK(full_world.purifier_machine.state == eco::MachineState::CleanActive);
+    // In Full Campaign mode, activating purifier transitions to Atto4_Archivio instead of ending immediately
+    CHECK(!full_world.simulation_completed);
+    CHECK(full_world.story.CurrentChapter() == eco::Chapter::Atto4_Archivio);
+
+    // Enter Structure (Dam) and talk to Nonna Rosa
+    full_world.current_mode = eco::GameMode::Structure;
+    p0->pos = full_world.rosa_npc.pos;
+    in = {};
+    in.players[0].interact_pressed = true;
+    (void)full_world.StepWorld(in, eco::kFixedDt);
+    CHECK(full_world.rosa_npc.recruited);
+    CHECK(full_world.story.EventFired(eco::StoryEvent::RosaRecruited));
+    CHECK(full_world.story.CurrentChapter() == eco::Chapter::Atto5_Inverno);
+
+    // Return to Overworld, scan & calibrate Geothermal Exchanger (target = 60 deg)
+    full_world.current_mode = eco::GameMode::Overworld;
+    p0->pos = full_world.thermal_machine.pos;
+    in = {};
+    in.players[0].scan_pressed = true;
+    (void)full_world.StepWorld(in, eco::kFixedDt);
+    CHECK(full_world.last_scan.has_target);
+    CHECK(std::abs(full_world.last_scan.measured_target_value - 60.0f) < 1e-3f);
+
+    in = {};
+    in.players[0].interact_pressed = true;
+    (void)full_world.StepWorld(in, eco::kFixedDt);
+    CHECK(full_world.calibration_modal.is_open && full_world.calibrating_thermal);
+    full_world.calibration_modal.SetParameter(60.0f, full_world.thermal_machine);
+    in = {};
+    in.players[0].confirm_pressed = true;
+    (void)full_world.StepWorld(in, eco::kFixedDt);
+    CHECK(full_world.thermal_machine.state == eco::MachineState::CleanActive);
+    CHECK(full_world.story.EventFired(eco::StoryEvent::ThermalClean));
+    CHECK(!full_world.simulation_completed);
+
+    // Decode GAIA Source Terminal at South-East -> unlocks Epilogo
+    p0->pos = full_world.gaia_terminal_pos;
+    in = {};
+    in.players[0].interact_pressed = true;
+    (void)full_world.StepWorld(in, eco::kFixedDt);
+    CHECK(full_world.gaia_terminal_unlocked);
+    CHECK(full_world.simulation_completed);
+    CHECK(full_world.story.EventFired(eco::StoryEvent::GaiaTerminalDecoded));
+    CHECK(full_world.story.CurrentChapter() == eco::Chapter::Epilogo);
+    CHECK(full_world.story.CleanPath());
 }
 
 } // namespace

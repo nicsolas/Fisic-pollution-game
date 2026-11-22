@@ -60,3 +60,31 @@
   6. Contatore FPS a Schermo (`Attivo` <-> `Disattivato`)
   7. Ritmo Dialoghi & Tutorial (`Completo` <-> `Sintetico / Rapido`)
 - Generati gli screenshot `06_menu_pausa.png` e `07_menu_impostazioni.png` e creato il tag Git **`v0.2.0`**.
+
+## Narratore (narratore2) — v0.3.0 (Espansione Storia: Atto IV & Atto V + Debugging Graduale)
+- Espansi `docs/STORIA.md` e `docs/DIALOGHI.md` con:
+  - **Atto IV — "L'Archivio Sommerso" (`Chapter::Atto4_Archivio`)**: sblocco della paratia superiore della Diga del Crati dopo l'attivazione del Risonatore Fotonico, incontro fisico con **Nonna Rosa** (`rosa_npc` a `{1056, 240}`) sulla piattaforma alta a destra e consegna della chiave magnetica dello Scambiatore Geotermico (`StoryEvent::RosaRecruited`).
+  - **Atto V — "Il Nucleo di GAIA" (`Chapter::Atto5_Inverno`)**: calibrazione dello **Scambiatore Geotermico di Carnot** a Nord-Est (`thermal_machine` a `{1128, 216}`, target `60 deg`, `StoryEvent::ThermalClean` / `StoryEvent::ThermalBypassed`) e decodifica finale del **Monolite / Terminale Sorgente di GAIA** a Sud-Est (`{1128, 648}`, `StoryEvent::GaiaTerminalDecoded`), con la rivelazione che Ada Ferri stessa ha programmato GAIA nel 2072.
+- Aggiornato `src/core/story_content.cpp` con `ChapterTitle`, `DialogueForEvent` (4 nuovi eventi + rami `!s.demo_mode` su `PurifierClean` e `PurifierBypassed`) e `ObjectiveFor` per tutti i 7 capitoli, mantenendo 100% compatibilita' ASCII e zero warning in `story_content.cpp`.
+- Compilato e verificato `ctest` (2/2 verdi) in `build-narratore2`.
+
+## Artista (`artista2`) — v0.3.0 (Grafica Procedurale Atti IV e V)
+- `src/app/calibration_ui.cpp`:
+  - Implementato `DrawNonnaRosaNpc(world)` per disegnare Nonna Rosa sulla piattaforma superiore destra della Diga del Crati (`StructureState`) quando `!world.demo_mode` (capelli argento raccolti in uno chignon, occhiali tondi, cappotto tecnico blu idraulico con bordi ambra, tablet idrometrico, badge `"NONNA ROSA (IDRAULICA)"`, `"!"` flottante e prompt di interazione `[E]`).
+  - Implementato `DrawGeothermalApparatus(world.thermal_machine, world)` per disegnare lo Scambiatore Geotermico di Carnot nel quadrante Nord-Est oltre il Ponte Bucci (pozzo incassato nella roccia, anelli in rame/ottone, nucleo termico pulsante, valvola rotante a `current_param` vs tacca a `target_param = 60 deg`, vapore pulito / fumo da bypass e indicatore di sblocco tramite Nonna Rosa).
+  - Implementato `DrawGaiaSourceTerminal(world)` nel quadrante Sud-Est (monolite esagonale in ossidiana con anelli olografici orbitanti, schermo a onda sinusoidale verde matrice, etichetta `"NUCLEO SORGENTE GAIA"` e prompt `[E]`).
+  - Aggiornato `DrawHudAndCalibrationModalScreenSpace` per supportare il titolo del modal di Carnot (`world.calibrating_thermal`) e il reset dei flag di calibrazione sui click del mouse.
+- `docs/ART_DIRECTION.md`: documentata la sezione 9 sull'espansione visiva degli Atti IV e V.
+- Compilazione e `ctest` (2/2) verdi in `build-artista2` con zero warning.
+
+## Ingegnere (`ingegnere2`) — v0.3.0 (Atto IV & Atto V in `story.cpp`/`simulation.cpp`, Modalita' Demo vs Campagna Completa, Unit Test)
+- Aggiornato `src/core/story.cpp`:
+  - `ChapterFor(const StorySnapshot& s)` supporta `Chapter::Atto4_Archivio` (dopo l'attivazione del Risonatore Fotonico a Est quando `!s.demo_mode`) e `Chapter::Atto5_Inverno` (dopo il reclutamento di Nonna Rosa nella Diga).
+  - `StoryDirector::Observe` emette gli eventi one-shot `RosaRecruited`, `ThermalClean`, `ThermalBypassed` e `GaiaTerminalDecoded`.
+  - `StoryDirector::CleanPath()` include anche `!EventFired(StoryEvent::ThermalBypassed)`.
+- Aggiornato `src/core/simulation.cpp`:
+  - `WorldContext::Reset()` preserva `demo_mode` e inizializza `thermal_machine` (`{1128, 216}`, target `60 deg`), `rosa_npc` (`{1056, 240}` sulla piattaforma alta della Diga) e `gaia_terminal_pos` (`{1128, 648}`).
+  - Gestita la scansione empirica (`TriggerScan`), il modal (`ModalTargetMachine`) e l'interazione `[E]` con Nonna Rosa nella Diga, con lo Scambiatore Geotermico di Carnot e col Terminale Sorgente di GAIA, mantenendo 100% compatibilita' con la Demo v0.2 quando `demo_mode == true`.
+- Aggiornati `src/app/story_ui.cpp`, `src/app/pause_settings_menu.h/.cpp` e `src/app/main.cpp`:
+  - Aggiunto flag CLI `--demo` e voce **"Modalita' Storia: `< Campagna Completa (Atti I-V) >` / `< Demo Classica (Atti I-III) >`"** nel Menu Impostazioni.
+- Esteso `TestStoryDirector()` in `tests/test_main.cpp` con test completi per i 7 capitoli e simulazione E2E dell'Atto IV e Atto V su `WorldContext`. Build e `ctest` (2/2) verdi in `build-ingegnere2` con zero warning.

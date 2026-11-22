@@ -428,6 +428,228 @@ void DrawLiaArchitectNpc(const eco::WorldContext& world) {
     }
 }
 
+void DrawNonnaRosaNpc(const eco::WorldContext& world) {
+    const float rx = world.rosa_npc.pos.x;
+    const float ry = world.rosa_npc.pos.y;
+    const bool rec = world.rosa_npc.recruited;
+    const bool ready_to_talk = (world.hydro_machine.state != eco::MachineState::Broken);
+    const Color rosa_col = rec ? pal::kAccentClean : (ready_to_talk ? Color{105, 215, 255, 255} : ORANGE);
+    const float bob = std::sin(world.sim_time * 2.4f) * 1.1f;
+
+    // Ombra morbida sulla piattaforma metallica della Diga
+    DrawEllipse(static_cast<int>(rx), static_cast<int>(ry + 16.0f), 13.0f, 4.8f, Color{0, 0, 0, 130});
+
+    // Stivali idraulici
+    DrawRectangle(static_cast<int>(rx - 6.0f), static_cast<int>(ry + 9.0f), 4, 7, Color{38, 44, 52, 255});
+    DrawRectangle(static_cast<int>(rx + 2.0f), static_cast<int>(ry + 9.0f), 4, 7, Color{38, 44, 52, 255});
+
+    // Cappotto tecnico blu idraulico con bordi ambra da capo-ingegnera della Diga del Crati
+    DrawRectangle(static_cast<int>(rx - 8.0f), static_cast<int>(ry - 5.0f + bob), 16, 15, Color{32, 66, 96, 255});
+    DrawRectangle(static_cast<int>(rx - 8.0f), static_cast<int>(ry - 5.0f + bob), 16, 4, Color{230, 175, 65, 255});
+    DrawRectangleLines(static_cast<int>(rx - 8.0f), static_cast<int>(ry - 5.0f + bob), 16, 15, rosa_col);
+
+    // Chiave inglese / tablet idrometrico luminoso in mano
+    DrawRectangle(static_cast<int>(rx + 7.0f), static_cast<int>(ry - 2.0f + bob), 6, 9, Color{24, 38, 52, 255});
+    DrawRectangleLines(static_cast<int>(rx + 7.0f), static_cast<int>(ry - 2.0f + bob), 6, 9, rosa_col);
+
+    // Viso, capelli bianchi/argento raccolti in uno chignon e occhiali tondi
+    const float head_y = ry - 11.0f + bob;
+    DrawCircle(static_cast<int>(rx), static_cast<int>(head_y), 7.0f, Color{235, 205, 182, 255});
+    DrawCircleSector(
+        {rx, head_y - 0.5f},
+        7.8f,
+        175.0f,
+        365.0f,
+        12,
+        Color{225, 232, 240, 255});
+    // Chignon argento alto
+    DrawCircleV({rx - 5.0f, head_y - 6.5f}, 4.0f, Color{215, 224, 235, 255});
+    // Occhiali tondi luminosi
+    DrawCircleLines(static_cast<int>(rx - 2.5f), static_cast<int>(head_y - 0.5f), 2.4f, SKYBLUE);
+    DrawCircleLines(static_cast<int>(rx + 2.8f), static_cast<int>(head_y - 0.5f), 2.4f, SKYBLUE);
+
+    // Indicatore flottante sopra la testa
+    const float h_bob = std::sin(world.sim_time * 3.6f) * 3.0f;
+    if (!rec) {
+        const Vector2 badge_c{rx, ry - 31.0f + h_bob};
+        DrawCircleV(badge_c, 9.0f, Color{18, 28, 42, 235});
+        DrawCircleLines(static_cast<int>(badge_c.x), static_cast<int>(badge_c.y), 9.0f, rosa_col);
+        DrawTextShadow("!", static_cast<int>(badge_c.x - 2.0f), static_cast<int>(badge_c.y - 6.0f), 14, rosa_col);
+    } else {
+        DrawPolyLines({rx, ry - 30.0f + h_bob}, 6, 8.5f, world.sim_time * 65.0f, rosa_col);
+    }
+    DrawTextShadow("NONNA ROSA (IDRAULICA)", static_cast<int>(rx - 66.0f), static_cast<int>(ry - 50.0f), 11, rosa_col);
+
+    if (world.rosa_npc.AnyActivePlayerInRange(world.players) &&
+        !world.calibration_modal.is_open) {
+        const int pw = 350;
+        const int px = static_cast<int>(rx) - pw / 2;
+        const int py = static_cast<int>(ry) - 76;
+        DrawPanel(Rectangle{static_cast<float>(px), static_cast<float>(py), static_cast<float>(pw), 25.0f}, rosa_col);
+        DrawTextShadow(
+            rec
+                ? "[E] Nonna Rosa: Codici Scambiatore Geotermico consegnati"
+                : "[E] Parla con Nonna Rosa (Archivio Sommerso Diga)",
+            px + 10,
+            py + 6,
+            12,
+            rosa_col);
+    }
+}
+
+void DrawGeothermalApparatus(const eco::Machine& m, const eco::WorldContext& world) {
+    const float cx = m.pos.x;
+    const float cy = m.pos.y;
+    const float eff = m.LiveEfficiency();
+    const bool unlocked = world.rosa_npc.recruited;
+
+    const Color ring_col = !unlocked
+                               ? Color{110, 120, 135, 220}
+                               : (m.state == eco::MachineState::CleanActive
+                                      ? pal::kAccentClean
+                                      : (m.state == eco::MachineState::BypassedDirty
+                                             ? pal::kAccentDirty
+                                             : Color{240, 165, 75, 255}));
+
+    // Ombra e pozzo geotermico circolare incassato nella roccia con anelli in rame/ottone
+    DrawEllipse(static_cast<int>(cx), static_cast<int>(cy + 26.0f), 40.0f, 12.0f, Color{0, 0, 0, 125});
+    DrawCircleV({cx, cy}, 34.0f, Color{24, 28, 36, 255});
+    DrawCircleLines(static_cast<int>(cx), static_cast<int>(cy), 34.0f, Color{185, 125, 68, 255});
+    DrawCircleLines(static_cast<int>(cx), static_cast<int>(cy), 28.0f, ring_col);
+
+    // Tubazioni di rame laterali e serpentina di Carnot
+    DrawRectangle(static_cast<int>(cx - 42.0f), static_cast<int>(cy - 5.0f), 12, 10, Color{175, 110, 58, 255});
+    DrawRectangle(static_cast<int>(cx + 30.0f), static_cast<int>(cy - 5.0f), 12, 10, Color{175, 110, 58, 255});
+
+    // Nucleo geotermico incandescente
+    const float pulse = 0.5f + 0.5f * std::sin(world.sim_time * 4.2f);
+    const Color core_col = (m.state == eco::MachineState::CleanActive)
+                               ? Color{95, 250, 210, static_cast<unsigned char>(180 + 70 * pulse)}
+                               : Color{245, 135, 55, static_cast<unsigned char>(150 + 80 * pulse)};
+    DrawCircleV({cx, cy}, 16.0f + pulse * 2.5f, pal::WithAlpha(core_col, 90));
+    DrawCircleV({cx, cy}, 10.0f, core_col);
+
+    // Tacca angolo gradiente ottimale (target_param = 60 deg) e valvola rotante (current_param)
+    const float target_rad = eco::deg2rad(m.target_param);
+    const float curr_rad = eco::deg2rad(m.current_param);
+    DrawLineEx(
+        {cx + std::cos(target_rad) * 18.0f, cy + std::sin(target_rad) * 18.0f},
+        {cx + std::cos(target_rad) * 33.0f, cy + std::sin(target_rad) * 33.0f},
+        2.5f,
+        YELLOW);
+    DrawArrow2D(
+        {cx, cy},
+        {cx + std::cos(curr_rad) * 26.0f, cy + std::sin(curr_rad) * 26.0f},
+        3.2f,
+        ring_col);
+
+    // Vapore pulito o fumo nero se bypassato
+    if (m.state == eco::MachineState::CleanActive) {
+        for (int v = 0; v < 3; ++v) {
+            const float age = std::fmod(world.sim_time * 1.4f + static_cast<float>(v) * 0.6f, 1.8f);
+            DrawCircleV(
+                {cx - 10.0f + static_cast<float>(v) * 10.0f, cy - 16.0f - age * 18.0f},
+                3.5f + age * 2.5f,
+                Color{170, 245, 255, static_cast<unsigned char>(135 - age * 65)});
+        }
+    } else if (m.state == eco::MachineState::BypassedDirty) {
+        for (int s = 0; s < 4; ++s) {
+            const float age = std::fmod(world.sim_time * 1.5f + static_cast<float>(s) * 0.5f, 2.0f);
+            DrawCircleV(
+                {cx + std::sin(world.sim_time * 3.0f + static_cast<float>(s)) * 7.0f, cy - 18.0f - age * 24.0f},
+                5.0f + age * 4.0f,
+                Color{78, 70, 64, static_cast<unsigned char>(180 - age * 80)});
+        }
+    }
+
+    DrawTextShadow(
+        "SCAMBIATORE GEOTERMICO",
+        static_cast<int>(cx - 78.0f),
+        static_cast<int>(cy - 50.0f),
+        12,
+        unlocked ? RAYWHITE : GRAY);
+
+    if (!unlocked) {
+        DrawTextShadow(
+            "[BLOCCATO: Chiedi i codici a Nonna Rosa nella Diga]",
+            static_cast<int>(cx - 135.0f),
+            static_cast<int>(cy + 36.0f),
+            11,
+            ORANGE);
+    } else if (m.prompt_visible && !world.calibration_modal.is_open) {
+        const int pw = 340;
+        const int px = static_cast<int>(cx) - pw / 2;
+        const int py = static_cast<int>(cy) + 34;
+        DrawPanel(Rectangle{static_cast<float>(px), static_cast<float>(py), static_cast<float>(pw), 26.0f}, YELLOW);
+        DrawTextShadow("[E] Calibra Scambiatore Geotermico (Carnot)", px + 10, py + 6, 12, YELLOW);
+    }
+    (void)eff;
+}
+
+void DrawGaiaSourceTerminal(const eco::WorldContext& world) {
+    const float tx = world.gaia_terminal_pos.x;
+    const float ty = world.gaia_terminal_pos.y;
+    const bool ready = (world.thermal_machine.state != eco::MachineState::Broken);
+    const bool decoded = world.gaia_terminal_unlocked;
+    const Color accent = decoded
+                             ? Color{120, 255, 200, 255}
+                             : (ready ? Color{80, 245, 185, 255} : Color{85, 110, 128, 200});
+
+    // Ombra e piedistallo esagonale
+    DrawEllipse(static_cast<int>(tx), static_cast<int>(ty + 24.0f), 34.0f, 10.0f, Color{0, 0, 0, 135});
+    DrawPoly({tx, ty + 10.0f}, 6, 26.0f, 30.0f, Color{16, 24, 34, 255});
+    DrawPolyLines({tx, ty + 10.0f}, 6, 26.0f, 30.0f, accent);
+
+    // Monolite di ossidiana e schermo di codice sinusoidale
+    DrawRectangle(static_cast<int>(tx - 16.0f), static_cast<int>(ty - 32.0f), 32, 44, Color{10, 18, 26, 250});
+    DrawRectangleLines(static_cast<int>(tx - 16.0f), static_cast<int>(ty - 32.0f), 32, 44, accent);
+
+    // Onda sinusoidale sul terminale di GAIA
+    for (int i = -11; i < 11; ++i) {
+        const float x0 = tx + static_cast<float>(i);
+        const float x1 = tx + static_cast<float>(i + 1);
+        const float y0 = ty - 12.0f + std::sin(world.sim_time * 5.0f + static_cast<float>(i) * 0.45f) * 7.0f;
+        const float y1 = ty - 12.0f + std::sin(world.sim_time * 5.0f + static_cast<float>(i + 1) * 0.45f) * 7.0f;
+        DrawLineEx({x0, y0}, {x1, y1}, 1.8f, accent);
+    }
+
+    // Anelli olografici orbitanti quando attivo
+    if (ready || decoded) {
+        const float r_pulse = 30.0f + std::sin(world.sim_time * 3.5f) * 3.0f;
+        DrawPolyLines({tx, ty - 10.0f}, 6, r_pulse, world.sim_time * 45.0f, pal::WithAlpha(accent, 180));
+    }
+
+    DrawTextShadow(
+        "NUCLEO SORGENTE GAIA",
+        static_cast<int>(tx - 68.0f),
+        static_cast<int>(ty - 52.0f),
+        12,
+        accent);
+
+    bool player_near = false;
+    for (const eco::Player* ap : world.players.ActivePlayers()) {
+        if (ap != nullptr && ap->active && (ap->Center() - world.gaia_terminal_pos).Length() <= 82.0f) {
+            player_near = true;
+            break;
+        }
+    }
+
+    if (player_near && !world.calibration_modal.is_open) {
+        const int pw = 340;
+        const int px = static_cast<int>(tx) - pw / 2;
+        const int py = static_cast<int>(ty) + 30;
+        DrawPanel(Rectangle{static_cast<float>(px), static_cast<float>(py), static_cast<float>(pw), 26.0f}, accent);
+        DrawTextShadow(
+            ready
+                ? "[E] Decodifica Terminale Sorgente di GAIA"
+                : "[BLOCCATO: Attiva prima lo Scambiatore Geotermico a Nord-Est]",
+            px + 10,
+            py + 6,
+            12,
+            ready ? accent : ORANGE);
+    }
+}
+
 } // namespace
 
 void DrawScientistProtagonist(const eco::Player& p, const eco::WorldContext& world) {
@@ -457,10 +679,15 @@ void DrawScientistProtagonist(const eco::Player& p, const eco::WorldContext& wor
         if (world.last_scan.has_target) {
             const eco::Machine& target_m =
                 (world.current_mode == eco::GameMode::Overworld &&
-                 world.ecosystem.architect_recruited &&
-                 std::fabs(world.last_scan.measured_target_value - world.purifier_machine.target_param) < 1e-2f)
-                    ? world.purifier_machine
-                    : world.ActiveMachine();
+                 !world.demo_mode &&
+                 world.rosa_npc.recruited &&
+                 std::fabs(world.last_scan.measured_target_value - world.thermal_machine.target_param) < 1e-2f)
+                    ? world.thermal_machine
+                    : ((world.current_mode == eco::GameMode::Overworld &&
+                        world.ecosystem.architect_recruited &&
+                        std::fabs(world.last_scan.measured_target_value - world.purifier_machine.target_param) < 1e-2f)
+                           ? world.purifier_machine
+                           : world.ActiveMachine());
             DrawLineEx(
                 {cx, cy},
                 {target_m.pos.x, target_m.pos.y},
@@ -614,17 +841,41 @@ void DrawSceneMachineAndOverlaysWorldSpace(const eco::WorldContext& world) {
             DrawEnergyConduit(bridge_v, purifier_v, world.purifier_machine.state, world.sim_time, world.ecosystem);
         }
 
+        if (!world.demo_mode) {
+            const Vector2 thermal_v{world.thermal_machine.pos.x, world.thermal_machine.pos.y};
+            const Vector2 gaia_v{world.gaia_terminal_pos.x, world.gaia_terminal_pos.y};
+            if (world.rosa_npc.recruited) {
+                DrawEnergyConduit(purifier_v, thermal_v, world.thermal_machine.state, world.sim_time, world.ecosystem);
+            }
+            if (world.thermal_machine.state != eco::MachineState::Broken) {
+                const eco::MachineState term_state =
+                    world.gaia_terminal_unlocked ? eco::MachineState::CleanActive : world.thermal_machine.state;
+                DrawEnergyConduit(purifier_v, gaia_v, term_state, world.sim_time, world.ecosystem);
+            }
+        }
+
         // Impianto Ovest: Campo Solare
         DrawSolarArrayApparatus(world.solar_machine, world, false);
 
         // Impianto Est (oltre il Ponte Bucci): Torre del Risonatore Fotonico
         DrawSolarArrayApparatus(world.purifier_machine, world, true);
 
+        // Atti IV-V (Campagna Completa): Scambiatore Geotermico a Nord-Est e Terminale Sorgente di GAIA a Sud-Est
+        if (!world.demo_mode) {
+            DrawGeothermalApparatus(world.thermal_machine, world);
+            DrawGaiaSourceTerminal(world);
+        }
+
         // Lia Moretti, l'Architetta
         DrawLiaArchitectNpc(world);
     } else {
         // Diga del Crati: Turbina Idroelettrica e serbatoio graduato
         DrawHydroTurbineApparatus(world.hydro_machine, world);
+
+        // Atto IV (Campagna Completa): Nonna Rosa sulla piattaforma superiore destra della Diga
+        if (!world.demo_mode) {
+            DrawNonnaRosaNpc(world);
+        }
     }
 
     const eco::Machine& active_m = world.ActiveMachine();
@@ -647,6 +898,24 @@ void DrawSceneMachineAndOverlaysWorldSpace(const eco::WorldContext& world) {
                 static_cast<int>(world.purifier_machine.pos.y),
                 world.purifier_machine.trigger_radius,
                 Color{120, 255, 220, 210});
+            if (!world.demo_mode) {
+                DrawCircleLines(
+                    static_cast<int>(world.thermal_machine.pos.x),
+                    static_cast<int>(world.thermal_machine.pos.y),
+                    world.thermal_machine.trigger_radius,
+                    Color{245, 175, 85, 210});
+                DrawCircleLines(
+                    static_cast<int>(world.gaia_terminal_pos.x),
+                    static_cast<int>(world.gaia_terminal_pos.y),
+                    78.0f,
+                    Color{90, 255, 185, 210});
+            }
+        } else if (!world.demo_mode) {
+            DrawCircleLines(
+                static_cast<int>(world.rosa_npc.pos.x),
+                static_cast<int>(world.rosa_npc.pos.y),
+                world.rosa_npc.trigger_radius,
+                Color{105, 215, 255, 210});
         }
     }
 
@@ -850,11 +1119,13 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world) {
 
         const bool is_solar = (world.calibration_modal.target_machine == eco::MachineType::SolarArray);
         const char* modal_title =
-            world.calibrating_purifier
-                ? "RISONATORE FOTONICO // ARMONICA DI FASE: E = max(0, cos(dTheta)) > 80%"
-                : (is_solar
-                       ? "CAMPO SOLARE // LEGGE DI LAMBERT: E = max(0, cos(Theta_p - Theta_s)) > 80%"
-                       : "TURBINA IDROELETTRICA // LEGGE DI STEVINO: P = rho * g * h > 80%");
+            world.calibrating_thermal
+                ? "SCAMBIATORE GEOTERMICO // CICLO DI CARNOT: E = max(0, cos(dTheta)) > 80%"
+                : (world.calibrating_purifier
+                       ? "RISONATORE FOTONICO // ARMONICA DI FASE: E = max(0, cos(dTheta)) > 80%"
+                       : (is_solar
+                              ? "CAMPO SOLARE // LEGGE DI LAMBERT: E = max(0, cos(Theta_p - Theta_s)) > 80%"
+                              : "TURBINA IDROELETTRICA // LEGGE DI STEVINO: P = rho * g * h > 80%"));
 
         DrawPanelWithHeader(
             Rectangle{static_cast<float>(bx), static_cast<float>(by), static_cast<float>(box_w), static_cast<float>(box_h)},
@@ -1012,20 +1283,23 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world) {
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             if (CheckCollisionPointRec(mouse, btn_confirm)) {
                 if (world.calibration_modal.ConfirmClean(world.ModalTargetMachine(), world.ecosystem)) {
-                    if (world.calibrating_purifier) {
+                    if (world.calibrating_purifier && world.demo_mode) {
                         world.simulation_completed = true;
                     }
                     world.calibrating_purifier = false;
+                    world.calibrating_thermal = false;
                 }
             } else if (CheckCollisionPointRec(mouse, btn_bypass)) {
                 world.calibration_modal.TriggerBypass(world.ModalTargetMachine(), world.ecosystem);
-                if (world.calibrating_purifier) {
+                if (world.calibrating_purifier && world.demo_mode) {
                     world.simulation_completed = true;
                 }
                 world.calibrating_purifier = false;
+                world.calibrating_thermal = false;
             } else if (CheckCollisionPointRec(mouse, btn_cancel)) {
                 world.calibration_modal.Cancel();
                 world.calibrating_purifier = false;
+                world.calibrating_thermal = false;
             }
         }
     }

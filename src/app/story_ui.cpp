@@ -60,6 +60,10 @@ namespace {
             return "ATTO II // L'ACQUA DELLA DIGA";
         case eco::Chapter::Atto3_Codice:
             return "ATTO III // IL CODICE DI GAIA";
+        case eco::Chapter::Atto4_Archivio:
+            return "ATTO IV // L'ARCHIVIO SOMMERSO";
+        case eco::Chapter::Atto5_Inverno:
+            return "ATTO V // IL NUCLEO DI GAIA";
         case eco::Chapter::Epilogo:
             return "EPILOGO // EQUILIBRIO";
     }
@@ -81,6 +85,18 @@ namespace {
     }
     if (world.hydro_machine.state == eco::MachineState::Broken) {
         return {"Riattiva la Diga del Crati", "Entra nel portale [DIGA] a nord e calibra la turbina"};
+    }
+    if (world.purifier_machine.state == eco::MachineState::Broken) {
+        return {"Attiva il Risonatore Est", "Attraversa il Ponte Bucci e calibra il Risonatore [E]"};
+    }
+    if (!world.demo_mode && !world.rosa_npc.recruited) {
+        return {"Parla con Nonna Rosa nella Diga", "Torna nella [DIGA], sali sulle piattaforme a destra e premi [E]"};
+    }
+    if (!world.demo_mode && world.thermal_machine.state == eco::MachineState::Broken) {
+        return {"Calibra lo Scambiatore Geotermico", "A Nord-Est oltre il Ponte Bucci: Scansiona [F] e Calibra [E] a 60 deg"};
+    }
+    if (!world.demo_mode && !world.gaia_terminal_unlocked) {
+        return {"Decodifica il Nucleo Sorgente GAIA", "Raggiungi il Terminale a Sud-Est oltre il Ponte Bucci e premi [E]"};
     }
     return {"Attiva il Risonatore Est", "Attraversa il Ponte Bucci e calibra il Risonatore [E]"};
 }
@@ -115,7 +131,8 @@ void DrawStoryLayer(eco::WorldContext& world) {
             story.CleanPath() &&
             world.solar_machine.state == eco::MachineState::CleanActive &&
             world.hydro_machine.state == eco::MachineState::CleanActive &&
-            world.purifier_machine.state == eco::MachineState::CleanActive;
+            world.purifier_machine.state == eco::MachineState::CleanActive &&
+            (world.demo_mode || world.thermal_machine.state == eco::MachineState::CleanActive);
 
         std::vector<std::string> ending_lines = eco::EndingText(clean_ending);
         if (ending_lines.empty()) {

@@ -4,9 +4,33 @@
 #include <vector>
 #include "core/math_types.h"   // GameMode, MachineState
 namespace eco {
-enum class Chapter : int { Prologo = 0, Atto1_Luce, Atto2_Acqua, Atto3_Codice, Epilogo };
-enum class StoryEvent : int { GameStarted = 0, FirstScan, SolarClean, SolarBypassed, ArchitectRecruited,
-    EnteredDam, HydroClean, HydroBypassed, PurifierClean, PurifierBypassed, SmogCritical, Count };
+enum class Chapter : int {
+    Prologo = 0,
+    Atto1_Luce,
+    Atto2_Acqua,
+    Atto3_Codice,
+    Atto4_Archivio,
+    Atto5_Inverno,
+    Epilogo
+};
+enum class StoryEvent : int {
+    GameStarted = 0,
+    FirstScan,
+    SolarClean,
+    SolarBypassed,
+    ArchitectRecruited,
+    EnteredDam,
+    HydroClean,
+    HydroBypassed,
+    PurifierClean,
+    PurifierBypassed,
+    SmogCritical,
+    RosaRecruited,
+    ThermalClean,
+    ThermalBypassed,
+    GaiaTerminalDecoded,
+    Count
+};
 struct DialogueLine { std::string speaker; std::string text; };
 struct Objective { std::string title; std::string hint; };
 struct StorySnapshot {
@@ -16,6 +40,10 @@ struct StorySnapshot {
     bool architect_recruited = false;
     float pollution_level = 0.0f;
     bool simulation_completed = false;
+    bool rosa_recruited = false;
+    MachineState thermal = MachineState::Broken;
+    bool gaia_terminal_unlocked = false;
+    bool demo_mode = true; // true = Demo Atti I-III (retrocompatibile con test v0.1/v0.2); false = Campagna Completa Atti I-V
 };
 // --- Contenuti (story_content.cpp, proprietario: narratore) ---
 [[nodiscard]] const char* ChapterTitle(Chapter c);

@@ -1,6 +1,7 @@
 #include "app/pause_settings_menu.h"
 
 #include <raylib.h>
+#include <rlgl.h>
 
 #include <algorithm>
 #include <array>
@@ -26,10 +27,11 @@ struct ResolutionOption {
     const char* label;
 };
 
-constexpr std::array<ResolutionOption, 3> kResolutions = {{
+constexpr std::array<ResolutionOption, 4> kResolutions = {{
+    {1024, 576, "1024 x 576 (Compatta 16:9)"},
     {1280, 720, "1280 x 720 (HD 16:9)"},
     {1600, 900, "1600 x 900 (HD+ 16:9)"},
-    {1920, 1080, "1920 x 1080 (Full HD 16:9)"}
+    {1920, 1080, "1920 x 1080 (Full HD / Max Monitor)"}
 }};
 
 struct FpsOption {
@@ -63,7 +65,7 @@ constexpr std::array<FpsOption, 4> kFpsOptions = {{
     return std::string_view(ctx.state_manager.CurrentState()->Name()) == "TitleState";
 }
 
-void AdjustSettingValue(GraphicsSettings& settings, int row, int dir) {
+void AdjustSettingValue(AppContext& ctx, GraphicsSettings& settings, int row, int dir) {
     if (dir == 0) {
         return;
     }
@@ -75,10 +77,7 @@ void AdjustSettingValue(GraphicsSettings& settings, int row, int dir) {
         case 1: { // Risoluzione finestra
             const int n = static_cast<int>(kResolutions.size());
             settings.resolution_index = (settings.resolution_index + dir + n) % n;
-            if (IsWindowReady() && !settings.fullscreen && !IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE)) {
-                const auto& res = kResolutions[static_cast<std::size_t>(settings.resolution_index)];
-                SetWindowSize(res.width, res.height);
-            }
+            ApplySafeWindowResolution(settings);
             break;
         }
         case 2: { // Limite FPS
@@ -105,6 +104,11 @@ void AdjustSettingValue(GraphicsSettings& settings, int row, int dir) {
         }
         case 6: { // Dettaglio Tutorial / Dialoghi
             settings.compact_tutorial = !settings.compact_tutorial;
+            break;
+        }
+        case 7: { // Modalita' Storia: Campagna Completa (Atti I-V) vs Demo (Atti I-III)
+            settings.demo_mode = !settings.demo_mode;
+            ctx.world.demo_mode = settings.demo_mode;
             break;
         }
         default:
@@ -135,23 +139,57 @@ void ApplyGraphicsSettingsToRuntime(const GraphicsSettings& settings) {
     }
 }
 
+void ApplySafeWindowResolution(GraphicsSettings& settings) {
+    if (!IsWindowReady()) {
+        return;
+    }
+
+    const int idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
+    const auto& res = kResolutions[static_cast<std::size_t>(idx)];
+
+    const int mon = GetCurrentMonitor();
+    const int mon_w = GetMonitorWidth(mon);
+    const int mon_h = GetMonitorHeight(mon);
+
+    // Se la risoluzione scelta eccede o uguaglia il monitor fisico (es. 1920x1080 su un monitor 1280x1024),
+    // passare una finestra decorata piu' grande dello schermo corrompe il framebuffer su Wayland/X11.
+    // Inoltre in Raylib 5.5 SetWindowSize() aggiorna CORE.Window.screen ma NON CORE.Window.render finche'
+    // non scatta il callback asincrono di GLFW, lasciando EndTextureMode() con un viewport disallineato.
+    if (mon_w > 0 && mon_h > 0 && (res.width >= mon_w || res.height >= mon_h - 32)) {
+        if (!IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE)) {
+            ToggleBorderlessWindowed();
+        }
+        settings.fullscreen = true;
+        return;
+    }
+
+    // Se eravamo in borderless/fullscreen e l'utente sceglie una risoluzione finestra che entra nel monitor:
+    if (IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE)) {
+        ToggleBorderlessWindowed();
+    }
+    if (IsWindowMaximized()) {
+        RestoreWindow();
+    }
+    settings.fullscreen = false;
+    SetWindowSize(res.width, res.height);
+}
+
 void ToggleAppFullscreen(GraphicsSettings& settings) {
     settings.fullscreen = !settings.fullscreen;
     if (!IsWindowReady()) {
         return;
     }
 
-    // ToggleBorderlessWindowed su Raylib 5.5 supporta nativamente Wayland, X11 e Windows
-    // adattando la finestra all'intero monitor senza crash di cambio mode hardware.
     const bool currently_borderless = IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE);
-    if (settings.fullscreen != currently_borderless) {
-        ToggleBorderlessWindowed();
-    }
-
-    if (!settings.fullscreen) {
-        const int idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
-        const auto& res = kResolutions[static_cast<std::size_t>(idx)];
-        SetWindowSize(res.width, res.height);
+    if (settings.fullscreen) {
+        if (!currently_borderless) {
+            ToggleBorderlessWindowed();
+        }
+    } else {
+        if (currently_borderless) {
+            ToggleBorderlessWindowed();
+        }
+        ApplySafeWindowResolution(settings);
     }
 }
 
@@ -303,8 +341,8 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
                 break;
         }
     } else {
-        // --- SOTTOMENU IMPOSTAZIONI GRAFICHE (7 Opzioni + Pulsante Indietro) ---
-        constexpr int kSettingsRowCount = 8; // 0..6 opzioni, 7 = Indietro
+        // --- SOTTOMENU IMPOSTAZIONI GRAFICHE (8 Opzioni + Pulsante Indietro) ---
+        constexpr int kSettingsRowCount = 9; // 0..7 opzioni, 8 = Indietro
         if (up_pressed) {
             settings_cursor_ = (settings_cursor_ - 1 + kSettingsRowCount) % kSettingsRowCount;
         }
@@ -312,11 +350,11 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
             settings_cursor_ = (settings_cursor_ + 1) % kSettingsRowCount;
         }
 
-        if (settings_cursor_ < 7) {
+        if (settings_cursor_ < 8) {
             if (left_pressed) {
-                AdjustSettingValue(settings, settings_cursor_, -1);
+                AdjustSettingValue(ctx, settings, settings_cursor_, -1);
             } else if (right_pressed || confirm_pressed) {
-                AdjustSettingValue(settings, settings_cursor_, +1);
+                AdjustSettingValue(ctx, settings, settings_cursor_, +1);
             }
         } else if (confirm_pressed) {
             if (opened_from_title_) {
@@ -328,16 +366,16 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
         }
 
         const int box_w = 760;
-        const int box_h = 500;
+        const int box_h = 540;
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
-        for (int i = 0; i < 7; ++i) {
+        for (int i = 0; i < 8; ++i) {
             const Rectangle row_rect{
                 static_cast<float>(bx + 28),
-                static_cast<float>(by + 68 + i * 50),
+                static_cast<float>(by + 62 + i * 47),
                 static_cast<float>(box_w - 56),
-                42.0f
+                40.0f
             };
             if (CheckCollisionPointRec(mouse, row_rect)) {
                 if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
@@ -345,20 +383,20 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
                 }
                 if (mouse_clicked) {
                     const float mid_x = row_rect.x + row_rect.width * 0.65f;
-                    AdjustSettingValue(settings, i, (mouse.x < mid_x) ? -1 : +1);
+                    AdjustSettingValue(ctx, settings, i, (mouse.x < mid_x) ? -1 : +1);
                 }
             }
         }
 
         const Rectangle back_rect{
             static_cast<float>(bx + 28),
-            static_cast<float>(by + box_h - 62),
+            static_cast<float>(by + box_h - 56),
             240.0f,
-            40.0f
+            38.0f
         };
         if (CheckCollisionPointRec(mouse, back_rect)) {
             if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
-                settings_cursor_ = 7;
+                settings_cursor_ = 8;
             }
             if (mouse_clicked) {
                 if (opened_from_title_) {
@@ -448,7 +486,7 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
     } else {
         // --- DISEGNO SOTTOMENU IMPOSTAZIONI GRAFICHE ---
         const int box_w = 760;
-        const int box_h = 500;
+        const int box_h = 540;
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
@@ -461,33 +499,35 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
         const int res_idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
         const int fps_idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
 
-        const std::array<const char*, 7> row_titles = {
+        const std::array<const char*, 8> row_titles = {
             "Modalita' Schermo [F11]",
             "Risoluzione Finestra",
             "Frequenza Fotogrammi (FPS)",
             "Particelle & Effetti Atmosferici",
             "Stile Font Interfaccia",
             "Contatore FPS a Schermo",
-            "Ritmo Dialoghi & Tutorial"
+            "Ritmo Dialoghi & Tutorial",
+            "Modalita' Storia"
         };
 
-        const std::array<const char*, 7> row_values = {
+        const std::array<const char*, 8> row_values = {
             settings.fullscreen ? "< Schermo Intero (Borderless) >" : "< Finestra Ridimensionabile >",
             kResolutions[static_cast<std::size_t>(res_idx)].label,
             kFpsOptions[static_cast<std::size_t>(fps_idx)].label,
             ParticleQualityLabel(settings.particle_quality),
             settings.clean_ttf_font ? "< Noto Sans HD (Nitido) >" : "< Pixel Bitmap (Retro) >",
             settings.show_fps ? "< Attivo (Mostra FPS) >" : "< Disattivato >",
-            settings.compact_tutorial ? "< Sintetico / Rapido >" : "< Completo (Consigliato) >"
+            settings.compact_tutorial ? "< Sintetico / Rapido >" : "< Completo (Consigliato) >",
+            ctx.world.demo_mode ? "< Demo Classica (Atti I-III) >" : "< Campagna Completa (Atti I-V) >"
         };
 
-        for (int i = 0; i < 7; ++i) {
+        for (int i = 0; i < 8; ++i) {
             const bool selected = (settings_cursor_ == i);
             const Rectangle row_rect{
                 static_cast<float>(bx + 28),
-                static_cast<float>(by + 64 + i * 50),
+                static_cast<float>(by + 62 + i * 47),
                 static_cast<float>(box_w - 56),
-                42.0f
+                40.0f
             };
 
             DrawRectangleRec(row_rect, selected ? Color{22, 54, 72, 245} : Color{14, 24, 34, 225});
@@ -499,7 +539,7 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             DrawTextShadow(
                 row_titles[static_cast<std::size_t>(i)],
                 static_cast<int>(row_rect.x) + 16,
-                static_cast<int>(row_rect.y) + 11,
+                static_cast<int>(row_rect.y) + 10,
                 16,
                 selected ? RAYWHITE : Color{190, 215, 230, 240});
 
@@ -508,18 +548,18 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             DrawTextShadow(
                 val_text,
                 static_cast<int>(row_rect.x + row_rect.width) - vw - 18,
-                static_cast<int>(row_rect.y) + 11,
+                static_cast<int>(row_rect.y) + 10,
                 16,
                 selected ? Color{130, 255, 215, 255} : Color{240, 210, 120, 240});
         }
 
         // Pulsante Indietro / Chiudi
-        const bool back_selected = (settings_cursor_ == 7);
+        const bool back_selected = (settings_cursor_ == 8);
         const Rectangle back_rect{
             static_cast<float>(bx + 28),
-            static_cast<float>(by + box_h - 62),
+            static_cast<float>(by + box_h - 56),
             240.0f,
-            40.0f
+            38.0f
         };
         DrawRectangleRec(back_rect, back_selected ? Color{28, 72, 92, 245} : Color{18, 32, 46, 235});
         DrawRectangleLinesEx(back_rect, back_selected ? 2.0f : 1.3f, back_selected ? pal::kAccentClean : SKYBLUE);

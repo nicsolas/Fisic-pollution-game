@@ -36,6 +36,7 @@ cd build && ctest --output-on-failure
 ```
 
 ### Opzioni da Riga di Comando (`eco_proto`)
+- `--demo`: avvia nella **Modalita' Demo Classica (Atti I-III)** (di default parte la **Campagna Completa Atti I-V**; commutabile anche in-game dal Menu Impostazioni!). Una copia standalone della Demo v0.2 e' sempre disponibile anche in [`demo/equilibrio_demo_v0.2`](demo/README_DEMO.md).
 - `--skip-title`: salta la schermata del titolo e avvia direttamente nell'Overworld.
 - `--scene title|intro|overworld|structure`: avvia direttamente nella scena indicata.
 - `--pollution N`: imposta il livello iniziale di smog (`0..100`, es. `--pollution 0` per vedere la Valle Guarita).
@@ -69,7 +70,8 @@ cd build && ctest --output-on-failure
 
 Il repository Git locale contiene i tag delle versioni:
 - **`v0.1.0`** — Prima versione completa (Storia + Grafica Procedurale 2.5D).
-- **`v0.2.0`** — Font TTF ad alta leggibilita' (`Noto Sans SemiBold`), Schermo Intero (`F11`) con letterbox 16:9, Menu di Pausa (`ESC`) e Menu Impostazioni Grafiche.
+- **`v0.2.0`** (e branch **`demo-v0.2`**) — Font TTF ad alta leggibilita' (`Noto Sans SemiBold`), Schermo Intero (`F11`) con letterbox 16:9, Menu di Pausa (`ESC`) e Menu Impostazioni Grafiche (congelata anche in `demo/equilibrio_demo_v0.2`).
+- **`v0.3.0`** — Fix cambio risoluzione (`1024x576`..`1920x1080` con protezione monitor e viewport OpenGL), selettore Demo vs Campagna Completa, ed espansione storia con **Atto IV ("L'Archivio Sommerso" — Nonna Rosa nella Diga)** e **Atto V ("Il Nucleo di GAIA" — Scambiatore Geotermico di Carnot + Terminale Sorgente)**.
 
 Per caricare tutto su un nuovo repository **GitHub**:
 ```bash

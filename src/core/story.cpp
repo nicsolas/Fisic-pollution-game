@@ -23,6 +23,14 @@ Chapter ChapterFor(const StorySnapshot& s) {
     if (s.simulation_completed) {
         return Chapter::Epilogo;
     }
+    if (!s.demo_mode) {
+        if (s.rosa_recruited) {
+            return Chapter::Atto5_Inverno;
+        }
+        if (s.architect_recruited && s.hydro != MachineState::Broken && s.purifier != MachineState::Broken) {
+            return Chapter::Atto4_Archivio;
+        }
+    }
     if (s.architect_recruited && s.hydro != MachineState::Broken) {
         return Chapter::Atto3_Codice;
     }
@@ -104,10 +112,23 @@ void StoryDirector::Observe(const StorySnapshot& s) {
                 Notify(StoryEvent::PurifierBypassed, s);
             }
         }
+        if (!last_.rosa_recruited && s.rosa_recruited) {
+            Notify(StoryEvent::RosaRecruited, s);
+        }
+        if (last_.thermal != s.thermal) {
+            if (s.thermal == MachineState::CleanActive) {
+                Notify(StoryEvent::ThermalClean, s);
+            } else if (s.thermal == MachineState::BypassedDirty) {
+                Notify(StoryEvent::ThermalBypassed, s);
+            }
+        }
+        if (!last_.gaia_terminal_unlocked && s.gaia_terminal_unlocked) {
+            Notify(StoryEvent::GaiaTerminalDecoded, s);
+        }
         last_ = s;
     }
 
-    // Controlli basati su soglia (possono scattare anche al primo snapshot se inquinamento >= 70)
+    // Controlli idempotenti basati su stato/soglia
     if (s.has_scanned && !EventFired(StoryEvent::FirstScan)) {
         Notify(StoryEvent::FirstScan, s);
     }
@@ -131,6 +152,17 @@ void StoryDirector::Observe(const StorySnapshot& s) {
         Notify(StoryEvent::PurifierClean, s);
     } else if (s.purifier == MachineState::BypassedDirty && !EventFired(StoryEvent::PurifierBypassed)) {
         Notify(StoryEvent::PurifierBypassed, s);
+    }
+    if (s.rosa_recruited && !EventFired(StoryEvent::RosaRecruited)) {
+        Notify(StoryEvent::RosaRecruited, s);
+    }
+    if (s.thermal == MachineState::CleanActive && !EventFired(StoryEvent::ThermalClean)) {
+        Notify(StoryEvent::ThermalClean, s);
+    } else if (s.thermal == MachineState::BypassedDirty && !EventFired(StoryEvent::ThermalBypassed)) {
+        Notify(StoryEvent::ThermalBypassed, s);
+    }
+    if (s.gaia_terminal_unlocked && !EventFired(StoryEvent::GaiaTerminalDecoded)) {
+        Notify(StoryEvent::GaiaTerminalDecoded, s);
     }
     if (std::isfinite(s.pollution_level) && s.pollution_level >= 70.0f) {
         Notify(StoryEvent::SmogCritical, s);
@@ -197,7 +229,8 @@ bool StoryDirector::EventFired(StoryEvent e) const noexcept {
 bool StoryDirector::CleanPath() const noexcept {
     return !EventFired(StoryEvent::SolarBypassed) &&
            !EventFired(StoryEvent::HydroBypassed) &&
-           !EventFired(StoryEvent::PurifierBypassed);
+           !EventFired(StoryEvent::PurifierBypassed) &&
+           !EventFired(StoryEvent::ThermalBypassed);
 }
 
 } // namespace eco

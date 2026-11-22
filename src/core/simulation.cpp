@@ -440,6 +440,7 @@ StructureStepResult StructureSim::Step(
 }
 
 void WorldContext::Reset() {
+    const bool keep_demo = demo_mode;
     ecosystem.Reset();
     players = PlayerManager{};
     overworld = OverworldSim{};
@@ -453,9 +454,22 @@ void WorldContext::Reset() {
     purifier_machine.clean_pollution_reduction = 100.0f;
     purifier_machine.dirty_energy_reward = 30.0f;
     purifier_machine.dirty_pollution_increase = 35.0f;
+    thermal_machine = Machine::CreateDefaultSolar({1128.0f, 216.0f});
+    thermal_machine.target_param = 60.0f;
+    thermal_machine.current_param = 15.0f;
+    thermal_machine.clean_energy_reward = 25.0f;
+    thermal_machine.clean_pollution_reduction = 35.0f;
+    thermal_machine.dirty_energy_reward = 25.0f;
+    thermal_machine.dirty_pollution_increase = 30.0f;
     calibration_modal.Reset();
     calibrating_purifier = false;
+    calibrating_thermal = false;
     architect_npc.Reset();
+    rosa_npc.Reset({1056.0f, 274.0f});
+    rosa_npc.last_dialogue = "Nonna Rosa: Sali qui sull'impalcatura della Diga quando avrai riattivato la Turbina!";
+    gaia_terminal_pos = {1128.0f, 648.0f};
+    gaia_terminal_unlocked = false;
+    demo_mode = keep_demo;
     last_scan = EmpiricalScanReading{};
     sim_time = 0.0f;
     scan_pulse_timer = 0.0f;
@@ -479,12 +493,26 @@ void WorldContext::EnsureInitialized() {
             purifier_machine.dirty_energy_reward = 30.0f;
             purifier_machine.dirty_pollution_increase = 35.0f;
         }
+        thermal_machine.pos = {1128.0f, 216.0f};
+        thermal_machine.target_param = 60.0f;
+        if (thermal_machine.state == MachineState::Broken &&
+            thermal_machine.current_param == 0.0f) {
+            thermal_machine.current_param = 15.0f;
+            thermal_machine.clean_energy_reward = 25.0f;
+            thermal_machine.clean_pollution_reduction = 35.0f;
+            thermal_machine.dirty_energy_reward = 25.0f;
+            thermal_machine.dirty_pollution_increase = 30.0f;
+        }
     }
     if (!structure.initialized) {
         structure.InitializeDefault();
     }
     if (architect_npc.last_dialogue.empty()) {
         architect_npc.Reset(architect_npc.pos);
+    }
+    if (rosa_npc.last_dialogue.empty()) {
+        rosa_npc.Reset({1056.0f, 274.0f});
+        rosa_npc.last_dialogue = "Nonna Rosa: Sali qui sull'impalcatura della Diga quando avrai riattivato la Turbina!";
     }
 }
 
@@ -497,15 +525,25 @@ const Machine& WorldContext::ActiveMachine() const noexcept {
 }
 
 Machine& WorldContext::ModalTargetMachine() noexcept {
-    if (current_mode == GameMode::Overworld && calibrating_purifier) {
-        return purifier_machine;
+    if (current_mode == GameMode::Overworld) {
+        if (calibrating_thermal) {
+            return thermal_machine;
+        }
+        if (calibrating_purifier) {
+            return purifier_machine;
+        }
     }
     return ActiveMachine();
 }
 
 const Machine& WorldContext::ModalTargetMachine() const noexcept {
-    if (current_mode == GameMode::Overworld && calibrating_purifier) {
-        return purifier_machine;
+    if (current_mode == GameMode::Overworld) {
+        if (calibrating_thermal) {
+            return thermal_machine;
+        }
+        if (calibrating_purifier) {
+            return purifier_machine;
+        }
     }
     return ActiveMachine();
 }
@@ -537,11 +575,17 @@ void WorldContext::UpdateProximityPrompts() noexcept {
     if (current_mode == GameMode::Overworld) {
         solar_machine.UpdateProximity(players);
         purifier_machine.UpdateProximity(players);
+        if (!demo_mode && rosa_npc.recruited) {
+            thermal_machine.UpdateProximity(players);
+        } else {
+            thermal_machine.prompt_visible = false;
+        }
         hydro_machine.prompt_visible = false;
     } else {
         hydro_machine.UpdateProximity(players);
         solar_machine.prompt_visible = false;
         purifier_machine.prompt_visible = false;
+        thermal_machine.prompt_visible = false;
     }
 }
 
@@ -549,12 +593,20 @@ EmpiricalScanReading WorldContext::TriggerScan(int player_id) noexcept {
     if (const Player* p = players.GetPlayer(player_id); p != nullptr && p->active) {
         scan_pulse_timer = 0.85f;
         scan_pulse_origin = p->Center();
-        if (current_mode == GameMode::Overworld &&
-            ecosystem.architect_recruited &&
-            purifier_machine.DistanceToPlayer(*p) < solar_machine.DistanceToPlayer(*p) &&
-            purifier_machine.DistanceToPlayer(*p) <= kDefaultScannerRange) {
-            last_scan = PerformEmpiricalScan(player_id, players, purifier_machine);
-            return last_scan;
+        if (current_mode == GameMode::Overworld && ecosystem.architect_recruited) {
+            const float d_solar = solar_machine.DistanceToPlayer(*p);
+            const float d_purifier = purifier_machine.DistanceToPlayer(*p);
+            const float d_thermal = thermal_machine.DistanceToPlayer(*p);
+            if (!demo_mode && rosa_npc.recruited &&
+                d_thermal <= kDefaultScannerRange &&
+                d_thermal < d_solar && d_thermal <= d_purifier) {
+                last_scan = PerformEmpiricalScan(player_id, players, thermal_machine);
+                return last_scan;
+            }
+            if (d_purifier < d_solar && d_purifier <= kDefaultScannerRange) {
+                last_scan = PerformEmpiricalScan(player_id, players, purifier_machine);
+                return last_scan;
+            }
         }
     }
     last_scan = PerformEmpiricalScan(player_id, players, ActiveMachine());
@@ -581,6 +633,10 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         snap.architect_recruited = ecosystem.architect_recruited;
         snap.pollution_level = ecosystem.pollution_level;
         snap.simulation_completed = simulation_completed;
+        snap.rosa_recruited = rosa_npc.recruited;
+        snap.thermal = thermal_machine.state;
+        snap.gaia_terminal_unlocked = gaia_terminal_unlocked;
+        snap.demo_mode = demo_mode;
         return snap;
     };
 
@@ -621,24 +677,29 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
             if (in.cancel_pressed) {
                 calibration_modal.Cancel();
                 calibrating_purifier = false;
+                calibrating_thermal = false;
                 break;
             }
             if (in.bypass_pressed) {
                 calibration_modal.TriggerBypass(machine, ecosystem);
-                if (calibrating_purifier) {
+                if (calibrating_purifier && demo_mode) {
                     simulation_completed = true;
                 }
                 calibrating_purifier = false;
+                calibrating_thermal = false;
                 break;
             }
             if (in.confirm_pressed) {
                 if (calibration_modal.ConfirmClean(machine, ecosystem)) {
                     if (calibrating_purifier) {
-                        simulation_completed = true;
+                        if (demo_mode) {
+                            simulation_completed = true;
+                        }
                         architect_npc.last_dialogue =
                             "MATRICE PURIFICATA (0% Smog): L'ecosistema e le leggi fisiche sono in equilibrio perfetto!";
                     }
                     calibrating_purifier = false;
+                    calibrating_thermal = false;
                 }
                 break;
             }
@@ -665,7 +726,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
     // 5. Update machine proximity prompts for active scene
     UpdateProximityPrompts();
 
-    // 6. Handle interaction presses (Machine modal, Purifier modal, or Architect NPC recruitment)
+    // 6. Handle interaction presses (Machine modal, Purifier modal, Thermal modal, Rosa NPC, GAIA Terminal, Architect NPC)
     Machine& machine = ActiveMachine();
     for (const Player* p : players.ActivePlayers()) {
         if (p == nullptr) {
@@ -677,6 +738,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         }
         if (machine.IsPlayerInRange(*p)) {
             calibrating_purifier = false;
+            calibrating_thermal = false;
             calibration_modal.OpenFor(machine);
             break;
         }
@@ -684,7 +746,39 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
             ecosystem.architect_recruited &&
             purifier_machine.IsPlayerInRange(*p)) {
             calibrating_purifier = true;
+            calibrating_thermal = false;
             calibration_modal.OpenFor(purifier_machine);
+            break;
+        }
+        if (current_mode == GameMode::Overworld &&
+            !demo_mode &&
+            rosa_npc.recruited &&
+            thermal_machine.IsPlayerInRange(*p)) {
+            calibrating_thermal = true;
+            calibrating_purifier = false;
+            calibration_modal.OpenFor(thermal_machine);
+            break;
+        }
+        if (current_mode == GameMode::Overworld &&
+            !demo_mode &&
+            rosa_npc.recruited &&
+            thermal_machine.state != MachineState::Broken &&
+            (p->Center() - gaia_terminal_pos).Length() <= 78.0f) {
+            gaia_terminal_unlocked = true;
+            simulation_completed = true;
+            break;
+        }
+        if (current_mode == GameMode::Structure &&
+            !demo_mode &&
+            rosa_npc.IsPlayerInRange(*p)) {
+            if (hydro_machine.state != MachineState::Broken) {
+                rosa_npc.recruited = true;
+                rosa_npc.last_dialogue =
+                    "Nonna Rosa: Ecco le chiavi dello Scambiatore Geotermico nel Settore Est!";
+            } else {
+                rosa_npc.last_dialogue =
+                    "Nonna Rosa: Prima riattiva la Turbina qui sotto, poi ti daro' i codici geotermici!";
+            }
             break;
         }
         if (current_mode == GameMode::Overworld && architect_npc.IsPlayerInRange(*p)) {
@@ -692,13 +786,17 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         }
     }
 
-    if ((solar_machine.state == MachineState::CleanActive &&
-         hydro_machine.state == MachineState::CleanActive &&
-         purifier_machine.state == MachineState::CleanActive &&
-         ecosystem.pollution_level <= 0.01f) ||
-        (solar_machine.state != MachineState::Broken &&
-         hydro_machine.state != MachineState::Broken &&
-         purifier_machine.state != MachineState::Broken)) {
+    if (demo_mode) {
+        if ((solar_machine.state == MachineState::CleanActive &&
+             hydro_machine.state == MachineState::CleanActive &&
+             purifier_machine.state == MachineState::CleanActive &&
+             ecosystem.pollution_level <= 0.01f) ||
+            (solar_machine.state != MachineState::Broken &&
+             hydro_machine.state != MachineState::Broken &&
+             purifier_machine.state != MachineState::Broken)) {
+            simulation_completed = true;
+        }
+    } else if (gaia_terminal_unlocked) {
         simulation_completed = true;
     }
 
