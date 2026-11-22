@@ -23,7 +23,9 @@ inline constexpr float kPlayerHeight = 30.0f;
 inline constexpr float kTopDownSpeed = 220.0f;
 inline constexpr float kSideMoveSpeed = 210.0f;
 inline constexpr float kGravityAccel = 1200.0f;
-inline constexpr float kJumpForce = 480.0f;
+// 540 px/s gives ~121.5 px of theoretical clearance (30 px player + 48 px half-step),
+// avoiding impossible edge timing on the narrower tower galleries.
+inline constexpr float kJumpForce = 540.0f;
 inline constexpr float kMaxFallSpeed = 900.0f;
 inline constexpr float kMaxVerticalSubStep = 8.0f;
 inline constexpr float kCoyoteTimeDuration = 0.15f;

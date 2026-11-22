@@ -794,6 +794,22 @@ void TestZoneBordersFlatMemoryAndGuidance() {
         CHECK(smap.MemoryBytes() == sz);
     }
 
+    // Pendulum Tower: broad, overlapping gallery chain from spawn to the central mechanism.
+    const eco::Tilemap& pendulum =
+        world.structure.tilemaps[static_cast<std::size_t>(eco::StructureId::PendulumTower)];
+    for (const auto& segment : std::array<std::array<int, 3>, 9>{{
+        {{15, 5, 9}}, {{14, 8, 12}}, {{13, 12, 16}}, {{12, 16, 20}},
+        {{11, 19, 24}}, {{10, 18, 24}}, {{9, 17, 22}}, {{8, 10, 20}},
+        {{7, 21, 27}}
+    }}) {
+        for (int c = segment[1]; c <= segment[2]; ++c) {
+            CHECK(pendulum.GetTile(segment[0], c) == eco::TileId::Wall);
+        }
+    }
+    CHECK(pendulum.GetTile(7, 15) == eco::TileId::Walkable);
+    CHECK(pendulum.GetTile(6, 3) == eco::TileId::Wall);
+    CHECK(pendulum.GetTile(6, 27) == eco::TileId::Wall);
+
     // 2. Verify 5 DistrictGateways metadata and solid border walls at rows 11..12 and 23..24
     CHECK(world.overworld.gateways.size() == eco::Tilemap::kOverworldGatewayCount);
     for (const auto& gw : world.overworld.gateways) {

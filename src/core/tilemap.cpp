@@ -118,16 +118,18 @@ void SetCellFlat(
     SetCellFlat(cells, kRows, kCols, 15, 2, TileId::ExitPortal);
     SetCellFlat(cells, kRows, kCols, 15, 3, TileId::ExitPortal);
 
-    // Percorso principale continuo: scalini alternati e ballatoi con salto verticale <= 2 tile.
-    // Aggiunti gradini intermedi per evitare zone morte e rendere leggibile la salita.
-    FillRectFlat(cells, kRows, kCols, 15, 15, 7, 8, TileId::Wall);   // Gradino d'ingresso
-    FillRectFlat(cells, kRows, kCols, 14, 14, 9, 16, TileId::Wall);  // Tier 1
-    FillRectFlat(cells, kRows, kCols, 13, 13, 16, 17, TileId::Wall); // Passaggio verso Est
-    FillRectFlat(cells, kRows, kCols, 12, 12, 17, 23, TileId::Wall); // Tier 2
-    FillRectFlat(cells, kRows, kCols, 11, 11, 15, 16, TileId::Wall); // Gradino centrale
-    FillRectFlat(cells, kRows, kCols, 10, 10, 11, 18, TileId::Wall); // Tier 3
-    FillRectFlat(cells, kRows, kCols, 9, 9, 9, 10, TileId::Wall);    // Passaggio verso il nucleo
-    FillRectFlat(cells, kRows, kCols, 8, 8, 10, 20, TileId::Wall);   // Tier 4 Central Pendulum Gallery
+    // Percorso principale continuo a scalini larghi. Ogni gradino ha ampio margine
+    // orizzontale e sovrapposizione con il successivo per rendere la salita leggibile.
+    FillRectFlat(cells, kRows, kCols, 15, 15, 5, 9, TileId::Wall);   // Gradino d'ingresso
+    FillRectFlat(cells, kRows, kCols, 14, 14, 8, 12, TileId::Wall);  // Primo ripiano
+    FillRectFlat(cells, kRows, kCols, 13, 13, 12, 16, TileId::Wall); // Svolta centrale
+    FillRectFlat(cells, kRows, kCols, 12, 12, 16, 20, TileId::Wall); // Ripiano centrale
+    FillRectFlat(cells, kRows, kCols, 11, 11, 19, 24, TileId::Wall); // Svolta verso Est
+    FillRectFlat(cells, kRows, kCols, 10, 10, 18, 24, TileId::Wall); // Corridoio superiore
+    FillRectFlat(cells, kRows, kCols, 9, 9, 17, 22, TileId::Wall);   // Avvicinamento al nucleo
+    FillRectFlat(cells, kRows, kCols, 8, 8, 10, 20, TileId::Wall);   // Galleria del Pendolo
+    FillRectFlat(cells, kRows, kCols, 7, 7, 3, 9, TileId::Wall);     // Gradino reliquia Ovest
+    FillRectFlat(cells, kRows, kCols, 7, 7, 21, 27, TileId::Wall);   // Gradino reliquia Est
     FillRectFlat(cells, kRows, kCols, 6, 6, 3, 9, TileId::Wall);     // Tier 5 West Belfry (Relic)
     FillRectFlat(cells, kRows, kCols, 6, 6, 21, 27, TileId::Wall);   // Tier 5 East Belfry (Relic)
 
