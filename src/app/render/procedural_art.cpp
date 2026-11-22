@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <array>
 #include <vector>
 
 #include "app/render/palette.h"
@@ -1515,35 +1516,45 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
     }
 }
 
-// =============================================================================
-// Overworld Props — Flora Diversificata, Lanterne, Bio-Cristalli & Stele
-// =============================================================================
-void DrawOverworldProceduralProps(const eco::WorldContext& world) {
+namespace {
+
+// Prop statici dell'Overworld: calcolati UNA sola volta (zero scansioni di mappa e zero
+// allocazioni durante il loop di gioco); il disegno filtra solo per viewport.
+struct StaticProp {
+    float x = 0.0f;
+    float y = 0.0f;
+    float scale = 1.0f;
+    std::uint32_t h = 0;
+    unsigned roll = 0;
+    eco::ZoneId zone = eco::ZoneId::DawnTerraces;
+};
+
+std::vector<StaticProp> g_prop_cache;
+int g_prop_cache_rows = -1;
+int g_prop_cache_cols = -1;
+eco::Vec2 g_prop_cache_spawn{-1.0f, -1.0f};
+
+void RebuildPropCacheIfNeeded(const eco::WorldContext& world) {
     const eco::Tilemap& tilemap = world.overworld.tilemap;
-    const float poll = world.ecosystem.PollutionRatio();
-    const float health = 1.0f - poll;
-    const float sim_time = world.sim_time;
-    const eco::Vec2 cam = world.overworld.camera_target;
-    const float half_w = static_cast<float>(eco::kWindowWidth) * 0.5f + 120.0f;
-    const float half_h = static_cast<float>(eco::kWindowHeight) * 0.5f + 120.0f;
+    if (g_prop_cache_rows == tilemap.Rows() && g_prop_cache_cols == tilemap.Cols() &&
+        g_prop_cache_spawn.x == world.overworld.spawn_point.x &&
+        g_prop_cache_spawn.y == world.overworld.spawn_point.y) {
+        return;
+    }
+    g_prop_cache_rows = tilemap.Rows();
+    g_prop_cache_cols = tilemap.Cols();
+    g_prop_cache_spawn = world.overworld.spawn_point;
+    g_prop_cache.clear();
+    g_prop_cache.reserve(256);
 
-    const int min_col = std::max(1, static_cast<int>(std::floor((cam.x - half_w) / tilemap.TileSize())));
-    const int max_col = std::min(tilemap.Cols() - 2, static_cast<int>(std::ceil((cam.x + half_w) / tilemap.TileSize())));
-    const int min_row = std::max(1, static_cast<int>(std::floor((cam.y - half_h) / tilemap.TileSize())));
-    const int max_row = std::min(tilemap.Rows() - 2, static_cast<int>(std::ceil((cam.y + half_h) / tilemap.TileSize())));
-
-    // 1. Generazione deterministica su griglia diradata (passo 3x3) con filtro anti-sovrapposizione
-    for (int r = min_row; r <= max_row; ++r) {
-        for (int c = min_col; c <= max_col; ++c) {
-            // Spaziatura naturale con jitter deterministico per non affollare i corridoi
+    for (int r = 1; r <= tilemap.Rows() - 2; ++r) {
+        for (int c = 1; c <= tilemap.Cols() - 2; ++c) {
             if (((r * 7 + c * 11) % 13) != 0) {
                 continue;
             }
-            const eco::TileId id = tilemap.GetTile(r, c);
-            if (IsTileSolidForProp(id)) {
+            if (IsTileSolidForProp(tilemap.GetTile(r, c))) {
                 continue;
             }
-            // Non piazzare alberi se circondati da muri stretti (preserva leggibilita' dei passaggi)
             int solid_neighbors = 0;
             for (int dr = -1; dr <= 1; ++dr) {
                 for (int dc = -1; dc <= 1; ++dc) {
@@ -1561,22 +1572,163 @@ void DrawOverworldProceduralProps(const eco::WorldContext& world) {
             if (solid_neighbors >= 5) {
                 continue;
             }
-
             const std::uint32_t h = Hash2(c, r, 409);
             const eco::Vec2 center = tilemap.TileCenter(r, c);
             const eco::Vec2 pos{
                 center.x + static_cast<float>(static_cast<int>(h % 13u) - 6),
-                center.y + static_cast<float>(static_cast<int>((h >> 4) % 13u) - 6)
-            };
+                center.y + static_cast<float>(static_cast<int>((h >> 4) % 13u) - 6)};
             if (!IsPropPositionSafe(world, pos)) {
                 continue;
             }
+            // Mai dentro/attorno ai varchi monumentali tra distretti
+            bool near_gateway = false;
+            for (const auto& gw : world.overworld.gateways) {
+                if (pos.DistanceTo(gw.world_center) < 150.0f) {
+                    near_gateway = true;
+                    break;
+                }
+            }
+            if (near_gateway) {
+                continue;
+            }
+            StaticProp p;
+            p.x = pos.x;
+            p.y = pos.y;
+            p.scale = 0.88f + static_cast<float>((h >> 8) % 25u) * 0.01f;
+            p.h = h;
+            p.roll = (h >> 14) % 12u;
+            p.zone = tilemap.DistrictAtTile(r, c);
+            g_prop_cache.push_back(p);
+        }
+    }
+}
 
-            const eco::ZoneId zone = tilemap.DistrictAtTile(r, c);
-            const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
-            const float scale = 0.88f + static_cast<float>((h >> 8) % 25u) * 0.01f;
-            const unsigned roll = (h >> 14) % 12u;
+// Targa direzionale appesa ai pilastri del varco (testo non allocante)
+void DrawGatewayPlaque(float cx, float y, const char* text, Color accent) {
+    const int tw = MeasureUiText(text, 11);
+    const int bw = tw + 16;
+    const int bx = static_cast<int>(cx) - bw / 2;
+    const int by = static_cast<int>(y);
+    DrawRectangle(bx + 2, by + 2, bw, 18, Color{0, 0, 0, 100});
+    DrawRectangle(bx, by, bw, 18, Color{16, 22, 32, 238});
+    DrawRectangleLines(bx, by, bw, 18, pal::WithAlpha(pal::kBronze, 230));
+    DrawRectangle(bx + 2, by + 2, 3, 14, accent);
+    DrawRectangle(bx + bw - 5, by + 2, 3, 14, accent);
+    DrawTextShadow(text, bx + 8, by + 3, 11, pal::kParchmentText);
+}
 
+void DrawGatewayPillar(float cx, float base_y, float height, Color stone, Color accent, float pulse) {
+    const Color dark = pal::ShiftBrightness(stone, -34);
+    const Color hi = pal::ShiftBrightness(stone, 26);
+    DrawEllipse(static_cast<int>(cx + 4.0f), static_cast<int>(base_y + 2.0f), 17.0f, 6.0f, Color{0, 0, 0, 110});
+    DrawRectangle(static_cast<int>(cx - 15.0f), static_cast<int>(base_y - 10.0f), 30, 12, dark);
+    DrawRectangle(static_cast<int>(cx - 11.0f), static_cast<int>(base_y - height), 22, static_cast<int>(height - 8.0f), stone);
+    DrawRectangle(static_cast<int>(cx + 4.0f), static_cast<int>(base_y - height), 7, static_cast<int>(height - 8.0f), dark);
+    DrawLine(static_cast<int>(cx - 11.0f), static_cast<int>(base_y - height), static_cast<int>(cx - 11.0f), static_cast<int>(base_y - 10.0f), hi);
+    // scanalature e fasce bronzo
+    DrawLine(static_cast<int>(cx - 4.0f), static_cast<int>(base_y - height + 8.0f), static_cast<int>(cx - 4.0f), static_cast<int>(base_y - 14.0f), hi);
+    DrawRectangle(static_cast<int>(cx - 13.0f), static_cast<int>(base_y - height + 12.0f), 26, 4, pal::kBronze);
+    DrawRectangle(static_cast<int>(cx - 13.0f), static_cast<int>(base_y - 22.0f), 26, 4, pal::kBronze);
+    // capitello + lanterna del distretto di destinazione
+    DrawRectangle(static_cast<int>(cx - 15.0f), static_cast<int>(base_y - height - 5.0f), 30, 7, hi);
+    DrawRectangleLines(static_cast<int>(cx - 15.0f), static_cast<int>(base_y - height - 5.0f), 30, 7, pal::kBronzeDark);
+    const float ly = base_y - height - 17.0f;
+    DrawCircleV({cx, ly}, 15.0f * pulse, pal::WithAlpha(accent, 58));
+    DrawCircleV({cx, ly}, 6.2f, accent);
+    DrawCircleV({cx, ly}, 2.8f, pal::kStoneIvory);
+    DrawCircleLines(static_cast<int>(cx), static_cast<int>(ly), 6.2f, pal::kBronzeBright);
+}
+
+void DrawDistrictGateway(const eco::DistrictGateway& gw, const eco::WorldContext& world) {
+    const float poll = world.ecosystem.PollutionRatio();
+    const float tile = eco::kTileSize;
+    const float pulse = 0.78f + 0.22f * std::sin(world.sim_time * 2.6f + gw.world_center.x * 0.01f);
+    const pal::DistrictPalette& to_pal = pal::GetDistrictPalette(gw.to_zone);
+    const pal::DistrictPalette& from_pal = pal::GetDistrictPalette(gw.from_zone);
+    const Color to_acc = to_pal.ambient_accent;
+    const Color from_acc = from_pal.ambient_accent;
+    const Color stone = pal::WorldColor(to_pal.wall_top_sick, to_pal.wall_top_healthy, poll);
+    const bool locked = gw.requires_bridge_unlock && !world.ecosystem.architect_recruited;
+
+    const float x0 = static_cast<float>(gw.tile_min.col) * tile;
+    const float x1 = static_cast<float>(gw.tile_max.col + 1) * tile;
+    const float y0 = static_cast<float>(gw.tile_min.row) * tile;
+    const float y1 = static_cast<float>(gw.tile_max.row + 1) * tile;
+
+    if (gw.IsHorizontalWall()) {
+        // Arco monumentale: pilastri a Ovest/Est, architrave con lanterne bicolore, stele direzionali N/S
+        const float h = (y1 - y0) + 34.0f;
+        const float base_y = y1 + 2.0f;
+        DrawGatewayPillar(x0 - 6.0f, base_y, h, stone, from_acc, pulse);
+        DrawGatewayPillar(x1 + 6.0f, base_y, h, stone, to_acc, pulse);
+        // Architrave
+        const float top = base_y - h - 4.0f;
+        DrawRectangle(static_cast<int>(x0 - 18.0f), static_cast<int>(top - 7.0f), static_cast<int>(x1 - x0 + 36.0f), 12,
+                      pal::ShiftBrightness(stone, 14));
+        DrawRectangleLines(static_cast<int>(x0 - 18.0f), static_cast<int>(top - 7.0f), static_cast<int>(x1 - x0 + 36.0f), 12, pal::kBronze);
+        DrawRectangleGradientH(static_cast<int>(x0), static_cast<int>(top - 4.0f), static_cast<int>(x1 - x0), 6,
+                               pal::WithAlpha(from_acc, 220), pal::WithAlpha(to_acc, 220));
+        // Tappeto di luce sul passaggio, sfumato verso la zona di destinazione
+        DrawRectangleGradientV(static_cast<int>(x0), static_cast<int>(y0), static_cast<int>(x1 - x0), static_cast<int>(y1 - y0),
+                               pal::WithAlpha(to_acc, static_cast<unsigned char>(42.0f * pulse)), pal::WithAlpha(from_acc, 34));
+        // Stele direzionali: sopra (verso nord) e sotto (verso sud)
+        const float mid_x = (x0 + x1) * 0.5f;
+        // La stele di andata va sul lato da cui si parte: 'N ->' sul lato sud, 'S ->' sul lato nord
+        const bool go_north = (gw.signpost_label[0] == 'N');
+        DrawGatewayPlaque(mid_x, go_north ? (y1 + 18.0f) : (top - 30.0f), gw.signpost_label, to_acc);
+        DrawGatewayPlaque(mid_x, go_north ? (top - 30.0f) : (y1 + 18.0f), gw.reverse_label, from_acc);
+    } else {
+        // Varco verticale (Ponte degli Archi): pilastri a Nord/Sud, targhe a Est/Ovest
+        const float mid_y = (y0 + y1) * 0.5f;
+        const Color acc_east = locked ? pal::kAccentWarn : pal::kJadeGlow;
+        DrawGatewayPillar(x0 - 22.0f, y0 - 8.0f, 54.0f, stone, locked ? pal::kAccentWarn : from_acc, pulse);
+        DrawGatewayPillar(x0 - 22.0f, y1 + 22.0f, 54.0f, stone, locked ? pal::kAccentWarn : to_acc, pulse);
+        DrawGatewayPillar(x1 + 22.0f, y0 - 8.0f, 54.0f, stone, locked ? pal::kAccentWarn : from_acc, pulse);
+        DrawGatewayPillar(x1 + 22.0f, y1 + 22.0f, 54.0f, stone, locked ? pal::kAccentWarn : to_acc, pulse);
+        // 'E ->' sul lato ovest (si parte da li'), ritorno sul lato est
+        DrawGatewayPlaque(x0 - 70.0f, mid_y - 9.0f, gw.signpost_label, acc_east);
+        DrawGatewayPlaque(x1 + 70.0f, mid_y - 9.0f, gw.reverse_label, from_acc);
+    }
+}
+
+} // namespace
+
+// =============================================================================
+// Overworld Props — Flora Diversificata, Lanterne, Bio-Cristalli & Stele
+// =============================================================================
+void DrawOverworldProceduralProps(const eco::WorldContext& world) {
+    const float poll = world.ecosystem.PollutionRatio();
+    const float health = 1.0f - poll;
+    const float sim_time = world.sim_time;
+    const eco::Vec2 cam = world.overworld.camera_target;
+    const float half_w = static_cast<float>(eco::kWindowWidth) * 0.5f + 120.0f;
+    const float half_h = static_cast<float>(eco::kWindowHeight) * 0.5f + 120.0f;
+
+    RebuildPropCacheIfNeeded(world);
+
+    // 0. Varchi monumentali tra i distretti (DistrictGateway) — sotto flora/prop
+    for (const auto& gw : world.overworld.gateways) {
+        if (std::fabs(gw.world_center.x - cam.x) > half_w + 160.0f ||
+            std::fabs(gw.world_center.y - cam.y) > half_h + 160.0f) {
+            continue;
+        }
+        DrawDistrictGateway(gw, world);
+    }
+
+    // 1. Prop statici pre-calcolati: solo filtro viewport
+    for (const StaticProp& sp : g_prop_cache) {
+        if (std::fabs(sp.x - cam.x) > half_w || std::fabs(sp.y - cam.y) > half_h) {
+            continue;
+        }
+        const float px = sp.x;
+        const float py = sp.y;
+        const std::uint32_t h = sp.h;
+        const float scale = sp.scale;
+        const unsigned roll = sp.roll;
+        const eco::ZoneId zone = sp.zone;
+        const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
+        const eco::Vec2 pos{px, py};
+        {
             if (roll == 0u) {
                 DrawBioCrystalNode(pos.x, pos.y, sim_time, poll, dp.ambient_accent);
             } else if (roll == 1u) {
@@ -1696,9 +1848,17 @@ void DrawStructureProceduralBackdropAndMap(
     const Color plat_rim = pal::WorldColor(sp.plat_rim_sick, sp.plat_rim_healthy, poll);
     const Color accent = pal::WorldColor(sp.accent_sick, sp.accent_healthy, poll);
 
-    for (int r = 0; r < tilemap.Rows(); ++r) {
+    // Viewport culling stretto: solo le tile visibili (margine 2 tile per ombre/lanterne)
+    const float ts = tilemap.TileSize();
+    const int s_min_col = std::max(0, static_cast<int>(std::floor((camera_target.x - static_cast<float>(eco::kWindowWidth) * 0.5f) / ts)) - 2);
+    const int s_max_col = static_cast<int>(std::ceil((camera_target.x + static_cast<float>(eco::kWindowWidth) * 0.5f) / ts)) + 2;
+    const int s_min_row = std::max(0, static_cast<int>(std::floor((camera_target.y - static_cast<float>(eco::kWindowHeight) * 0.5f) / ts)) - 2);
+    const int s_max_row = std::min(tilemap.Rows() - 1, static_cast<int>(std::ceil((camera_target.y + static_cast<float>(eco::kWindowHeight) * 0.5f) / ts)) + 2);
+
+    for (int r = s_min_row; r <= s_max_row; ++r) {
         const int row_cols = tilemap.RowCols(r);
-        for (int c = 0; c < row_cols; ++c) {
+        const int c_last = std::min(s_max_col, row_cols - 1);
+        for (int c = s_min_col; c <= c_last; ++c) {
             const eco::Rect tr = tilemap.TileRect(r, c);
             const int rx = static_cast<int>(tr.x);
             const int ry = static_cast<int>(tr.y);
@@ -1776,16 +1936,27 @@ void DrawStructureProceduralBackdropAndMap(
     }
 
     // 3. Stele diegetica d'uscita posizionata dinamicamente sopra i tile ExitPortal
-    const std::vector<eco::TileCoord> exits = tilemap.FindTiles(eco::TileId::ExitPortal);
-    if (!exits.empty()) {
-        float sum_x = 0.0f;
-        int min_exit_r = exits[0].row;
-        for (const auto& ec : exits) {
-            sum_x += tilemap.TileCenter(ec.row, ec.col).x;
-            min_exit_r = std::min(min_exit_r, ec.row);
+    // Posizione stele d'uscita: calcolata una sola volta per struttura (zero allocazioni per-frame)
+    struct ExitCache { bool ready = false; float x = 0.0f; float y = 0.0f; };
+    static std::array<ExitCache, static_cast<std::size_t>(eco::StructureId::Count)> exit_cache{};
+    ExitCache& ec_slot = exit_cache[static_cast<std::size_t>(sid) % exit_cache.size()];
+    if (!ec_slot.ready) {
+        const std::vector<eco::TileCoord> exits = tilemap.FindTiles(eco::TileId::ExitPortal);
+        if (!exits.empty()) {
+            float sum_x = 0.0f;
+            int min_exit_r = exits[0].row;
+            for (const auto& ec : exits) {
+                sum_x += tilemap.TileCenter(ec.row, ec.col).x;
+                min_exit_r = std::min(min_exit_r, ec.row);
+            }
+            ec_slot.x = sum_x / static_cast<float>(exits.size());
+            ec_slot.y = static_cast<float>(min_exit_r) * tilemap.TileSize() - 18.0f;
+            ec_slot.ready = true;
         }
-        const float ex = sum_x / static_cast<float>(exits.size());
-        const float ey = static_cast<float>(min_exit_r) * tilemap.TileSize() - 18.0f;
+    }
+    if (ec_slot.ready) {
+        const float ex = ec_slot.x;
+        const float ey = ec_slot.y;
         const char* exit_label = "CONCA DI MERIDIA";
         if (sid == eco::StructureId::PendulumTower) {
             exit_label = "ALTOPIANO [USCITA]";

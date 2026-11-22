@@ -125,3 +125,11 @@
 - **Selezione Monitor (`pause_settings_menu.*`)**: selettore `Monitor Schermo Intero` con `SetWindowMonitor` (fix Wayland/X11 multi-monitor) e persistenza in `saves/settings.cfg`.
 - **Selezione GPU (`src/app/gpu_selector.*`, `main.cpp`)**: rilevazione GPU Linux DRM (`NVIDIA`, `Intel`, `AMD`), commutazione pre-`InitWindow()` via EGL/PRIME/DRI_PRIME (verificata dal vivo tra `NVIDIA GeForce RTX 3050` e `Mesa Intel(R) Graphics`), `GPU Attiva Ora` nelle Impostazioni, pulsante `Applica GPU & Riavvia` e flag CLI `--gpu` / `--monitor`.
 - **Verifica & Log**: build pulita (0 warning), `ctest` 2/2 PASS (incluso `TestSaveAndLoadPersistence`), screenshot `docs/screenshots/21_impostazioni_monitor_gpu.png` e `22_titolo_riprendi_zona.png`, log in `docs/modifiche/09_monitor_gpu_e_salvataggio.md`.
+
+---
+
+## 2026-11-22 — Milestone v0.4.3 "Divisione Netta Zone, Memoria & Guida Giocatore" (`ingegnere-zone` + `artista-zone`)
+
+- **`ingegnere-zone`**: confini fisici spessi 2 tile tra i 6 distretti con 5 `DistrictGateway` larghi 3 tile collegati da strade lastricate, `Tilemap` piatto contiguo `std::vector<std::uint8_t>` (1.800 B in 1 allocazione), helper zero-allocazione `ForEachMachineInScene`/`ForEachNpcInScene`, `CurrentObjectiveTarget()` e test BFS/memoria/guida (`docs/modifiche/10_divisione_zone_memoria_e_guida.md`).
+- **`artista-zone`**: stacchi cromatici potenziati per i 6 distretti + tinta atmosferica interpolata, archi monumentali bicolore e stele direzionali sui 5 varchi, cache statica dei prop Overworld (zero scansioni/allocazioni per frame), bussola diegetica bronzo/giada con distanza in metri e `MAPPA DI MERIDIA` con distretto attivo, varchi e faro pulsante (`docs/modifiche/11_stacchi_visivi_portali_e_bussola.md`).
+- **Verifica**: build `./build` a 0 warning, `ctest` 2/2 PASS, screenshot `23_varchi_bussola_alba.png`, `24_varchi_giardini_minimappa.png`, `25_stacco_caldera_arco.png`.

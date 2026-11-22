@@ -21,6 +21,10 @@
   - [x] Selettore `Monitor Schermo Intero` con `SetWindowMonitor` (fix schermo intero sul monitor corretto su Wayland/X11) e persistenza in `saves/settings.cfg`.
   - [x] Selettore `GPU / Scheda Grafica` (rilevazione DRM NVIDIA/Intel/AMD, `GPU Attiva Ora`, `Applica GPU & Riavvia`, `--gpu`).
   - [x] Salvataggio/Caricamento completo (`src/core/save_data.*`, autosave + salvataggio manuale) e menu **"Riprendi da dove hai lasciato"** con 9 sfondi procedurali ridisegnati per zona/struttura.
+- [x] **v0.4.3 — Divisione Netta Zone, Ottimizzazione Memoria & Guida Giocatore (`ingegnere-zone` + `artista-zone`)**:
+  - [x] Muri/scarpate di confine spessi 2 tile tra i 6 distretti con **5 `DistrictGateway` monumentali** e stele direzionali (`N -> CANALI`, `E -> GIARDINI`, `S -> SANTUARIO`, ecc.).
+  - [x] Ottimizzazione memoria: `Tilemap` piatto contiguo (`std::vector<std::uint8_t>`, 1 sola allocazione heap, 1.800 B), prop Overworld pre-cachati una sola volta, zero allocazioni per-frame (`ForEachMachineInScene`, `ForEachNpcInScene`, viewport culling).
+  - [x] Guida giocatore: `WorldContext::CurrentObjectiveTarget()`, bussola diegetica bronzo/giada con distanza in metri e faro pulsante + distretto attivo evidenziato su `MAPPA DI MERIDIA`.
 
 ## Prossimi Orizzonti (v0.5+)
 - [ ] **Nuove Sfide Fisiche Opzionali**: puzzle secondari legati all'ottica a prismi, ottiche acustiche nei Giardini e modalita' Co-op 2-4 giocatori con ruoli asimmetrici.

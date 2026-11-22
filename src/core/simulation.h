@@ -28,6 +28,15 @@ struct PortalLink {
     Vec2 exit_spawn{0.0f, 0.0f};
 };
 
+struct ObjectiveTarget {
+    bool valid = false;
+    LocationId location = LocationId::Overworld;
+    ZoneId zone = ZoneId::DawnTerraces;
+    Vec2 world_pos{0.0f, 0.0f};
+    const char* label = "";
+    bool is_portal_step = false;
+};
+
 struct OverworldStepResult {
     bool enter_structure_requested = false;
     StructureId target_structure = StructureId::HypogeanCisterns;
@@ -53,6 +62,7 @@ struct WorldStepResult {
 struct OverworldSim {
     Tilemap tilemap{};
     std::vector<PortalLink> portals{};
+    std::array<DistrictGateway, Tilemap::kOverworldGatewayCount> gateways{};
     StructureId last_used_structure = StructureId::HypogeanCisterns;
     Vec2 spawn_point{0.0f, 0.0f};
     Vec2 portal_exit_spawn{0.0f, 0.0f};
@@ -147,10 +157,30 @@ struct WorldContext {
     [[nodiscard]] Machine& ModalTargetMachine() noexcept;
     [[nodiscard]] const Machine& ModalTargetMachine() const noexcept;
     [[nodiscard]] std::vector<const Machine*> MachinesInCurrentScene() const;
+    template <typename Fn>
+    void ForEachMachineInScene(Fn&& fn) const {
+        const LocationId loc = ActiveLocation();
+        for (const auto& m : machines) {
+            if (m.location == loc) {
+                fn(m);
+            }
+        }
+    }
 
     [[nodiscard]] WorldNpc& GetNpc(NpcId id) noexcept;
     [[nodiscard]] const WorldNpc& GetNpc(NpcId id) const noexcept;
     [[nodiscard]] std::vector<const WorldNpc*> NpcsInCurrentScene() const;
+    template <typename Fn>
+    void ForEachNpcInScene(Fn&& fn) const {
+        const LocationId loc = ActiveLocation();
+        for (const auto& npc : npcs) {
+            if (npc.location == loc) {
+                fn(npc);
+            }
+        }
+    }
+
+    [[nodiscard]] ObjectiveTarget CurrentObjectiveTarget() const noexcept;
 
     [[nodiscard]] bool AllFiveMonumentsActivated() const noexcept;
     [[nodiscard]] int ActivatedMonumentsCount() const noexcept;

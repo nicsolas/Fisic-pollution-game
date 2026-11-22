@@ -128,10 +128,12 @@ Vec2 FindSafeSpawnNear(
 
 void OverworldSim::InitializeDefault() {
     tilemap = Tilemap::CreateOverworldMap(kTileSize);
+    gateways = Tilemap::OverworldGateways(kTileSize);
     // Initial spawn in Terrazze dell'Alba (row 30, col 5)
     spawn_point = CenteredTopLeftForTile(tilemap, 30, 5);
 
     portals.clear();
+    portals.reserve(static_cast<std::size_t>(StructureId::Count));
     // Portal 1: Cisterne Ipogee (Quartiere dei Canali, row 14, cols 5..6)
     {
         PortalLink link{};
@@ -763,6 +765,7 @@ const WorldNpc& WorldContext::GetNpc(NpcId id) const noexcept {
 
 std::vector<const WorldNpc*> WorldContext::NpcsInCurrentScene() const {
     std::vector<const WorldNpc*> out;
+    out.reserve(npcs.size());
     const LocationId loc = ActiveLocation();
     for (const auto& npc : npcs) {
         if (npc.location == loc) {
@@ -770,6 +773,138 @@ std::vector<const WorldNpc*> WorldContext::NpcsInCurrentScene() const {
         }
     }
     return out;
+}
+
+ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
+    ObjectiveTarget out{};
+    out.location = ActiveLocation();
+    out.zone = current_zone;
+
+    if (simulation_completed ||
+        GetMachine(MachineType::CentralAstrolabe).state != MachineState::Broken) {
+        out.valid = false;
+        return out;
+    }
+
+    auto find_exit_portal_center = [](const Tilemap& map) noexcept -> Vec2 {
+        float sum_x = 0.0f;
+        float sum_y = 0.0f;
+        int count = 0;
+        const int rows = map.Rows();
+        const int cols = map.Cols();
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c) {
+                if (map.GetTile(r, c) == TileId::ExitPortal) {
+                    const Vec2 center = map.TileCenter(r, c);
+                    sum_x += center.x;
+                    sum_y += center.y;
+                    ++count;
+                }
+            }
+        }
+        if (count > 0) {
+            const float inv = 1.0f / static_cast<float>(count);
+            return {sum_x * inv, sum_y * inv};
+        }
+        return map.TileCenter(std::max(0, rows - 3), 2);
+    };
+
+    auto guide_overworld = [&](ZoneId target_zone, Vec2 target_pos, const char* label) noexcept -> ObjectiveTarget {
+        if (current_mode == GameMode::Overworld) {
+            return ObjectiveTarget{true, LocationId::Overworld, target_zone, target_pos, label, false};
+        }
+        return ObjectiveTarget{
+            true,
+            ActiveLocation(),
+            current_zone,
+            find_exit_portal_center(structure.tilemap),
+            "Uscita verso Meridia",
+            true
+        };
+    };
+
+    auto guide_structure = [&](
+        StructureId target_struct,
+        Vec2 interior_pos,
+        const char* interior_label,
+        const char* portal_label) noexcept -> ObjectiveTarget {
+        const PortalLink* link = overworld.FindPortal(target_struct);
+        const ZoneId portal_zone = (link != nullptr) ? link->source_zone : current_zone;
+        if (current_mode == GameMode::Structure && active_structure == target_struct) {
+            return ObjectiveTarget{
+                true,
+                LocationFromStructure(target_struct),
+                portal_zone,
+                interior_pos,
+                interior_label,
+                false
+            };
+        }
+        if (current_mode == GameMode::Overworld) {
+            const Vec2 p_pos = (link != nullptr) ? link->world_center : overworld.spawn_point;
+            return ObjectiveTarget{true, LocationId::Overworld, portal_zone, p_pos, portal_label, true};
+        }
+        return ObjectiveTarget{
+            true,
+            ActiveLocation(),
+            current_zone,
+            find_exit_portal_center(structure.tilemap),
+            "Uscita verso Meridia",
+            true
+        };
+    };
+
+    // 1. Eliostato Solare (Terrazze dell'Alba)
+    const Machine& solar = GetMachine(MachineType::SolarArray);
+    if (solar.state == MachineState::Broken) {
+        return guide_overworld(ZoneId::DawnTerraces, solar.pos, "Eliostato Solare");
+    }
+
+    // 2. Turbina Idrostatica (Cisterne Ipogee, Quartiere dei Canali)
+    const Machine& hydro = GetMachine(MachineType::HydroTurbine);
+    if (hydro.state == MachineState::Broken) {
+        return guide_structure(
+            StructureId::HypogeanCisterns,
+            hydro.pos,
+            "Turbina Idrostatica",
+            "Cisterne Ipogee");
+    }
+
+    // 3. Pendolo Isochronos (Torre del Pendolo, Altopiano dei Venti)
+    const Machine& pendulum = GetMachine(MachineType::PendulumRegulator);
+    if (pendulum.state == MachineState::Broken) {
+        return guide_structure(
+            StructureId::PendulumTower,
+            pendulum.pos,
+            "Pendolo Isochronos",
+            "Torre del Pendolo");
+    }
+
+    // 4. Clara Sereni (Ponte degli Archi) se il ponte verso Est e' ancora chiuso
+    const WorldNpc& clara = GetNpc(NpcId::ClaraSereni);
+    if (!ecosystem.architect_recruited && !clara.recruited) {
+        return guide_overworld(ZoneId::CanalQuarter, clara.pos, "Clara Sereni (Ponte)");
+    }
+
+    // 5. Risonatore Armonico (Giardini Sospesi)
+    const Machine& harmonic = GetMachine(MachineType::HarmonicResonator);
+    if (harmonic.state == MachineState::Broken) {
+        return guide_overworld(ZoneId::HangingGardens, harmonic.pos, "Risonatore Armonico");
+    }
+
+    // 6. Scambiatore di Carnot (Camera Geotermica, Caldera delle Fumarole)
+    const Machine& thermal = GetMachine(MachineType::ThermalExchanger);
+    if (thermal.state == MachineState::Broken) {
+        return guide_structure(
+            StructureId::GeothermalChamber,
+            thermal.pos,
+            "Scambiatore di Carnot",
+            "Camera Geotermica");
+    }
+
+    // 7. Astrolabio Centrale (Santuario dell'Armonia)
+    const Machine& astrolabe = GetMachine(MachineType::CentralAstrolabe);
+    return guide_overworld(ZoneId::HarmonySanctuary, astrolabe.pos, "Astrolabio Centrale");
 }
 
 bool WorldContext::AllFiveMonumentsActivated() const noexcept {

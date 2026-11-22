@@ -123,3 +123,5 @@ cd build && ctest --output-on-failure
   - [`07_integrazione_finale_e_verifica.md`](docs/modifiche/07_integrazione_finale_e_verifica.md)
   - [`08_audio_procedurale_e_interazioni.md`](docs/modifiche/08_audio_procedurale_e_interazioni.md)
   - [`09_monitor_gpu_e_salvataggio.md`](docs/modifiche/09_monitor_gpu_e_salvataggio.md)
+  - [`10_divisione_zone_memoria_e_guida.md`](docs/modifiche/10_divisione_zone_memoria_e_guida.md)
+  - [`11_stacchi_visivi_portali_e_bussola.md`](docs/modifiche/11_stacchi_visivi_portali_e_bussola.md)

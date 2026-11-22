@@ -864,6 +864,40 @@ void DrawOverworldMinimap(const eco::WorldContext& world) {
         DrawCircleV(mp, 2.9f, mc);
     }
 
+    // 5b. Varchi monumentali tra distretti (archi in bronzo) e contorno del distretto attivo
+    for (const eco::DistrictGateway& gw : world.overworld.gateways) {
+        const Vector2 gp = to_mini(gw.world_center);
+        const bool locked = gw.requires_bridge_unlock && !world.ecosystem.architect_recruited;
+        const Color gc = locked ? pal::kAccentWarn : pal::kBronzeBright;
+        if (gw.IsHorizontalWall()) {
+            DrawRectangle(static_cast<int>(gp.x) - 5, static_cast<int>(gp.y) - 2, 10, 4, gc);
+            DrawRectangle(static_cast<int>(gp.x) - 5, static_cast<int>(gp.y) - 4, 2, 8, pal::kBronzeDark);
+            DrawRectangle(static_cast<int>(gp.x) + 3, static_cast<int>(gp.y) - 4, 2, 8, pal::kBronzeDark);
+        } else {
+            DrawRectangle(static_cast<int>(gp.x) - 2, static_cast<int>(gp.y) - 5, 4, 10, gc);
+        }
+    }
+    {
+        const eco::Rect zb = world.overworld.DistrictBounds(world.current_zone);
+        const Rectangle zr{
+            map_r.x + (zb.x / world_w) * map_r.width,
+            map_r.y + (zb.y / world_h) * map_r.height,
+            (zb.width / world_w) * map_r.width,
+            (zb.height / world_h) * map_r.height};
+        DrawRectangleLinesEx(zr, 1.6f, pal::WithAlpha(pal::kJadeGlow, 235));
+    }
+
+    // 5c. Faro pulsante sull'obiettivo corrente
+    const eco::ObjectiveTarget objective = world.CurrentObjectiveTarget();
+    if (objective.valid && objective.location == eco::LocationId::Overworld) {
+        const Vector2 op = to_mini(objective.world_pos);
+        const float ph = std::fmod(world.sim_time * 0.9f, 1.0f);
+        DrawCircleLines(static_cast<int>(op.x), static_cast<int>(op.y), 3.0f + ph * 9.0f,
+                        pal::WithAlpha(pal::kJadeGlow, static_cast<unsigned char>(230.0f * (1.0f - ph))));
+        DrawCircleV(op, 3.4f, pal::kJadeGlow);
+        DrawCircleLines(static_cast<int>(op.x), static_cast<int>(op.y), 4.2f, pal::kBronzeBright);
+    }
+
     // 6. Posizione di Elena Valli (cursore ciano pulsante)
     if (const eco::Player* p0 = world.players.GetPlayer(0); p0 != nullptr && p0->active) {
         const Vector2 pp = to_mini(p0->Center());
@@ -887,6 +921,89 @@ void DrawOverworldMinimap(const eco::WorldContext& world) {
         ly,
         10,
         pal::kBronzeBright);
+}
+
+// =============================================================================
+// BUSSOLA DELL'OBIETTIVO (bronzo e giada): direzione, nome meta e distanza in metri
+// 1 metro di gioco = meta' tile (kTileSize / 2 px). Nessuna allocazione dinamica.
+// =============================================================================
+void DrawObjectiveCompass(const eco::WorldContext& world) {
+    if (world.calibration_modal.is_open) {
+        return;
+    }
+    const eco::ObjectiveTarget obj = world.CurrentObjectiveTarget();
+    const eco::Player* p0 = world.players.GetPlayer(0);
+    if (!obj.valid || p0 == nullptr || !p0->active) {
+        return;
+    }
+    // Il target e' nella scena attiva? Altrimenti la meta e' gia' il portale/uscita fornito dal core.
+    if (obj.location != world.ActiveLocation()) {
+        return;
+    }
+
+    const eco::Vec2 pc = p0->Center();
+    const float dx = obj.world_pos.x - pc.x;
+    const float dy = obj.world_pos.y - pc.y;
+    const float dist_px = std::hypot(dx, dy);
+    const int meters = static_cast<int>(dist_px / (eco::kTileSize * 0.5f) + 0.5f);
+    const float ang = std::atan2(dy, dx);
+    const float pulse = 0.5f + 0.5f * std::sin(world.sim_time * 3.4f);
+
+    const float sw = static_cast<float>(eco::kWindowWidth);
+    const float sh = static_cast<float>(eco::kWindowHeight);
+    const eco::Vec2 cam = world.ActiveCameraTarget();
+    const float sx = obj.world_pos.x - cam.x + sw * 0.5f;
+    const float sy = obj.world_pos.y - cam.y + sh * 0.5f;
+    const bool on_screen = sx > 24.0f && sx < sw - 24.0f && sy > 76.0f && sy < sh - 24.0f;
+
+    // Etichetta testuale in basso al centro
+    const char* text = TextFormat("%s (%d m)", obj.label, meters);
+    const char* full = TextFormat("-> %s", text);
+    const int tw = MeasureUiText(full, 13);
+    const int bw = tw + 58;
+    const int bx = static_cast<int>(sw * 0.5f) - bw / 2;
+    const int by = static_cast<int>(sh) - 158;
+    DrawRectangle(bx + 2, by + 2, bw, 30, Color{0, 0, 0, 110});
+    DrawRectangle(bx, by, bw, 30, Color{14, 22, 32, 226});
+    DrawRectangleLines(bx, by, bw, 30, pal::WithAlpha(pal::kBronze, 235));
+    DrawRectangleLines(bx + 2, by + 2, bw - 4, 26, pal::WithAlpha(pal::kJade, static_cast<unsigned char>(110 + 90 * pulse)));
+
+    // Disco bussola con ago che ruota verso la meta
+    const Vector2 cc{static_cast<float>(bx) + 20.0f, static_cast<float>(by) + 15.0f};
+    DrawCircleV(cc, 12.0f, Color{18, 30, 40, 255});
+    DrawCircleLines(static_cast<int>(cc.x), static_cast<int>(cc.y), 12.0f, pal::kBronzeBright);
+    const Vector2 tip{cc.x + std::cos(ang) * 10.0f, cc.y + std::sin(ang) * 10.0f};
+    const Vector2 l{cc.x + std::cos(ang + 2.5f) * 6.0f, cc.y + std::sin(ang + 2.5f) * 6.0f};
+    const Vector2 r{cc.x + std::cos(ang - 2.5f) * 6.0f, cc.y + std::sin(ang - 2.5f) * 6.0f};
+    DrawTriangle(tip, l, r, pal::kJadeGlow);
+    DrawCircleV(cc, 2.0f, pal::kBronzeBright);
+    DrawTextShadow(full, bx + 40, by + 8, 13, obj.is_portal_step ? pal::kBronzeBright : pal::kJadeGlow);
+
+    // Freccia sul bordo dello schermo quando la meta e' fuori vista
+    if (!on_screen && dist_px > 1.0f) {
+        const float mx = sw * 0.5f;
+        const float my = (sh + 52.0f) * 0.5f;
+        const float ux = std::cos(ang);
+        const float uy = std::sin(ang);
+        const float lim_x = sw * 0.5f - 56.0f;
+        const float lim_y = (sh - 52.0f) * 0.5f - 56.0f;
+        const float tx = (std::fabs(ux) > 0.0001f) ? lim_x / std::fabs(ux) : 1.0e9f;
+        const float ty = (std::fabs(uy) > 0.0001f) ? lim_y / std::fabs(uy) : 1.0e9f;
+        const float t = std::min(tx, ty);
+        const Vector2 e{mx + ux * t, my + uy * t};
+        const Vector2 a{e.x + ux * 16.0f, e.y + uy * 16.0f};
+        const Vector2 b{e.x - ux * 8.0f - uy * 11.0f, e.y - uy * 8.0f + ux * 11.0f};
+        const Vector2 c2{e.x - ux * 8.0f + uy * 11.0f, e.y - uy * 8.0f - ux * 11.0f};
+        DrawCircleV(e, 18.0f + pulse * 3.0f, pal::WithAlpha(pal::kJade, 48));
+        DrawTriangle(a, c2, b, pal::kBronzeBright);
+        DrawTriangleLines(a, c2, b, pal::kBronzeDark);
+        DrawCircleV(e, 5.0f, pal::kJadeGlow);
+        DrawTextShadow(TextFormat("%d m", meters), static_cast<int>(e.x) - 14, static_cast<int>(e.y) + 20, 11, pal::kParchmentText);
+    } else if (on_screen) {
+        // Anello pulsante sopra la meta quando e' inquadrata
+        DrawCircleLines(static_cast<int>(sx), static_cast<int>(sy) - 60, 14.0f + pulse * 4.0f, pal::WithAlpha(pal::kJadeGlow, 200));
+        DrawTriangle({sx, sy - 40.0f}, {sx + 8.0f, sy - 54.0f}, {sx - 8.0f, sy - 54.0f}, pal::kBronzeBright);
+    }
 }
 
 // =============================================================================
@@ -1476,6 +1593,9 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world) {
 
     // 3. Minimappa Overworld sotto il pannello scanner (x=1064, y=158, w=200, h=146)
     DrawOverworldMinimap(world);
+
+    // 3b. Bussola dell'obiettivo (bronzo e giada)
+    DrawObjectiveCompass(world);
 
     // 4. Console Modale di Calibrazione Fisica per tutte le 6 leggi
     if (world.calibration_modal.is_open) {

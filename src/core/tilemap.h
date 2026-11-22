@@ -1,5 +1,9 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <span>
 #include <vector>
 
 #include "core/math_types.h"
@@ -24,19 +28,46 @@ struct TileRange {
     }
 };
 
+enum class GatewayOrientation : std::uint8_t {
+    Horizontal = 0, // Varco N-S in una scarpata/muro orizzontale
+    Vertical = 1    // Varco E-O nel canale verticale (Ponte degli Archi)
+};
+
+struct DistrictGateway {
+    GatewayOrientation orientation = GatewayOrientation::Horizontal;
+    TileCoord tile_min{0, 0};
+    TileCoord tile_max{0, 0};
+    Vec2 world_center{0.0f, 0.0f};
+    ZoneId from_zone = ZoneId::DawnTerraces;
+    ZoneId to_zone = ZoneId::CanalQuarter;
+    const char* signpost_label = "";
+    const char* reverse_label = "";
+    bool requires_bridge_unlock = false;
+
+    [[nodiscard]] constexpr bool IsHorizontalWall() const noexcept {
+        return orientation == GatewayOrientation::Horizontal;
+    }
+};
+
 class Tilemap {
 public:
     static constexpr int kOverworldRows = 36;
     static constexpr int kOverworldCols = 50;
     static constexpr int kBridgeDividerCol = 24;
+    static constexpr int kNorthDividerRow = 11; // rows 11..12
+    static constexpr int kSouthDividerRow = 23; // rows 23..24
+    static constexpr std::size_t kOverworldGatewayCount = 5;
 
     Tilemap() = default;
     explicit Tilemap(std::vector<std::vector<int>> grid, float tile_size = kTileSize);
+    Tilemap(int rows, int cols, std::vector<std::uint8_t> cells, float tile_size = kTileSize);
 
     [[nodiscard]] static Tilemap CreateOverworldMap(float tile_size = kTileSize);
     [[nodiscard]] static Tilemap CreateStructureMap(
         StructureId structure_id, float tile_size = kTileSize);
     [[nodiscard]] static Tilemap CreateStructureMap(float tile_size = kTileSize);
+    [[nodiscard]] static std::array<DistrictGateway, kOverworldGatewayCount> OverworldGateways(
+        float tile_size = kTileSize) noexcept;
 
     [[nodiscard]] static ZoneId DistrictAtTile(int row, int col) noexcept;
     [[nodiscard]] ZoneId DistrictAt(Vec2 world_pos) const noexcept;
@@ -49,7 +80,10 @@ public:
     [[nodiscard]] float WorldWidth() const noexcept;
     [[nodiscard]] float WorldHeight() const noexcept;
     [[nodiscard]] bool InBounds(int row, int col) const noexcept;
-    [[nodiscard]] const std::vector<std::vector<int>>& Grid() const noexcept { return grid_; }
+    [[nodiscard]] std::span<const std::uint8_t> RawData() const noexcept { return cells_; }
+    [[nodiscard]] std::size_t MemoryBytes() const noexcept {
+        return cells_.capacity() * sizeof(std::uint8_t);
+    }
 
     [[nodiscard]] TileId GetTile(int row, int col) const noexcept;
     bool SetTile(int row, int col, TileId id) noexcept;
@@ -68,9 +102,10 @@ public:
     [[nodiscard]] std::vector<TileCoord> FindTiles(TileId tile_id) const;
 
 private:
-    std::vector<std::vector<int>> grid_{};
+    std::vector<std::uint8_t> cells_{};
+    int rows_ = 0;
+    int cols_ = 0;
     float tile_size_ = kTileSize;
-    int max_cols_ = 0;
 };
 
 } // namespace eco

@@ -15,6 +15,48 @@ namespace {
 
 float g_particle_quality_scale = 1.0f;
 
+// Stato statico (zero allocazioni) per l'interpolazione morbida della tinta atmosferica di distretto
+struct DistrictTintState {
+    float r = 255.0f;
+    float g = 204.0f;
+    float b = 112.0f;
+    float last_sim_time = -1.0f;
+    bool initialized = false;
+};
+
+DistrictTintState g_district_tint{};
+
+[[nodiscard]] Color UpdateSmoothedDistrictTint(const eco::WorldContext& world) noexcept {
+    const Color target = (world.current_mode == eco::GameMode::Overworld)
+                             ? pal::GetDistrictPalette(world.current_zone).atmosphere_tint
+                             : pal::GetStructurePalette(world.active_structure).accent_healthy;
+    const float tr = static_cast<float>(target.r);
+    const float tg = static_cast<float>(target.g);
+    const float tb = static_cast<float>(target.b);
+
+    if (!g_district_tint.initialized || world.sim_time < g_district_tint.last_sim_time) {
+        g_district_tint.r = tr;
+        g_district_tint.g = tg;
+        g_district_tint.b = tb;
+        g_district_tint.last_sim_time = world.sim_time;
+        g_district_tint.initialized = true;
+    } else {
+        const float dt = std::clamp(world.sim_time - g_district_tint.last_sim_time, 0.0f, 0.1f);
+        g_district_tint.last_sim_time = world.sim_time;
+        const float blend = 1.0f - std::exp(-dt * 3.8f);
+        g_district_tint.r += (tr - g_district_tint.r) * blend;
+        g_district_tint.g += (tg - g_district_tint.g) * blend;
+        g_district_tint.b += (tb - g_district_tint.b) * blend;
+    }
+
+    return Color{
+        static_cast<unsigned char>(std::clamp(g_district_tint.r, 0.0f, 255.0f)),
+        static_cast<unsigned char>(std::clamp(g_district_tint.g, 0.0f, 255.0f)),
+        static_cast<unsigned char>(std::clamp(g_district_tint.b, 0.0f, 255.0f)),
+        255
+    };
+}
+
 [[nodiscard]] constexpr std::uint32_t HashU32(std::uint32_t x) noexcept {
     x ^= x >> 16;
     x *= 0x7feb352du;
@@ -196,9 +238,17 @@ void DrawWorldAtmosphericParticles(
             }
         }
     } else {
-        // Particelle dedicate a ciascuna delle 3 strutture interne
+        // Particelle dedicate a ciascuna delle 3 strutture interne (viewport-culled, zero allocazioni)
         const float map_w = world.ActiveTilemap().WorldWidth();
         const float map_h = world.ActiveTilemap().WorldHeight();
+        const float vis_min_x = min_x - 32.0f;
+        const float vis_max_x = min_x + span_x + 32.0f;
+        const float vis_min_y = min_y - 32.0f;
+        const float vis_max_y = min_y + span_y + 32.0f;
+        const auto in_viewport = [&](float px, float py) noexcept {
+            return px >= vis_min_x && px <= vis_max_x && py >= vis_min_y && py <= vis_max_y;
+        };
+
         switch (world.active_structure) {
             case eco::StructureId::HypogeanCisterns: {
                 // Nebbia idraulica e gocce luminose ascendenti nelle Cisterne Ipogee
@@ -209,6 +259,9 @@ void DrawWorldAtmosphericParticles(
                     const float wx = 72.0f + rx * std::max(200.0f, map_w - 144.0f) + std::sin(sim_time * 1.5f + static_cast<float>(i)) * 12.0f;
                     const float wy = 72.0f + std::fmod(ry * std::max(200.0f, map_h - 144.0f) - sim_time * (14.0f + (i % 5) * 4.0f) + map_h * 10.0f,
                                                        std::max(200.0f, map_h - 144.0f));
+                    if (!in_viewport(wx, wy)) {
+                        continue;
+                    }
                     const auto alpha = static_cast<unsigned char>(55 + (i % 4) * 24);
                     const Color drop_col = pal::WorldColor(
                         Color{140, 145, 118, alpha},
@@ -228,6 +281,9 @@ void DrawWorldAtmosphericParticles(
                     const float wx = 72.0f + rx * std::max(200.0f, map_w - 144.0f) + std::sin(sim_time * 0.7f + phase) * 16.0f;
                     const float wy = 72.0f + std::fmod(ry * std::max(200.0f, map_h - 144.0f) + sim_time * (6.0f + (i % 3) * 3.0f),
                                                        std::max(200.0f, map_h - 144.0f));
+                    if (!in_viewport(wx, wy)) {
+                        continue;
+                    }
                     const float shimmer = 0.45f + 0.55f * std::sin(sim_time * 2.8f + phase);
                     const Color mote = pal::WorldColor(
                         Color{180, 158, 120, static_cast<unsigned char>(95.0f * shimmer)},
@@ -248,6 +304,9 @@ void DrawWorldAtmosphericParticles(
                     const float wx = 72.0f + rx * std::max(200.0f, map_w - 144.0f) + std::sin(sim_time * 1.9f + static_cast<float>(i)) * 14.0f;
                     const float wy = 72.0f + std::fmod(ry * std::max(200.0f, map_h - 144.0f) - sim_time * spd + map_h * 10.0f,
                                                        std::max(200.0f, map_h - 144.0f));
+                    if (!in_viewport(wx, wy)) {
+                        continue;
+                    }
                     const bool is_spark = (i % 4 == 0);
                     const Color col = is_spark
                                           ? pal::WorldColor(Color{245, 112, 48, 175}, Color{245, 198, 102, 165}, poll)
@@ -266,6 +325,19 @@ void DrawScreenSpaceAtmosphere(const eco::WorldContext& world) {
     const float health = 1.0f - poll;
     const int sw = eco::kWindowWidth;
     const int sh = eco::kWindowHeight;
+
+    // 0. Gradiente / tinta atmosferica di distretto (interpolata dolcemente al cambio zona)
+    const Color zone_tint = UpdateSmoothedDistrictTint(world);
+    if (world.current_mode == eco::GameMode::Overworld) {
+        const unsigned char top_a = static_cast<unsigned char>(16.0f + 16.0f * health);
+        const unsigned char mid_a = static_cast<unsigned char>(7.0f + 7.0f * health);
+        const unsigned char bot_a = static_cast<unsigned char>(12.0f + 12.0f * health);
+        DrawRectangle(0, 52, sw, sh - 52, pal::WithAlpha(zone_tint, mid_a));
+        DrawRectangleGradientV(0, 52, sw, 148, pal::WithAlpha(zone_tint, top_a), pal::WithAlpha(zone_tint, 0));
+        DrawRectangleGradientV(0, sh - 128, sw, 128, pal::WithAlpha(zone_tint, 0), pal::WithAlpha(zone_tint, bot_a));
+    } else {
+        DrawRectangleGradientV(0, 52, sw, 110, pal::WithAlpha(zone_tint, 18), pal::WithAlpha(zone_tint, 0));
+    }
 
     // 1. Raggi solari d'alba (God-Rays) nell'Overworld quando la Conca e' limpida
     if (world.current_mode == eco::GameMode::Overworld && health > 0.72f) {
