@@ -663,6 +663,14 @@ void AudioEngine::SetAmbientEnabled(bool enabled) noexcept {
     ambient_enabled_ = enabled;
 }
 
+void AudioEngine::SetMusicVolume(float volume) noexcept {
+    music_volume_ = std::clamp(volume, 0.0f, 1.0f);
+}
+
+void AudioEngine::SetEffectsVolume(float volume) noexcept {
+    effects_volume_ = std::clamp(volume, 0.0f, 1.0f);
+}
+
 void AudioEngine::PlaySfx(SfxId id, float volume_scale, float pitch) {
     if (!ready_ || muted_ || master_volume_ <= 0.001f || impl_ == nullptr) {
         return;
@@ -675,7 +683,7 @@ void AudioEngine::PlaySfx(SfxId id, float volume_scale, float pitch) {
     if (snd.frameCount == 0) {
         return;
     }
-    SetSoundVolume(snd, std::clamp(volume_scale, 0.0f, 1.0f));
+    SetSoundVolume(snd, std::clamp(volume_scale * effects_volume_, 0.0f, 1.0f));
     SetSoundPitch(snd, std::clamp(pitch, 0.65f, 1.45f));
     PlaySound(snd);
 }
@@ -736,7 +744,7 @@ void AudioEngine::SyncAndUpdate(
                 continue;
             }
             if (cur > 0.01f) {
-                SetSoundVolume(snd, cur);
+                SetSoundVolume(snd, cur * music_volume_);
                 if (!IsSoundPlaying(snd)) {
                     PlaySound(snd);
                 }
@@ -922,11 +930,18 @@ void PlayUiSfx(SfxId id, float volume_scale, float pitch) noexcept {
     }
 }
 
-void ApplyGlobalAudioSettings(float master_volume, bool muted, bool ambient_enabled) noexcept {
+void ApplyGlobalAudioSettings(
+    float master_volume,
+    bool muted,
+    bool ambient_enabled,
+    float music_volume,
+    float effects_volume) noexcept {
     if (g_audio_engine != nullptr) {
         g_audio_engine->SetMasterVolume(master_volume);
         g_audio_engine->SetMuted(muted);
         g_audio_engine->SetAmbientEnabled(ambient_enabled);
+        g_audio_engine->SetMusicVolume(music_volume);
+        g_audio_engine->SetEffectsVolume(effects_volume);
     }
 }
 
