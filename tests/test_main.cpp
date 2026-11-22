@@ -1091,9 +1091,27 @@ void TestStoryDirector() {
     CHECK(!full_world.simulation_completed);
     CHECK(full_world.story.CurrentChapter() == eco::Chapter::Atto4_Archivio);
 
-    // Enter Structure (Dam) and talk to Nonna Rosa
+    // Enter Structure (Dam), physically jump up the 3 stepped platforms from the floor
+    // to verify that Nonna Rosa's platform (row 7, top=336 -> player y=306) is 100% reachable by jumping!
     full_world.current_mode = eco::GameMode::Structure;
-    p0->pos = full_world.rosa_npc.pos;
+    full_world.structure.OnEnter(full_world.players, full_world.ecosystem.architect_recruited);
+    p0->pos = {310.0f, 594.0f}; // Ground floor row 13 (top=624) just left of first platform (col 8 = 384)
+    p0->isGrounded = true;
+    p0->y_velocity = 0.0f;
+
+    for (int step = 0; step < 360 && !full_world.rosa_npc.IsPlayerInRange(*p0); ++step) {
+        in = {};
+        in.players[0].move_x = 1.0f;
+        // Jump whenever grounded as we approach each platform tier
+        if (p0->isGrounded && (p0->pos.x > 330.0f)) {
+            in.players[0].jump_pressed = true;
+            in.players[0].jump_held = true;
+        }
+        (void)full_world.StepWorld(in, eco::kFixedDt);
+    }
+    CHECK(full_world.rosa_npc.IsPlayerInRange(*p0));
+    CHECK(p0->pos.y <= 306.5f); // Reached top platform (row 7, top=336)
+
     in = {};
     in.players[0].interact_pressed = true;
     (void)full_world.StepWorld(in, eco::kFixedDt);

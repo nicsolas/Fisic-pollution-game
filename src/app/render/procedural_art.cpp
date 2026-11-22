@@ -453,7 +453,7 @@ void DrawStructureProceduralBackdropAndMap(
 
     // Cartelli diegetici compatti nella Diga
     DrawDiegeticSignpost(2.5f * eco::kTileSize, 11.4f * eco::kTileSize, "VALLE [USCITA]", GOLD);
-    DrawDiegeticSignpost(11.3f * eco::kTileSize, 9.4f * eco::kTileSize, "ISPEZIONE [SPAZIO: SALTA]", SKYBLUE);
+    DrawDiegeticSignpost(11.3f * eco::kTileSize, 10.4f * eco::kTileSize, "ISPEZIONE [SPAZIO: SALTA]", SKYBLUE);
 }
 
 } // namespace eco::app

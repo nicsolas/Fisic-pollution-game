@@ -88,3 +88,11 @@
 - Aggiornati `src/app/story_ui.cpp`, `src/app/pause_settings_menu.h/.cpp` e `src/app/main.cpp`:
   - Aggiunto flag CLI `--demo` e voce **"Modalita' Storia: `< Campagna Completa (Atti I-V) >` / `< Demo Classica (Atti I-III) >`"** nel Menu Impostazioni.
 - Esteso `TestStoryDirector()` in `tests/test_main.cpp` con test completi per i 7 capitoli e simulazione E2E dell'Atto IV e Atto V su `WorldContext`. Build e `ctest` (2/2) verdi in `build-ingegnere2` con zero warning.
+
+## Coordinatore — v0.3.1 (Fix Piattaforme Diga per Nonna Rosa & Fix Fullscreen Wayland)
+- **Fix Piattaforme Diga (`src/core/tilemap.cpp` + `src/core/simulation.cpp`)**:
+  - Calcolata l'altezza massima del salto (`h_max = v_0^2 / (2g) = 480^2 / 2400 = 96 px = 2 tile`): la prima piattaforma in `CreateStructureMap` era a `row 10` (`144 px = 3 tile` dal pavimento a `row 13`), quindi irraggiungibile dal suolo!
+  - Abbassate le tre piattaforme di 1 tile (`row 11` a `528 px`, `row 9` a `432 px`, `row 7` a `336 px` -> ciascuna a esattamente `96 px` dalla precedente) e riposizionata Nonna Rosa sulla piattaforma superiore (`{1056, 322}` con `trigger_radius = 96 px`).
+  - Aggiunto un test fisico automatico in `tests/test_main.cpp` che fa camminare e saltare realmente il giocatore dal pavimento fino alla piattaforma di Nonna Rosa e interagisce con `[E]`.
+- **Fix Errore Fullscreen su Wayland (`src/app/pause_settings_menu.cpp`)**:
+  - Sostituito `ToggleBorderlessWindowed()` (che in Raylib 5.5 chiama `glfwSetWindowPos`, non supportato dal protocollo Wayland con `WARNING: GLFW: Error: 65548`) con `SetWindowSize(mon_w, mon_h)` + `ToggleFullscreen()`, che su Wayland usa nativamente `xdg_toplevel_set_fullscreen` senza alcun errore di posizionamento finestra.

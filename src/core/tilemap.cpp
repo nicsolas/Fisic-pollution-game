@@ -122,15 +122,18 @@ Tilemap Tilemap::CreateStructureMap(float tile_size) {
     grid[12][2] = 3;
     grid[12][3] = 3;
 
-    // Stepped platform tiers for jump, coyote time, jump buffer, and ceiling collision
+    // Stepped platform tiers for jump, coyote time, jump buffer, and ceiling collision.
+    // Max jump height is v^2/(2*g) = 480^2/2400 = 96px (2 tiles).
+    // Row 11 (top=528, dy=96 from floor row 13) -> Row 9 (top=432, dy=96) -> Row 7 (top=336, dy=96),
+    // with 1-tile horizontal gap (48px) so every tier is comfortably reachable in 1 jump!
     for (int c = 8; c <= 12; ++c) {
-        grid[10][static_cast<std::size_t>(c)] = 1;
+        grid[11][static_cast<std::size_t>(c)] = 1;
     }
     for (int c = 14; c <= 18; ++c) {
-        grid[8][static_cast<std::size_t>(c)] = 1;
+        grid[9][static_cast<std::size_t>(c)] = 1;
     }
     for (int c = 20; c <= 24; ++c) {
-        grid[6][static_cast<std::size_t>(c)] = 1;
+        grid[7][static_cast<std::size_t>(c)] = 1;
     }
 
     return Tilemap(std::move(grid), tile_size);

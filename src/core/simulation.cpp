@@ -465,7 +465,8 @@ void WorldContext::Reset() {
     calibrating_purifier = false;
     calibrating_thermal = false;
     architect_npc.Reset();
-    rosa_npc.Reset({1056.0f, 274.0f});
+    rosa_npc.Reset({1056.0f, 322.0f});
+    rosa_npc.trigger_radius = 96.0f;
     rosa_npc.last_dialogue = "Nonna Rosa: Sali qui sull'impalcatura della Diga quando avrai riattivato la Turbina!";
     gaia_terminal_pos = {1128.0f, 648.0f};
     gaia_terminal_unlocked = false;
@@ -511,7 +512,8 @@ void WorldContext::EnsureInitialized() {
         architect_npc.Reset(architect_npc.pos);
     }
     if (rosa_npc.last_dialogue.empty()) {
-        rosa_npc.Reset({1056.0f, 274.0f});
+        rosa_npc.Reset({1056.0f, 322.0f});
+        rosa_npc.trigger_radius = 96.0f;
         rosa_npc.last_dialogue = "Nonna Rosa: Sali qui sull'impalcatura della Diga quando avrai riattivato la Turbina!";
     }
 }

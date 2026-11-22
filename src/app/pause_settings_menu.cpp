@@ -152,20 +152,23 @@ void ApplySafeWindowResolution(GraphicsSettings& settings) {
     const int mon_h = GetMonitorHeight(mon);
 
     // Se la risoluzione scelta eccede o uguaglia il monitor fisico (es. 1920x1080 su un monitor 1280x1024),
-    // passare una finestra decorata piu' grande dello schermo corrompe il framebuffer su Wayland/X11.
-    // Inoltre in Raylib 5.5 SetWindowSize() aggiorna CORE.Window.screen ma NON CORE.Window.render finche'
-    // non scatta il callback asincrono di GLFW, lasciando EndTextureMode() con un viewport disallineato.
+    // passare una finestra decorata piu' grande dello schermo corrompe il framebuffer.
+    // Passiamo quindi a vero Fullscreen tramite ToggleFullscreen() (che su Wayland usa il protocollo
+    // xdg_toplevel_set_fullscreen senza chiamare glfwSetWindowPos, evitando l'errore 65548!).
     if (mon_w > 0 && mon_h > 0 && (res.width >= mon_w || res.height >= mon_h - 32)) {
-        if (!IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE)) {
-            ToggleBorderlessWindowed();
+        if (!IsWindowFullscreen()) {
+            if ( mon_w > 0 && mon_h > 0 ) {
+                SetWindowSize(mon_w, mon_h);
+            }
+            ToggleFullscreen();
         }
         settings.fullscreen = true;
         return;
     }
 
-    // Se eravamo in borderless/fullscreen e l'utente sceglie una risoluzione finestra che entra nel monitor:
-    if (IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE)) {
-        ToggleBorderlessWindowed();
+    // Se eravamo in fullscreen e l'utente sceglie una risoluzione finestra che entra nel monitor:
+    if (IsWindowFullscreen()) {
+        ToggleFullscreen();
     }
     if (IsWindowMaximized()) {
         RestoreWindow();
@@ -180,16 +183,28 @@ void ToggleAppFullscreen(GraphicsSettings& settings) {
         return;
     }
 
-    const bool currently_borderless = IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE);
+    const int mon = GetCurrentMonitor();
+    const int mon_w = GetMonitorWidth(mon);
+    const int mon_h = GetMonitorHeight(mon);
+
     if (settings.fullscreen) {
-        if (!currently_borderless) {
-            ToggleBorderlessWindowed();
+        if (!IsWindowFullscreen()) {
+            // Imposta prima la risoluzione nativa del monitor cosi' glfwSetWindowMonitor
+            // entra a schermo intero su Wayland/X11 senza cambiare video mode e senza chiamare glfwSetWindowPos!
+            if (mon_w > 0 && mon_h > 0) {
+                SetWindowSize(mon_w, mon_h);
+            }
+            ToggleFullscreen();
         }
     } else {
-        if (currently_borderless) {
-            ToggleBorderlessWindowed();
+        if (IsWindowFullscreen()) {
+            ToggleFullscreen();
         }
-        ApplySafeWindowResolution(settings);
+        const int idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
+        const auto& res = kResolutions[static_cast<std::size_t>(idx)];
+        const int safe_w = (mon_w > 0 && res.width >= mon_w) ? 1280 : res.width;
+        const int safe_h = (mon_h > 0 && res.height >= mon_h - 32) ? 720 : res.height;
+        SetWindowSize(safe_w, safe_h);
     }
 }
 
