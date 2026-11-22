@@ -21,6 +21,16 @@ namespace {
             return TileId::ExitPortal;
         case 4:
             return TileId::HiddenBridge;
+        case 5:
+            return TileId::Water;
+        case 6:
+            return TileId::PavedPath;
+        case 7:
+            return TileId::SanctuaryFloor;
+        case 8:
+            return TileId::RuinsWall;
+        case 9:
+            return TileId::GardenFloor;
         default:
             return TileId::Wall;
     }
@@ -30,6 +40,108 @@ namespace {
     return std::isfinite(aabb.x) && std::isfinite(aabb.y) &&
            std::isfinite(aabb.width) && std::isfinite(aabb.height) &&
            aabb.width > 0.0f && aabb.height > 0.0f;
+}
+
+void FillRect(
+    std::vector<std::vector<int>>& grid,
+    int r0,
+    int r1,
+    int c0,
+    int c1,
+    TileId id) {
+    const int rows = static_cast<int>(grid.size());
+    for (int r = std::max(0, r0); r <= std::min(rows - 1, r1); ++r) {
+        const int cols = static_cast<int>(grid[static_cast<std::size_t>(r)].size());
+        for (int c = std::max(0, c0); c <= std::min(cols - 1, c1); ++c) {
+            grid[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)] = static_cast<int>(id);
+        }
+    }
+}
+
+void SetCell(std::vector<std::vector<int>>& grid, int r, int c, TileId id) {
+    if (r < 0 || r >= static_cast<int>(grid.size())) {
+        return;
+    }
+    auto& row = grid[static_cast<std::size_t>(r)];
+    if (c < 0 || c >= static_cast<int>(row.size())) {
+        return;
+    }
+    row[static_cast<std::size_t>(c)] = static_cast<int>(id);
+}
+
+[[nodiscard]] Tilemap CreateHypogeanCisternsMap(float tile_size) {
+    // 16 rows x 34 cols (768 x 1632 px) — Cisterne Ipogee
+    constexpr int kRows = 16;
+    constexpr int kCols = 34;
+    std::vector<std::vector<int>> grid(kRows, std::vector<int>(kCols, 0));
+
+    FillRect(grid, 0, 0, 0, kCols - 1, TileId::Wall);
+    FillRect(grid, kRows - 2, kRows - 1, 0, kCols - 1, TileId::Wall);
+    FillRect(grid, 0, kRows - 1, 0, 0, TileId::Wall);
+    FillRect(grid, 0, kRows - 1, kCols - 1, kCols - 1, TileId::Wall);
+
+    // ExitPortal on ground floor left side (row 13, cols 2..3)
+    SetCell(grid, 13, 2, TileId::ExitPortal);
+    SetCell(grid, 13, 3, TileId::ExitPortal);
+
+    // Ascending aqueduct stone ledges (every vertical jump step <= 2 tiles = 96 px)
+    FillRect(grid, 12, 12, 16, 20, TileId::Wall); // Tier 1
+    FillRect(grid, 10, 10, 22, 26, TileId::Wall); // Tier 2 East
+    FillRect(grid, 8, 8, 24, 31, TileId::Wall);   // Tier 3 Archivist Gallery (Lorenzo + Relic)
+    FillRect(grid, 10, 10, 8, 14, TileId::Wall);  // Tier 2 West Cistern Ledge (Relic)
+
+    return Tilemap(std::move(grid), tile_size);
+}
+
+[[nodiscard]] Tilemap CreatePendulumTowerMap(float tile_size) {
+    // 18 rows x 30 cols (864 x 1440 px) — Torre del Pendolo
+    constexpr int kRows = 18;
+    constexpr int kCols = 30;
+    std::vector<std::vector<int>> grid(kRows, std::vector<int>(kCols, 0));
+
+    FillRect(grid, 0, 0, 0, kCols - 1, TileId::Wall);
+    FillRect(grid, kRows - 2, kRows - 1, 0, kCols - 1, TileId::Wall);
+    FillRect(grid, 0, kRows - 1, 0, 0, TileId::Wall);
+    FillRect(grid, 0, kRows - 1, kCols - 1, kCols - 1, TileId::Wall);
+
+    // ExitPortal on ground floor left side (row 15, cols 2..3)
+    SetCell(grid, 15, 2, TileId::ExitPortal);
+    SetCell(grid, 15, 3, TileId::ExitPortal);
+
+    // Ascending spiral clocktower galleries (every vertical step = 2 tiles)
+    FillRect(grid, 14, 14, 10, 15, TileId::Wall); // Tier 1
+    FillRect(grid, 12, 12, 17, 23, TileId::Wall); // Tier 2
+    FillRect(grid, 10, 10, 11, 18, TileId::Wall); // Tier 3
+    FillRect(grid, 8, 8, 10, 20, TileId::Wall);   // Tier 4 Central Pendulum Gallery
+    FillRect(grid, 6, 6, 3, 9, TileId::Wall);     // Tier 5 West Belfry (Relic)
+    FillRect(grid, 6, 6, 21, 27, TileId::Wall);   // Tier 5 East Belfry (Relic)
+
+    return Tilemap(std::move(grid), tile_size);
+}
+
+[[nodiscard]] Tilemap CreateGeothermalChamberMap(float tile_size) {
+    // 16 rows x 34 cols (768 x 1632 px) — Camera Geotermica
+    constexpr int kRows = 16;
+    constexpr int kCols = 34;
+    std::vector<std::vector<int>> grid(kRows, std::vector<int>(kCols, 0));
+
+    FillRect(grid, 0, 0, 0, kCols - 1, TileId::Wall);
+    FillRect(grid, kRows - 2, kRows - 1, 0, kCols - 1, TileId::Wall);
+    FillRect(grid, 0, kRows - 1, 0, 0, TileId::Wall);
+    FillRect(grid, 0, kRows - 1, kCols - 1, kCols - 1, TileId::Wall);
+
+    // ExitPortal on ground floor left side (row 13, cols 2..3)
+    SetCell(grid, 13, 2, TileId::ExitPortal);
+    SetCell(grid, 13, 3, TileId::ExitPortal);
+
+    // Basalt geothermal bridges & steam catwalks (every vertical step <= 2 tiles)
+    FillRect(grid, 12, 12, 10, 15, TileId::Wall); // Tier 1
+    FillRect(grid, 10, 10, 17, 22, TileId::Wall); // Tier 2
+    FillRect(grid, 10, 10, 24, 30, TileId::Wall); // Tier 3 Carnot Exchanger Deck
+    FillRect(grid, 8, 8, 12, 18, TileId::Wall);   // Tier 4 Upper Basalt Catwalk
+    FillRect(grid, 6, 6, 4, 10, TileId::Wall);    // Tier 5 Upper West Alcove (Relic)
+
+    return Tilemap(std::move(grid), tile_size);
 }
 
 } // namespace
@@ -45,98 +157,175 @@ Tilemap::Tilemap(std::vector<std::vector<int>> grid, float tile_size)
 }
 
 Tilemap Tilemap::CreateOverworldMap(float tile_size) {
-    // 18 rows x 28 cols (864 x 1344 px at kTileSize = 48.0f)
-    // 0 = Walkable, 1 = Wall, 2 = StructurePortal, 4 = HiddenBridge
-    constexpr int kRows = 18;
-    constexpr int kCols = 28;
+    // 36 rows x 50 cols (1728 x 2400 px at kTileSize = 48.0f) — La Conca di Meridia
+    constexpr int kRows = kOverworldRows;
+    constexpr int kCols = kOverworldCols;
     std::vector<std::vector<int>> grid(kRows, std::vector<int>(kCols, 0));
 
-    // Perimeter walls
-    for (int c = 0; c < kCols; ++c) {
-        grid[0][static_cast<std::size_t>(c)] = 1;
-        grid[kRows - 1][static_cast<std::size_t>(c)] = 1;
-    }
-    for (int r = 0; r < kRows; ++r) {
-        grid[static_cast<std::size_t>(r)][0] = 1;
-        grid[static_cast<std::size_t>(r)][kCols - 1] = 1;
-    }
+    // 1. District ground layers (walkable decorative surfaces)
+    // Giardini Sospesi (Centro-Est) base flora
+    FillRect(grid, 13, 22, 26, 47, TileId::GardenFloor);
+    // Terrazze dell'Alba (SO) garden alcoves & sundial court
+    FillRect(grid, 25, 26, 14, 21, TileId::GardenFloor);
+    FillRect(grid, 32, 34, 2, 8, TileId::GardenFloor);
+    FillRect(grid, 27, 31, 9, 13, TileId::SanctuaryFloor);
+    // Quartiere dei Canali olive courtyard
+    FillRect(grid, 20, 22, 3, 5, TileId::GardenFloor);
+    // Santuario dell'Armonia (SE) astronomical court & flanking gardens
+    FillRect(grid, 25, 34, 26, 29, TileId::GardenFloor);
+    FillRect(grid, 25, 34, 45, 48, TileId::GardenFloor);
+    FillRect(grid, 26, 33, 30, 44, TileId::SanctuaryFloor);
 
-    // Interior L-shaped ruin obstacle (rows 3..5, cols 6..7 + row 5, col 8)
-    for (int r = 3; r <= 5; ++r) {
-        grid[static_cast<std::size_t>(r)][6] = 1;
-        grid[static_cast<std::size_t>(r)][7] = 1;
-    }
-    grid[5][8] = 1;
+    // 2. Paved stone avenues connecting all 6 districts smoothly
+    FillRect(grid, 4, 31, 10, 11, TileId::PavedPath);  // West North-South spine
+    FillRect(grid, 4, 31, 36, 37, TileId::PavedPath);  // East North-South spine
+    FillRect(grid, 16, 18, 5, 23, TileId::PavedPath);  // West-East avenue (West side)
+    FillRect(grid, 16, 18, 25, 44, TileId::PavedPath); // West-East avenue (East side)
+    FillRect(grid, 29, 30, 4, 9, TileId::PavedPath);   // Dawn spawn to sundial
+    FillRect(grid, 29, 30, 13, 18, TileId::PavedPath); // Dawn east terrace walk
+    FillRect(grid, 8, 8, 12, 21, TileId::PavedPath);   // WindPlateau east overlook
+    FillRect(grid, 8, 8, 31, 40, TileId::PavedPath);   // FumaroleCaldera furnace square
+    FillRect(grid, 15, 19, 34, 38, TileId::SanctuaryFloor); // HangingGardens resonator pavilion
 
-    // Vertical wall pillar east of spawn plaza (rows 7..9, col 12) for immediate X/corner slide
-    for (int r = 7; r <= 9; ++r) {
-        grid[static_cast<std::size_t>(r)][12] = 1;
-    }
+    // 3. Central Canal & Ponte degli Archi at col 24
+    FillRect(grid, 1, 4, kBridgeDividerCol, kBridgeDividerCol, TileId::RuinsWall);
+    FillRect(grid, 5, 15, kBridgeDividerCol, kBridgeDividerCol, TileId::Water);
+    FillRect(grid, 16, 18, kBridgeDividerCol, kBridgeDividerCol, TileId::HiddenBridge);
+    FillRect(grid, 19, 30, kBridgeDividerCol, kBridgeDividerCol, TileId::Water);
+    FillRect(grid, 31, 34, kBridgeDividerCol, kBridgeDividerCol, TileId::RuinsWall);
 
-    // Southern island pillar (rows 12..13, cols 9..11) for horizontal/vertical sliding
-    for (int r = 12; r <= 13; ++r) {
-        for (int c = 9; c <= 11; ++c) {
-            grid[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)] = 1;
-        }
-    }
+    // 4. Water canals & reflecting basins
+    // Quartiere dei Canali flanking aqueduct pools
+    FillRect(grid, 13, 14, 18, 22, TileId::Water);
+    FillRect(grid, 20, 21, 18, 22, TileId::Water);
+    // Giardini Sospesi reflecting pools
+    FillRect(grid, 14, 15, 28, 30, TileId::Water);
+    FillRect(grid, 20, 21, 28, 30, TileId::Water);
+    // Santuario dell'Armonia side basins
+    FillRect(grid, 27, 28, 27, 27, TileId::Water);
+    FillRect(grid, 27, 28, 47, 47, TileId::Water);
 
-    // StructurePortal alcove (row 3..4, cols 14..17), open walkable approach south (rows 5..7)
-    for (int c = 14; c <= 17; ++c) {
-        grid[3][static_cast<std::size_t>(c)] = 1;
-    }
-    grid[4][14] = 1;
-    grid[4][15] = 2; // StructurePortal
-    grid[4][16] = 2; // StructurePortal
-    grid[4][17] = 1;
+    // 5. Ancient Ruins, Colonnades & Basalt Outcrops (solid RuinsWall / Wall)
+    // DawnTerraces ruins
+    FillRect(grid, 25, 26, 4, 6, TileId::RuinsWall);
+    FillRect(grid, 32, 33, 15, 17, TileId::RuinsWall);
+    // CanalQuarter aqueduct piers & west fountain wall
+    SetCell(grid, 15, 19, TileId::RuinsWall);
+    SetCell(grid, 15, 21, TileId::RuinsWall);
+    SetCell(grid, 19, 19, TileId::RuinsWall);
+    SetCell(grid, 19, 21, TileId::RuinsWall);
+    FillRect(grid, 19, 20, 7, 8, TileId::RuinsWall);
+    // WindPlateau windbreak cliffs
+    FillRect(grid, 4, 5, 4, 5, TileId::RuinsWall);
+    FillRect(grid, 7, 8, 15, 17, TileId::RuinsWall);
+    FillRect(grid, 3, 4, 19, 20, TileId::RuinsWall);
+    // HangingGardens pergola pillars
+    SetCell(grid, 13, 41, TileId::RuinsWall);
+    SetCell(grid, 13, 45, TileId::RuinsWall);
+    SetCell(grid, 21, 41, TileId::RuinsWall);
+    SetCell(grid, 21, 45, TileId::RuinsWall);
+    // FumaroleCaldera broken furnace stacks
+    FillRect(grid, 4, 5, 28, 30, TileId::RuinsWall);
+    FillRect(grid, 7, 8, 42, 44, TileId::RuinsWall);
+    FillRect(grid, 2, 2, 43, 46, TileId::Wall);
+    // HarmonySanctuary symmetrical colonnade pillars
+    SetCell(grid, 26, 29, TileId::RuinsWall);
+    SetCell(grid, 30, 29, TileId::RuinsWall);
+    SetCell(grid, 26, 45, TileId::RuinsWall);
+    SetCell(grid, 30, 45, TileId::RuinsWall);
 
-    // Eastern divider wall at col 20 with 2-tile HiddenBridge (rows 8..9, col 20)
-    // separating the eastern courtyard (cols 21..26, rows 1..16).
-    for (int r = 1; r <= kRows - 2; ++r) {
-        grid[static_cast<std::size_t>(r)][20] = 1;
-    }
-    grid[8][20] = 4; // HiddenBridge
-    grid[9][20] = 4; // HiddenBridge
+    // 6. Three Dedicated Structure Portals (framed stone alcoves opening south)
+    // Portal 1: Cisterne Ipogee (Quartiere dei Canali, row 14, cols 5..6)
+    FillRect(grid, 13, 13, 4, 7, TileId::RuinsWall);
+    SetCell(grid, 14, 4, TileId::RuinsWall);
+    SetCell(grid, 14, 5, TileId::StructurePortal);
+    SetCell(grid, 14, 6, TileId::StructurePortal);
+    SetCell(grid, 14, 7, TileId::RuinsWall);
+
+    // Portal 2: Torre del Pendolo (Altopiano dei Venti, row 3, cols 11..12)
+    FillRect(grid, 2, 2, 10, 13, TileId::RuinsWall);
+    SetCell(grid, 3, 10, TileId::RuinsWall);
+    SetCell(grid, 3, 11, TileId::StructurePortal);
+    SetCell(grid, 3, 12, TileId::StructurePortal);
+    SetCell(grid, 3, 13, TileId::RuinsWall);
+
+    // Portal 3: Camera Geotermica (Caldera delle Fumarole, row 3, cols 37..38)
+    FillRect(grid, 2, 2, 36, 39, TileId::Wall);
+    SetCell(grid, 3, 36, TileId::Wall);
+    SetCell(grid, 3, 37, TileId::StructurePortal);
+    SetCell(grid, 3, 38, TileId::StructurePortal);
+    SetCell(grid, 3, 39, TileId::Wall);
+
+    // 7. Outer perimeter walls
+    FillRect(grid, 0, 0, 0, kCols - 1, TileId::Wall);
+    FillRect(grid, kRows - 1, kRows - 1, 0, kCols - 1, TileId::Wall);
+    FillRect(grid, 0, kRows - 1, 0, 0, TileId::Wall);
+    FillRect(grid, 0, kRows - 1, kCols - 1, kCols - 1, TileId::Wall);
 
     return Tilemap(std::move(grid), tile_size);
 }
 
+Tilemap Tilemap::CreateStructureMap(StructureId structure_id, float tile_size) {
+    switch (structure_id) {
+        case StructureId::HypogeanCisterns:
+            return CreateHypogeanCisternsMap(tile_size);
+        case StructureId::PendulumTower:
+            return CreatePendulumTowerMap(tile_size);
+        case StructureId::GeothermalChamber:
+            return CreateGeothermalChamberMap(tile_size);
+        case StructureId::Count:
+            break;
+    }
+    return CreateHypogeanCisternsMap(tile_size);
+}
+
 Tilemap Tilemap::CreateStructureMap(float tile_size) {
-    // 15 rows x 28 cols (720 x 1344 px at kTileSize = 48.0f)
-    // 0 = Walkable, 1 = Wall, 3 = ExitPortal
-    constexpr int kRows = 15;
-    constexpr int kCols = 28;
-    std::vector<std::vector<int>> grid(kRows, std::vector<int>(kCols, 0));
+    return CreateStructureMap(StructureId::HypogeanCisterns, tile_size);
+}
 
-    // Perimeter walls & ceiling
-    for (int c = 0; c < kCols; ++c) {
-        grid[0][static_cast<std::size_t>(c)] = 1;
-        grid[kRows - 2][static_cast<std::size_t>(c)] = 1; // Floor row 13 (top at y = 624)
-        grid[kRows - 1][static_cast<std::size_t>(c)] = 1;
+ZoneId Tilemap::DistrictAtTile(int row, int col) noexcept {
+    const bool east = (col > kBridgeDividerCol);
+    if (row < 12) {
+        return east ? ZoneId::FumaroleCaldera : ZoneId::WindPlateau;
     }
-    for (int r = 0; r < kRows; ++r) {
-        grid[static_cast<std::size_t>(r)][0] = 1;
-        grid[static_cast<std::size_t>(r)][kCols - 1] = 1;
+    if (row < 24) {
+        return east ? ZoneId::HangingGardens : ZoneId::CanalQuarter;
     }
+    return east ? ZoneId::HarmonySanctuary : ZoneId::DawnTerraces;
+}
 
-    // ExitPortal on ground floor left side (row 12, cols 2..3)
-    grid[12][2] = 3;
-    grid[12][3] = 3;
+ZoneId Tilemap::DistrictAt(Vec2 world_pos) const noexcept {
+    const TileCoord tc = WorldToTile(world_pos);
+    if (tc.row < 0 || tc.col < 0) {
+        return ZoneId::DawnTerraces;
+    }
+    return DistrictAtTile(tc.row, tc.col);
+}
 
-    // Stepped platform tiers for jump, coyote time, jump buffer, and ceiling collision.
-    // Max jump height is v^2/(2*g) = 480^2/2400 = 96px (2 tiles).
-    // Row 11 (top=528, dy=96 from floor row 13) -> Row 9 (top=432, dy=96) -> Row 7 (top=336, dy=96),
-    // with 1-tile horizontal gap (48px) so every tier is comfortably reachable in 1 jump!
-    for (int c = 8; c <= 12; ++c) {
-        grid[11][static_cast<std::size_t>(c)] = 1;
-    }
-    for (int c = 14; c <= 18; ++c) {
-        grid[9][static_cast<std::size_t>(c)] = 1;
-    }
-    for (int c = 20; c <= 24; ++c) {
-        grid[7][static_cast<std::size_t>(c)] = 1;
-    }
+Rect Tilemap::DistrictBounds(ZoneId zone) const noexcept {
+    const float ts = tile_size_;
+    const int west_cols = kBridgeDividerCol + 1;
+    const int east_start = kBridgeDividerCol + 1;
+    const int east_cols = std::max(1, max_cols_ - east_start);
+    const int band_rows = 12;
 
-    return Tilemap(std::move(grid), tile_size);
+    switch (zone) {
+        case ZoneId::WindPlateau:
+            return {0.0f, 0.0f, static_cast<float>(west_cols) * ts, static_cast<float>(band_rows) * ts};
+        case ZoneId::CanalQuarter:
+            return {0.0f, static_cast<float>(band_rows) * ts, static_cast<float>(west_cols) * ts, static_cast<float>(band_rows) * ts};
+        case ZoneId::DawnTerraces:
+            return {0.0f, static_cast<float>(2 * band_rows) * ts, static_cast<float>(west_cols) * ts, static_cast<float>(std::max(1, Rows() - 2 * band_rows)) * ts};
+        case ZoneId::FumaroleCaldera:
+            return {static_cast<float>(east_start) * ts, 0.0f, static_cast<float>(east_cols) * ts, static_cast<float>(band_rows) * ts};
+        case ZoneId::HangingGardens:
+            return {static_cast<float>(east_start) * ts, static_cast<float>(band_rows) * ts, static_cast<float>(east_cols) * ts, static_cast<float>(band_rows) * ts};
+        case ZoneId::HarmonySanctuary:
+            return {static_cast<float>(east_start) * ts, static_cast<float>(2 * band_rows) * ts, static_cast<float>(east_cols) * ts, static_cast<float>(std::max(1, Rows() - 2 * band_rows)) * ts};
+        case ZoneId::Count:
+            break;
+    }
+    return {0.0f, 0.0f, WorldWidth(), WorldHeight()};
 }
 
 int Tilemap::Rows() const noexcept {
@@ -189,12 +378,17 @@ bool Tilemap::SetTile(int row, int col, TileId id) noexcept {
 bool Tilemap::IsSolid(int row, int col, bool bridge_unlocked) const noexcept {
     switch (GetTile(row, col)) {
         case TileId::Wall:
+        case TileId::Water:
+        case TileId::RuinsWall:
             return true;
         case TileId::HiddenBridge:
             return !bridge_unlocked;
         case TileId::Walkable:
         case TileId::StructurePortal:
         case TileId::ExitPortal:
+        case TileId::PavedPath:
+        case TileId::SanctuaryFloor:
+        case TileId::GardenFloor:
             return false;
     }
     return true;
@@ -240,8 +434,6 @@ TileRange Tilemap::OverlappingTileRange(const Rect& aabb, bool include_oob_borde
     const float top = aabb.Top();
     const float bottom = aabb.Bottom();
 
-    // Pad by 1 tile on each side so float division vs TileRect multiplication ULP
-    // discrepancies never miss an actually overlapping tile, then tighten below.
     const float min_col_f = std::floor(left / tile_size_) - 1.0f;
     const float max_col_f = std::ceil(right / tile_size_);
     const float min_row_f = std::floor(top / tile_size_) - 1.0f;
@@ -269,8 +461,6 @@ TileRange Tilemap::OverlappingTileRange(const Rect& aabb, bool include_oob_borde
     int min_col = static_cast<int>(std::clamp(min_col_f, lo_f, hi_col_f));
     int max_col = static_cast<int>(std::clamp(max_col_f, lo_f, hi_col_f));
 
-    // Tighten padded bounds against exact TileRect boundaries so OverlappingTileRange
-    // matches aabb.Overlaps(TileRect(r, c)) bit-for-bit across all fractional tile sizes.
     while (min_col <= max_col && TileRect(0, min_col).Right() <= left) {
         ++min_col;
     }

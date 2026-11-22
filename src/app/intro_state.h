@@ -7,7 +7,7 @@
 
 namespace eco::app {
 
-// Scena introduttiva con testo narrativo a macchina da scrivere (IntroCrawl).
+// Scena introduttiva con il prologo di Elena Valli (IntroCrawl) e word-wrap automatico.
 class IntroState : public GameState {
 public:
     explicit IntroState(AppContext& ctx);
@@ -21,6 +21,8 @@ public:
 private:
     AppContext& ctx_;
     std::vector<std::string> lines_{};
+    std::vector<std::string> wrapped_lines_{};
+    std::vector<bool> is_paragraph_header_{};
     float elapsed_ = 0.0f;
     std::size_t total_chars_ = 0;
 };

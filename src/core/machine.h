@@ -8,16 +8,106 @@ namespace eco {
 
 inline constexpr float kSolarEfficiencyThreshold = 0.80f;
 inline constexpr float kHydroEfficiencyThreshold = 0.80f;
+inline constexpr float kPendulumEfficiencyThreshold = 0.80f;
+inline constexpr float kHarmonicEfficiencyThreshold = 0.80f;
+inline constexpr float kThermalEfficiencyThreshold = 0.80f;
+inline constexpr float kAstrolabeEfficiencyThreshold = 0.85f;
+
 inline constexpr float kWaterDensity = 1000.0f;
 inline constexpr float kGravityWater = 9.81f;
 inline constexpr float kDefaultHydroTolerancePa = 20000.0f;
-inline constexpr float kDefaultMachineTriggerRadius = 72.0f;
-inline constexpr float kDefaultScannerRange = 250.0f;
+inline constexpr float kDefaultPendulumToleranceSec = 0.45f;
+inline constexpr float kDefaultHarmonicQFactor = 3.0f;
+inline constexpr float kDefaultCarnotColdTempK = 300.0f;
+inline constexpr float kDefaultThermalToleranceK = 150.0f;
+
+inline constexpr float kDefaultMachineTriggerRadius = 76.0f;
+inline constexpr float kDefaultScannerRange = 280.0f;
 
 inline constexpr const char* kMachineInteractPrompt =
-    "Premi Interagisci per riavviare l'impianto";
+    "Premi [E] per calibrare il monumento";
 inline constexpr const char* kCombustionBypassLabel =
-    "Usa Generatore di Emergenza a Combustione (Bypass)";
+    "Usa Fornace a Pece di Emergenza (Bypass)";
+
+[[nodiscard]] constexpr const char* MachineName(MachineType type) noexcept {
+    switch (type) {
+        case MachineType::SolarArray:
+            return "Eliostato Solare";
+        case MachineType::HydroTurbine:
+            return "Turbina Idrostatica";
+        case MachineType::PendulumRegulator:
+            return "Pendolo Isochronos";
+        case MachineType::HarmonicResonator:
+            return "Risonatore Armonico";
+        case MachineType::ThermalExchanger:
+            return "Scambiatore di Carnot";
+        case MachineType::CentralAstrolabe:
+            return "Astrolabio Centrale";
+        case MachineType::Count:
+            break;
+    }
+    return "Monumento";
+}
+
+[[nodiscard]] constexpr const char* MachineLawName(MachineType type) noexcept {
+    switch (type) {
+        case MachineType::SolarArray:
+            return "Ottica - Legge di Lambert";
+        case MachineType::HydroTurbine:
+            return "Idrostatica - Legge di Stevino";
+        case MachineType::PendulumRegulator:
+            return "Meccanica - Isocronismo di Galileo";
+        case MachineType::HarmonicResonator:
+            return "Acustica - Risonanza Armonica";
+        case MachineType::ThermalExchanger:
+            return "Termodinamica - Ciclo di Carnot";
+        case MachineType::CentralAstrolabe:
+            return "Sintesi - Interferenza di Fase";
+        case MachineType::Count:
+            break;
+    }
+    return "Legge Fisica";
+}
+
+[[nodiscard]] constexpr const char* MachineUnit(MachineType type) noexcept {
+    switch (type) {
+        case MachineType::SolarArray:
+            return "deg";
+        case MachineType::HydroTurbine:
+            return "m";
+        case MachineType::PendulumRegulator:
+            return "m";
+        case MachineType::HarmonicResonator:
+            return "Hz";
+        case MachineType::ThermalExchanger:
+            return "K";
+        case MachineType::CentralAstrolabe:
+            return "deg";
+        case MachineType::Count:
+            break;
+    }
+    return "";
+}
+
+[[nodiscard]] constexpr const char* MachineFormulaLabel(MachineType type) noexcept {
+    switch (type) {
+        case MachineType::SolarArray:
+            return "eta = cos(theta - theta_sole)";
+        case MachineType::HydroTurbine:
+            return "P = rho * g * h";
+        case MachineType::PendulumRegulator:
+            return "T = 2*pi * sqrt(L / g)";
+        case MachineType::HarmonicResonator:
+            return "R = 1 / sqrt(1 + Q^2 * (f/f0 - f0/f)^2)";
+        case MachineType::ThermalExchanger:
+            return "eta_C = 1 - T_fredda / T_calda";
+        case MachineType::CentralAstrolabe:
+            return "I = cos^2((phi - phi_0) / 2)";
+        case MachineType::Count:
+            break;
+    }
+    return "";
+}
 
 [[nodiscard]] float ComputeSolarEfficiency(float panel_angle_deg, float sun_angle_deg) noexcept;
 
@@ -26,22 +116,61 @@ inline constexpr const char* kCombustionBypassLabel =
     float target_head_m,
     float tolerance_pa = kDefaultHydroTolerancePa) noexcept;
 
+[[nodiscard]] float ComputePendulumPeriod(
+    float length_m,
+    float gravity = kGravityWater) noexcept;
+
+[[nodiscard]] float ComputePendulumEfficiency(
+    float length_m,
+    float target_length_m,
+    float period_tolerance_s = kDefaultPendulumToleranceSec) noexcept;
+
+[[nodiscard]] float ComputeHarmonicEfficiency(
+    float freq_hz,
+    float target_freq_hz,
+    float q_factor = kDefaultHarmonicQFactor) noexcept;
+
+[[nodiscard]] float ComputeCarnotEta(
+    float hot_temp_k,
+    float cold_temp_k = kDefaultCarnotColdTempK) noexcept;
+
+[[nodiscard]] float ComputeThermalEfficiency(
+    float hot_temp_k,
+    float target_hot_k,
+    float tolerance_k = kDefaultThermalToleranceK) noexcept;
+
+[[nodiscard]] float ComputeAstrolabeEfficiency(
+    float phase_deg,
+    float target_phase_deg) noexcept;
+
 struct Machine {
     MachineType type = MachineType::SolarArray;
     MachineState state = MachineState::Broken;
+    LocationId location = LocationId::Overworld;
+    ZoneId zone = ZoneId::DawnTerraces;
     Vec2 pos{0.0f, 0.0f};
     float trigger_radius = kDefaultMachineTriggerRadius;
     float current_param = 0.0f;
     float target_param = 45.0f;
+    float min_param = -90.0f;
+    float max_param = 180.0f;
+    float step_param = 1.0f;
     float tolerance_pa = kDefaultHydroTolerancePa;
-    float clean_energy_reward = 35.0f;
-    float clean_pollution_reduction = 15.0f;
-    float dirty_energy_reward = 35.0f;
-    float dirty_pollution_increase = 25.0f;
+    float aux_param = 0.0f;
+    float clean_energy_reward = 22.0f;
+    float clean_pollution_reduction = 12.0f;
+    float dirty_energy_reward = 22.0f;
+    float dirty_pollution_increase = 22.0f;
+    bool unlocked = true;
+    bool allow_bypass = true;
     bool prompt_visible = false;
 
-    [[nodiscard]] static Machine CreateDefaultSolar(Vec2 pos = {360.0f, 504.0f}) noexcept;
-    [[nodiscard]] static Machine CreateDefaultHydro(Vec2 pos = {520.0f, 580.0f}) noexcept;
+    [[nodiscard]] static Machine CreateDefaultSolar(Vec2 pos = {552.0f, 1416.0f}) noexcept;
+    [[nodiscard]] static Machine CreateDefaultHydro(Vec2 pos = {648.0f, 648.0f}) noexcept;
+    [[nodiscard]] static Machine CreateDefaultPendulum(Vec2 pos = {720.0f, 360.0f}) noexcept;
+    [[nodiscard]] static Machine CreateDefaultHarmonic(Vec2 pos = {1752.0f, 840.0f}) noexcept;
+    [[nodiscard]] static Machine CreateDefaultThermal(Vec2 pos = {1272.0f, 456.0f}) noexcept;
+    [[nodiscard]] static Machine CreateDefaultAstrolabe(Vec2 pos = {1800.0f, 1416.0f}) noexcept;
 
     [[nodiscard]] float EvaluateEfficiency(float param) const noexcept;
     [[nodiscard]] float LiveEfficiency() const noexcept;

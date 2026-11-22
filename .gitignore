@@ -16,3 +16,6 @@ tests/e2e/.build_*/
 .DS_Store
 *~
 screenshot*.png
+
+# Local saves and user display/GPU settings
+saves/

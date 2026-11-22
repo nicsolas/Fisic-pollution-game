@@ -26,11 +26,21 @@ struct TileRange {
 
 class Tilemap {
 public:
+    static constexpr int kOverworldRows = 36;
+    static constexpr int kOverworldCols = 50;
+    static constexpr int kBridgeDividerCol = 24;
+
     Tilemap() = default;
     explicit Tilemap(std::vector<std::vector<int>> grid, float tile_size = kTileSize);
 
     [[nodiscard]] static Tilemap CreateOverworldMap(float tile_size = kTileSize);
+    [[nodiscard]] static Tilemap CreateStructureMap(
+        StructureId structure_id, float tile_size = kTileSize);
     [[nodiscard]] static Tilemap CreateStructureMap(float tile_size = kTileSize);
+
+    [[nodiscard]] static ZoneId DistrictAtTile(int row, int col) noexcept;
+    [[nodiscard]] ZoneId DistrictAt(Vec2 world_pos) const noexcept;
+    [[nodiscard]] Rect DistrictBounds(ZoneId zone) const noexcept;
 
     [[nodiscard]] int Rows() const noexcept;
     [[nodiscard]] int Cols() const noexcept;

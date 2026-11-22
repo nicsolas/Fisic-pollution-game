@@ -87,6 +87,8 @@ eco::AllPlayersInput PollRaylibInput() {
     out.advance_dialogue_pressed =
         IsKeyPressed(KEY_N) ||
         (IsGamepadAvailable(0) && IsGamepadButtonPressed(0, GAMEPAD_BUTTON_RIGHT_FACE_UP));
+    out.toggle_history_pressed = IsKeyPressed(KEY_H);
+    out.toggle_codex_pressed = IsKeyPressed(KEY_J);
     return out;
 }
 

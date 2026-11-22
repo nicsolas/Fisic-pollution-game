@@ -1,191 +1,191 @@
-# DIALOGHI — EQUILIBRIO: Le Leggi della Valle
+# DIALOGHI E RELIQUIE -- EQUILIBRIO: Le Cronache di Meridia
 
-> **Copione Completo In-Game (`src/core/story_content.cpp`)**
-> Tutti i testi in-game usano **esclusivamente caratteri ASCII stampabili (codici 32..126)** con apostrofi (`e'`, `piu'`, `perche'`, `cosi'`, `giu'`) per garantire compatibilita' perfetta con il font bitmap di default di Raylib 5.5. Lunghezza massima per battuta: **<= 105 caratteri**.
+> **Copione Completo In-Game (`src/core/story_content.cpp`) e Catalogo Codex (`src/core/collectible_content.cpp`)**
+> Tutti i testi destinati al rendering usano **esclusivamente caratteri ASCII stampabili (codici 32..126)** con apostrofi (`e'`, `piu'`, `civilta'`, `perche'`, `cosi'`) per garantire compatibilita' universale con font TTF e bitmap.
+> Ogni battuta viene registrata automaticamente nella **Cronologia Dialoghi (`[H]`)** e ogni reliquia viene trascritta nel **Codex dell'Archivio (`[J]`)**.
 
 ---
 
-## 1. Titoli dei Capitoli (`ChapterTitle`)
+## 1. Cast e Voci Narranti
 
-| Enum `Chapter` | Stringa In-Game |
+| Parlante | Ruolo | Registro e Carattere |
+|---|---|---|
+| **Elena Valli** | Naturalista e Cartografa (Protagonista) | Prosa lucida da taccuino di campo; unisce rigore empirico e meraviglia davanti alla pietra antica. |
+| **Clara Sereni** | Ingegnera dei Canali | Asciutta, concreta, priva di retorica; si fida solo dell'energia pulita e apre il Ponte degli Archi. |
+| **Lorenzo Altieri** | Archivista delle Cisterne Ipogee | Cadenza misurata da cronista antico; custodisce la memoria delle quattro ere e la chiave geotermica. |
+| **Miriam Ferro** | Botanica dei Giardini Sospesi | Sensoriale, attenta a profumi, radici, semi dormienti e risonanze di vetro-giada. |
+| **Matteo Verrini** | Sovrintendente della Compagnia della Pece | Pragmatico e stanco, mai caricaturale; difende le fornaci rapide per proteggere i villaggi dal freddo. |
+| **Eco di Meridia** | Cristalli Armonici dei Monumenti | Prosa breve, epigrafica e poetica incisa dagli ultimi Custodi dell'Era IV; zero gergo tecnico. |
+
+---
+
+## 2. Titoli dei Capitoli (`ChapterTitle`)
+
+| Enum `Chapter` | Titolo In-Game |
 |---|---|
-| `Chapter::Prologo` | `"PROLOGO // IL RISVEGLIO NELLA CENERE"` |
-| `Chapter::Atto1_Luce` | `"ATTO I // LA LEGGE DEL COSENO"` |
-| `Chapter::Atto2_Acqua` | `"ATTO II // LA PRESSIONE DEL CRATI"` |
-| `Chapter::Atto3_Codice` | `"ATTO III // OLTRE IL PONTE BUCCI"` |
-| `Chapter::Atto4_Archivio` | `"ATTO IV // L'ARCHIVIO SOMMERSO"` |
-| `Chapter::Atto5_Inverno` | `"ATTO V // IL NUCLEO DI GAIA"` |
-| `Chapter::Epilogo` | `"EPILOGO // IL GIUDIZIO DI GAIA"` |
+| `Chapter::Prologo` | `"PROLOGO - La Nebbia sull'Altopiano"` |
+| `Chapter::Atto1_Luce` | `"ATTO I - La Misura della Luce"` |
+| `Chapter::Atto2_Acqua` | `"ATTO II - Il Peso dell'Acqua"` |
+| `Chapter::Atto3_Pendolo` | `"ATTO III - Il Tempo del Pendolo"` |
+| `Chapter::Atto4_Giardini` | `"ATTO IV - L'Accordo dei Giardini"` |
+| `Chapter::Atto5_Fumarole` | `"ATTO V - Le Ceneri della Frattura"` |
+| `Chapter::Epilogo` | `"EPILOGO - Il Cuore di Meridia"` |
 
 ---
 
-## 2. Testo Introduttivo (`IntroCrawl`)
+## 3. Testo Introduttivo (`IntroCrawl`)
 
-10 righe mostrate in `IntroState` con effetto macchina da scrivere:
-
-1. `"CALABRIA, 2091 — EX CAMPUS DELLA VALLE DEL CRATI"`
-2. `"Dodici anni dopo il Grande Smog e l'Oblio digitale, gli archivi scientifici sono muti."`
-3. `"Chi sopravvive nella conca brucia il gasolio del Consorzio Brace per avere corrente."`
-4. `"Il fumo ha coperto i colli, avvelenato il fiume Crati e spento i laboratori sul Ponte Bucci."`
-5. `"Ma nell'Osservatorio Ovest la ricercatrice Ada Ferri si risveglia con uno Scanner Empirico."`
-6. `"Le macchine del campus non sono morte: attendono qualcuno che ricordi le leggi della fisica."`
-7. `"L'angolo dei fotoni. La pressione dell'acqua. La frequenza di risonanza dell'atmosfera."`
-8. `"Ogni impianto ti porra' una scelta: la fatica del calcolo pulito o il bypass a combustione."`
-9. `"Misura con [F], calibra con [E], risveglia la rete degli scienziati."`
-10. `"E scopri chi sta davvero osservando le equazioni della Valle..."`
-
----
-
-## 3. Obiettivi Dinamici (`ObjectiveFor`)
-
-Gli obiettivi sono calcolati dallo stato attuale (`StorySnapshot`) con fallback per ogni capitolo:
-
-- **Prologo / Prima della scansione solare**:
-  - **Titolo**: `"Misura il Campo Solare Ovest"`
-  - **Hint**: `"Avvicinati al pannello solare a sud e premi [F] per usare lo Scanner Empirico."`
-- **Atto I — Dopo la scansione, Campo Solare ancora `Broken`**:
-  - **Titolo**: `"Calibra il Campo Solare (Legge del Coseno)"`
-  - **Hint**: `"Premi [E] sul Campo Solare: regola l'angolo a 45 deg (E > 80%) e conferma con [C/INVIO]."`
-- **Atto I — Campo Solare attivato (`CleanActive`), Lia non ancora reclutata**:
-  - **Titolo**: `"Recluta l'Architetta Lia Moretti"`
-  - **Hint**: `"Raggiungi Lia vicino al canale Est (888, 312) e premi [E] per mostrarle i dati puliti."`
-- **Atto I — Campo Solare `BypassedDirty`, Lia non ancora reclutata**:
-  - **Titolo**: `"Ottieni Energia Pulita per convincere Lia"`
-  - **Hint**: `"Lia rifiuta il gasolio! Premi [E] sul Campo Solare o entra nella Diga [Nord] e calibra."`
-- **Atto II — Lia reclutata, fuori dalla Diga (`mode == Overworld`) e Turbina `Broken`**:
-  - **Titolo**: `"Entra nella Diga Idroelettrica del Crati"`
-  - **Hint**: `"Raggiungi il portale blu [DIGA] a nord della mappa (o premi [TAB]) per scendere."`
-- **Atto II — Dentro la Diga (`mode == Structure`) e Turbina `Broken`**:
-  - **Titolo**: `"Calibra la Turbina Idroelettrica (Stevino)"`
-  - **Hint**: `"Salta con [SPAZIO], scansiona la turbina con [F] e premi [E] per regolare il salto h=10m."`
-- **Atto III — Dentro la Diga ma Turbina gia' attiva**:
-  - **Titolo**: `"Torna alla Valle del Crati"`
-  - **Hint**: `"Raggiungi il portale giallo [EXIT] a sinistra (o premi [TAB]) per tornare all'aperto."`
-- **Atto III — Nell'Overworld, Ponte Bucci aperto, Risonatore/Purificatore ancora `Broken`**:
-  - **Titolo**: `"Attiva il Risonatore Fotonico oltre il Ponte"`
-  - **Hint**: `"Attraversa il Ponte Bucci a est, scansiona il Risonatore con [F] e calibra a 120 deg [E]."`
-- **Epilogo (`simulation_completed == true`)**:
-  - **Titolo**: `"Simulazione Completata — Valle Decifrata"`
-  - **Hint**: `"Esplora liberamente la Matrice con [V] (Fase 1-3) o osserva il verdetto di GAIA."`
+1. `"LA CONCA DI MERIDIA - CRONACHE DELL'ALTOPIANO"`
+2. `"Secoli fa, una civilta' di astronomi, idraulici e botanici scolpi' questo altopiano nella pietra calcarea e nel basalto."`
+3. `"I Meridiani non bruciavano carbone ne' pece: alimentavano la loro citta' con la luce del sole, il peso dell'acqua, il pendolo, il suono e il calore profondo."`
+4. `"Poi venne la Grande Siccita' e con essa l'Inverno di Pece: le fornaci d'emergenza oscurarono gli specchi e dispersero gli archivi."`
+5. `"Oggi i villaggi a valle respirano cenere e dipendono dai fumi della Compagnia della Pece."`
+6. `"La naturalista Elena Valli sale sull'altopiano con una Lente Empirica e un Diario di Campo ancora bianco."`
+7. `"I cinque grandi monumenti della Conca sono muti, ma le leggi della fisica attendono mani pazienti che sappiano misurarle."`
+8. `"Ogni impianto ti porra' una scelta reale: la pazienza del calcolo pulito o la scorciatoia immediata della fornace."`
+9. `"Esplora i sei distretti e le tre camere ipogee, raccogli le sedici reliquie delle quattro ere nel Codex [J] e rileggi il viaggio nel Diario [H]."`
+10. `"Misura con [F], calibra con [E], e scopri cosa sigillarono gli ultimi custodi al cuore di Meridia..."`
 
 ---
 
 ## 4. Copione per Evento (`DialogueForEvent`)
 
-### `StoryEvent::GameStarted` (4 battute)
-- **ADA**: `"La testa mi gira... Smog al 35%, visibilita' ridotta. L'Osservatorio del campus e' in rovina."`
-- **ADA**: `"Gli archivi digitali sono bruciati nell'Oblio, ma il mio Scanner Empirico [F] risponde ancora."`
-- **BRUNO**: `"[RADIO] Qui Bruno Ceneri, Consorzio Brace! Dottoressa, lascia perdere i libri: premi [B] e brucia nafta!"`
-- **ADA**: `"Il gasolio ci ha portati fin qui, Bruno. Prima misuro il Campo Solare a sud con [F]."`
+### 4.1 Inizio, Luce e Canali (Prologo e Atto I)
 
-### `StoryEvent::FirstScan` (4 battute)
-- **ADA**: `"Impulso ricevuto! Il vettore solare incide a 45 gradi esatti. Legge di Lambert: E = cos(delta)."`
-- **ADA**: `"Nessuna fluttuazione termica, nessuna deviazione... Una precisione quasi innaturale."`
-- **ADA**: `"Ora posso interagire con l'impianto [E], allineare il pannello a 45 gradi e confermare con [C]."`
+- **`GameStarted`**:
+  - **Elena Valli**: `"L'aria sulle Terrazze dell'Alba sa di cenere e pietra bagnata. Ecco finalmente la Conca di Meridia."`
+  - **Elena Valli**: `"Gli specchi dell'Eliostato sono spenti da anni, ma la mia Lente Empirica [F] puo' ancora misurare la luce."`
+  - **Matteo Verrini**: `"Dottoressa Valli, la vedo salire dalle terrazze. Se vuole corrente subito senza perdere la giornata, apra la fornace con [B]."`
+  - **Elena Valli**: `"Sono salita fin qui per fermare il fumo che scende sui villaggi, Matteo. Prima misuro l'Eliostato con [F]."`
 
-### `StoryEvent::SolarClean` (4 battute)
-- **ADA**: `"Rendimento oltre l'80%! I fotoni caricano gli accumulatori senza emettere un grammo di fuliggine."`
-- **ADA**: `"Il visore si e' aggiornato: ora posso attivare la Telemetria Numerica di Fase 2 con [V]."`
-- **LIA**: `"[DA EST] Ehi! Quel picco di corrente sul bus del campus... non puzza di diesel! Vieni al canale!"`
-- **ADA**: `"E' la voce di Lia Moretti, l'architetta del Ponte Bucci. Andiamo a parlarle a est [E]."`
+- **`FirstScan`**:
+  - **Elena Valli**: `"Lo gnomone di bronzo non mente: il raggio solare incide a 45 gradi esatti sulle lastre di travertino."`
+  - **Elena Valli**: `"E' la legge del coseno di Lambert: il rendimento dipende dall'angolo tra lo specchio e il fascio di luce."`
+  - **Elena Valli**: `"Mi avvicino al meccanismo [E], allineo l'Eliostato a 45 gradi e confermo la misura con [C]."`
 
-### `StoryEvent::SolarBypassed` (4 battute)
-- **BRUNO**: `"[RADIO] Musica per le mie orecchie! Il generatore diesel spinge 35 MW senza fare un solo calcolo."`
-- **ADA**: `"La corrente c'e', ma lo scarico ha appena riversato una nube nera sulla conca del campus..."`
-- **LIA**: `"[DA EST] Che schifo state bruciando?! Finche' usate i bidoni di Ceneri, il Ponte Bucci resta chiuso!"`
-- **ADA**: `"Lia non si fidera' mai del gasolio. Posso comunque ricalibrare il pannello [E] in modo pulito."`
+- **`SolarClean`**:
+  - **Elena Valli**: `"Oltre l'ottanta per cento di rendimento! La pietra si scalda di luce pulita, senza un solo filo di fumo."`
+  - **Elena Valli**: `"La Lente Empirica si e' tarata sul campo: ora posso attivare il Rilievo Metrico di Fase 2 con [V]."`
+  - **Clara Sereni**: `"Ehi, laggiu' sulle terrazze! Ho visto accendersi gli specchi senza una sbuffata di pece. Raggiungimi al Quartiere dei Canali!"`
+  - **Elena Valli**: `"Quella dev'essere Clara Sereni, l'ingegnera delle chiuse. Saliamo verso nord al Quartiere dei Canali per parlarle [E]."`
 
-### `StoryEvent::ArchitectRecruited` (5 battute)
-- **LIA**: `"Ho letto la curva del coseno sui morsetti. Avevi ragione tu, Ada: la fisica funziona ancora."`
-- **LIA**: `"Ho disattivato i laser sul canale e rialzato le campate del Ponte Bucci verso il Settore Est."`
-- **LIA**: `"E ho collegato il mio scanner strutturale al tuo visore: premi [V] per la Fase 3, vedrai i vettori."`
-- **GAIA**: `"// GAIA [SYS]: Soggetti Ferri-Moretti sincronizzati. Accesso al livello geometrico AABB concesso."`
-- **ADA**: `"Hai sentito anche tu questa voce metallica, Lia? Prima scendiamo alla Diga a nord, poi oltre il ponte!"`
+- **`SolarBypassed`**:
+  - **Matteo Verrini**: `"Vede, dottoressa? Con la fornace di emergenza i condotti si scaldano in un istante, senza stare a inseguire le ombre."`
+  - **Elena Valli**: `"La corrente scorre, ma una coltre scura sta gia' calando sugli ulivi delle terrazze..."`
+  - **Clara Sereni**: `"Chi ha acceso di nuovo la pece sulle terrazze?! Finche' bruciate scorie, il Ponte degli Archi resta chiuso!"`
+  - **Elena Valli**: `"Clara non aprira' mai il passaggio con la fornace accesa. Posso tornare all'Eliostato [E] e calibrarlo con la luce."`
 
-### `StoryEvent::EnteredDam` (4 battute)
-- **ADA**: `"La camera di pressione della Diga del Crati. Qui la gravita' si fa sentire: dovro' saltare [SPAZIO]."`
-- **NONNA ROSA**: `"[REGISTRO AUDIO] 'L'acqua non si comanda col fuoco. Ascoltate Stevino: P = rho * g * h. Salto: 10 metri.'"`
-- **ADA**: `"La voce registrata di Nonna Rosa! A 10 metri d'acqua la pressione idrostatica e' 98.100 Pascal."`
-- **ADA**: `"Raggiungo la turbina in basso a destra, la scansiono con [F] e regolo la paratoia con [E]."`
+- **`ClaraRecruited`**:
+  - **Clara Sereni**: `"Ho controllato il flusso sui morsetti di bronzo. Niente fuliggine, solo angolo e pazienza. Avevi ragione tu, Elena."`
+  - **Clara Sereni**: `"Tolgo il sigillo dal Ponte degli Archi: ora tutta la meta' orientale di Meridia, dai Giardini al Santuario, e' aperta."`
+  - **Clara Sereni**: `"Tieni la mia lente strutturale. Premi [V] per la Trama Geodetica: vedrai le linee di forza che i Meridiani incisero nella pietra."`
+  - **Eco di Meridia**: `"Quando due sguardi misurano senza fretta, il ponte torna a unire cio' che l'inverno aveva diviso."`
+  - **Elena Valli**: `"Hai sentito quel canto salire dai cristalli, Clara? Scendiamo nelle Cisterne Ipogee a nord-ovest, poi esploreremo oltre il ponte."`
 
-### `StoryEvent::HydroClean` (4 battute)
-- **ADA**: `"98.100 Pascal! La girante Pelton canta senza cavitazione. L'acqua del Crati torna a respirare."`
-- **NONNA ROSA**: `"[REGISTRO AUDIO] 'Se ascolti questo nastro a turbina accesa, ricorda: la Valle e' uno specchio di numeri.'"`
-- **GAIA**: `"// GAIA [SYS]: Invariante idrostatico verificato (errore < 0.001%). Ciclo 404: anomalia cooperativa."`
-- **ADA**: `"Non e' un semplice nastro... C'e' un sistema chiamato GAIA che misura ogni nostra scelta. Torniamo su!"`
+### 4.2 Ingressi Contestuali nei Distretti e nelle Strutture
 
-### `StoryEvent::HydroBypassed` (4 battute)
-- **BRUNO**: `"[RADIO] Chi ha bisogno dell'acqua quando hai una pompa a nafta pesante? Pressione istantanea!"`
-- **ADA**: `"I fumi di scarico rimbombano nella volta della diga. L'acqua nello scarico e' nera di scorie..."`
-- **GAIA**: `"// GAIA [WARN]: Deriva entropica nel nodo idrico. Indice di tossicita' atmosferica in rapido aumento."`
-- **ADA**: `"Perfino i sensori della diga ci stanno avvertendo. Se continuiamo cosi', la Valle soffochera'."`
+- **`EnteredCanalQuarter`**:
+  - **Elena Valli**: `"Il Quartiere dei Canali... Le vasche a gradini portano ancora i segni dell'acqua limpida che un tempo nutriva l'altopiano."`
+  - **Elena Valli**: `"A est vedo il grande Ponte degli Archi, e tra le volte a ovest l'imbocco delle Cisterne Ipogee."`
 
-### `StoryEvent::PurifierClean` (4 battute — variano se il percorso e' stato pulito o misto)
-- *Se `s.solar != BypassedDirty && s.hydro != BypassedDirty` (percorso pulito)*:
-  - **ADA**: `"Specchio eliostatico a 120 gradi! Il fascio violetto ionizza le polveri sottili sopra il Ponte Bucci!"`
-  - **LIA**: `"Guarda il cielo, Ada! La cappa di cenere si sta aprendo... E i vettori della matrice brillano tutti!"`
-  - **GAIA**: `"// GAIA [SYS]: Convergenza asintotica raggiunta. Smog: 0.0%. Tutte le leggi fisiche sono in equilibrio."`
-  - **GAIA**: `"// GAIA [SYS]: Dopo 403 cicli falliti, avete scelto il calcolo invece della cenere. Benvenute fuori."`
-- *Se almeno un impianto precedente era `BypassedDirty` (percorso misto)*:
-  - **ADA**: `"Il Risonatore Fotonico e' allineato a 120 gradi e abbatte lo smog, ma resta fuliggine nell'aria..."`
-  - **LIA**: `"I generatori a gasolio lasciati accesi sporcano il bilancio, Ada. La Valle respira solo a meta'."`
-  - **GAIA**: `"// GAIA [SYS]: Risonatore attivo, ma bilancio entropico impuro. Simulazione conclusa in stato Grigio."`
+- **`EnteredWindPlateau`**:
+  - **Elena Valli**: `"Sull'Altopiano dei Venti il basalto taglia la brezza e i cipressi si piegano tutti lungo la stessa rosa scolpita nella roccia."`
+  - **Elena Valli**: `"In fondo alla cresta si staglia la Torre del Pendolo: i suoi oculi di pietra sembrano ancora attendere il mezzogiorno."`
 
-### `StoryEvent::PurifierBypassed` (4 battute)
-- **BRUNO**: `"[RADIO] Bruciatori ausiliari al massimo! Abbiamo dato corrente anche alla torre Est senza un solo coseno!"`
-- **LIA**: `"Hai attaccato un motore diesel a un risonatore fotonico?! Guarda che nube tossica sul ponte!"`
-- **GAIA**: `"// GAIA [CRIT]: Fallimento cognitivo registrato. I soggetti hanno replicato il Grande Smog nel Ciclo 404."`
-- **ADA**: `"Le macchine girano tutte, ma abbiamo trasformato la simulazione della Valle in una camera a gas..."`
+- **`EnteredHangingGardens`**:
+  - **Elena Valli**: `"Oltre il Ponte degli Archi si aprono i Giardini Sospesi. Anche sotto la polvere si avverte il profumo dei semi dormienti."`
+  - **Elena Valli**: `"Tra le vasche di giada si intravedono gli anelli del Risonatore Armonico e qualcuno che si prende cura delle aiuole."`
 
-### `StoryEvent::SmogCritical` (3 battute)
-- **GAIA**: `"// GAIA [ALERT]: Smog atmosferico oltre il 70%! Collasso della fotosintesi nella conca del Crati."`
-- **BRUNO**: `"[RADIO] E' solo un po' di foschia industriale, dottoressa! Metti la mascherina e goditi i megawatt!"`
-- **ADA**: `"Non si respira piu'... Devo ricalibrare gli impianti con la fisica pulita [E] prima che sia tardi!"`
+- **`EnteredFumaroleCaldera`**:
+  - **Elena Valli**: `"La Caldera delle Fumarole... Qui nacque l'Inverno di Pece. Le vecchie fornaci hanno segnato il basalto come cicatrici."`
+  - **Elena Valli**: `"Vicino all'ingresso della Camera Geotermica scorgo la figura di Matteo Verrini, immerso nel vapore."`
 
-### `StoryEvent::RosaRecruited` (4 battute — Atto IV, Piattaforma Alta della Diga)
-- **NONNA ROSA**: `"Piccola Ada... Sei salita fin quassu'! Sapevo che la legge di Stevino ti avrebbe guidata."`
-- **NONNA ROSA**: `"Nel 2072 abbiamo chiuso la Valle dentro GAIA per impedire che l'Oblio cancellasse la termodinamica."`
-- **NONNA ROSA**: `"Prendi questa chiave magnetica: sblocca lo Scambiatore Geotermico di Carnot a nord-est del ponte."`
-- **ADA**: `"Un quarto impianto a 60 gradi! Torniamo nella Valle, calibriamo il pozzo geotermico e apriamo GAIA!"`
+- **`EnteredHarmonySanctuary`**:
+  - **Elena Valli**: `"Il Santuario dell'Armonia. Sotto i miei passi un intero mosaico astronomico di travertino, bronzo e giada."`
+  - **Elena Valli**: `"Al centro della piazza riposa l'Astrolabio di Meridia: i suoi quattro anelli attendono che l'intera Conca ritrovi l'equilibrio."`
 
-### `StoryEvent::ThermalClean` (4 battute — Atto V, Scambiatore Geotermico a 60 deg)
-- **ADA**: `"Valvola di Carnot allineata a 60 gradi! Il vapore geotermico stabilizza la temperatura della conca!"`
-- **LIA**: `"Guarda a sud-est del giardino, Ada! Dal terreno e' emerso il Monolite Sorgente di GAIA!"`
-- **GAIA**: `"// GAIA [SYS]: Quarto vincolo termodinamico soddisfatto. Terminale Sorgente sbloccato a Sud-Est."`
-- **ADA**: `"E' il nucleo centrale della simulazione. Raggiungiamo il Terminale a sud-est e premiamo [E]!"`
+- **`EnteredCisterns`**:
+  - **Elena Valli**: `"Le Cisterne Ipogee. L'eco delle cascate riempie la volta, e lungo queste passerelle dovro' muovermi con attenzione [SPAZIO]."`
+  - **Elena Valli**: `"La legge di Stevino governa questo bacino: a dieci metri di colonna d'acqua la pressione tocca 98.100 Pascal."`
+  - **Elena Valli**: `"Sul fondo del bacino mi attende la Turbina Idrostatica; piu' in alto, verso est, intravedo il bagliore di una lanterna."`
 
-### `StoryEvent::ThermalBypassed` (4 battute — Atto V, Bypass Carbone sul Geotermico)
-- **BRUNO**: `"[RADIO] Caldaia a carbone attivo iniettata direttamente nel pozzo geotermico! Calore a volonta'!"`
-- **NONNA ROSA**: `"[RADIO] Ada, che dolore... Bruciare scorie dentro una sorgente di Carnot ferisce le falde del Crati."`
-- **GAIA**: `"// GAIA [WARN]: Equilibrio termico forzato con entropia fossile. Terminale Sorgente aperto a Sud-Est."`
-- **ADA**: `"Il Terminale di GAIA a sud-est e' attivo, ma il cielo e' denso di cenere. Andiamo a leggere il verdetto [E]."`
+- **`EnteredPendulumTower`**:
+  - **Elena Valli**: `"Dentro la Torre del Pendolo la luce piove dagli oculi come polvere d'oro. Ogni ballatoio sale verso il grande braccio d'ottone."`
+  - **Elena Valli**: `"Galileo insegno' che il periodo del pendolo dipende solo dalla sua lunghezza: due metri esatti per 2,84 secondi di cadenza."`
 
-### `StoryEvent::GaiaTerminalDecoded` (4 battute — Atto V, Monolite Sorgente di GAIA)
-- **GAIA**: `"// GAIA [ROOT]: Accesso autore riconosciuto. Bentornata nel tuo codice sorgente, Dottoressa Ada Ferri."`
-- **ADA**: `"La firma digitale del 2072... Ero io la direttrice del progetto GAIA insieme a Nonna Rosa!"`
-- **LIA**: `"Tu hai cancellato la tua memoria all'inizio del Ciclo 404 per metterti alla prova come tutti noi!"`
-- **GAIA**: `"// GAIA [ROOT]: Compilazione completata. Apertura delle paratie dell'Osservatorio Reale in corso..."`
+- **`EnteredGeothermalChamber`**:
+  - **Elena Valli**: `"Colonne esagonali di basalto e archi di rame ossidato: la Camera Geotermica custodisce il calore naturale della faglia."`
+  - **Elena Valli**: `"Con la sorgente fredda delle cisterne a 300 Kelvin, portare lo scambiatore di Carnot a 600 Kelvin garantisce il 50% di rendimento pulito."`
+
+### 4.3 Acqua, Pendolo, Giardini, Caldera e Astrolabio (Atti II-V ed Epilogo)
+
+- **`HydroClean` / `HydroBypassed`**:
+  - *Pulito*: Elena celebra i `98.100 Pascal` senza cavitazione; `Eco di Meridia` richiama la misura dell'acqua; `Lorenzo Altieri` la invita a salire sul ballatoio alto.
+  - *Bypass*: Matteo Verrini difende la pompa a pece; un velo scuro macchia le cisterne; `Eco di Meridia` lamenta la sorgente ferita.
+
+- **`LorenzoRecruited`** *(variante se `relics_collected >= 6`)*:
+  - Lorenzo Altieri accoglie Elena nell'ala alta delle Cisterne Ipogee, racconta lo Scisma dell'Era III e le consegna la chiave profonda per la Camera Geotermica, sottolineando il valore delle reliquie nel Codex `[J]`.
+
+- **`PendulumClean` / `PendulumBypassed`**:
+  - *Pulito*: `L = 2.00 m`, `T = 2.84 s`; Clara sente la sincronizzazione delle chiuse nei canali; `Eco di Meridia` ricorda che il tempo non si forza.
+  - *Bypass*: il volano a combustione fa vibrare le vetrate della torre.
+
+- **`MiriamMet`** *(variante in base a `pollution_level <= 25%`)*:
+  - Miriam Ferro accoglie Elena nei Giardini Sospesi, parlando di semi dormienti, profumo d'ulivi e del Risonatore Armonico a `120 Hz`.
+
+- **`HarmonicClean` / `HarmonicBypassed`**:
+  - *Pulito*: `120 Hz` esatti, la foschia si dissolve e le terrazze tornano a fiorire sotto lo sguardo commosso di Miriam Ferro.
+  - *Bypass*: i soffianti a pece costringono Miriam a richiudere i semi sotto vetro.
+
+- **`MatteoConfronted`** *(variante pulito vs con almeno un bypass)*:
+  - Confronto umano e diretto nella Caldera delle Fumarole: Matteo racconta i vent'anni d'inverno in cui la pece ha tenuto accese le case a valle; Elena gli riconosce l'assenza di malizia ma gli promette di dimostrare sul campo il rendimento pulito dello Scambiatore di Carnot (`600 K`).
+
+- **`ThermalClean` / `ThermalBypassed`**:
+  - *Pulito*: `600 K / 300 K` (`eta = 50%`), solo vapore bianco; Matteo stesso resta stupito dal calore pulito verso valle; Clara segnala il risveglio dell'Astrolabio nel Santuario dell'Armonia.
+  - *Bypass*: iniezione di pece e carbone nella faglia basaltica; Lorenzo piange la ferita alle falde profonde.
+
+- **`AstrolabeUnlocked` / `AstrolabeActivated`**:
+  - `AstrolabeUnlocked`: l'Eco di Meridia annuncia lo scioglimento del sigillo nel Santuario dell'Armonia.
+  - `AstrolabeActivated`: 3 diramazioni distinte in base a percorso pulito e reliquie (`>= 12`, `< 12`, oppure bypass).
+
+- **`SmogCritical`**:
+  - Oltre il 70% di cenere, Miriam e Clara avvertono Elena del collasso della flora; Elena decide di ricalibrare gli impianti forzati.
+
+- **Traguardi Collezionabili (`FirstRelic`, `FourRelics`, `HalfRelics`, `TwelveRelics`, `AllRelics`)**:
+  - Commenti progressivi di Elena, Lorenzo e dell'Eco di Meridia che accompagnano la ricostruzione delle quattro ere nel Codex `[J]`.
 
 ---
 
-## 5. Schermate Finali (`EndingText(bool clean_path)`)
+## 5. Catalogo Completo delle 16 Reliquie (`src/core/collectible_content.cpp`)
 
-### Finale Pulito (`clean_path == true`)
-1. `"=== EQUILIBRIO RAGGIUNTO // CICLO 404 APPROVATO ==="`
-2. `"Lo smog nella Valle del Crati si dissolve fino allo 0%. Il fiume scorre cristallino sotto il Ponte Bucci."`
-3. `"Sul visore di Fase 3 i vettori verdi di GAIA si ricompongono in un'unica grande equazione armonica."`
-4. `"// GAIA: 'Per 403 simulazioni gli umani hanno scelto la scorciatoia del carbonio, bruciando il futuro.'"`
-5. `"// GAIA: 'Voi avete misurato l'ombra, ascoltato la pressione dell'acqua e rispettato la legge del coseno.'"`
-6. `"// GAIA: 'Il test dell'Osservatorio Unical e' superato. Le paratie del rifugio reale si stanno aprendo.'"`
-7. `"Ada Ferri e Lia Moretti escono alla luce del vero sole calabrese, con le formule incise nella memoria."`
-8. `"FINALE PULITO — La conoscenza scientifica ha guarito la Valle. (Premi [V] o continua a esplorare)"`
+| Indice | Titolo | Era | Forma | Luogo | Parlante alla Raccolta |
+|---|---|---|---|---|---|
+| `I.1` | **Gnomone d'Ottone** | Era I - Alba delle Ombre | `Astrolabe` | Terrazze dell'Alba | Elena Valli |
+| `I.2` | **Stele della Prima Misura** | Era I - Alba delle Ombre | `Stele` | Terrazze dell'Alba | Elena Valli |
+| `I.3` | **Cilindro dei Solstizi** | Era I - Alba delle Ombre | `Cylinder` | Altopiano dei Venti | Elena Valli |
+| `I.4` | **Seme d'Ulivo Bianco** | Era I - Alba delle Ombre | `FossilSeed` | Quartiere dei Canali | Elena Valli |
+| `II.1` | **Diario dell'Idraulico** | Era II - Secolo delle Acque e del Suono | `Cylinder` | Quartiere dei Canali | Clara Sereni |
+| `II.2` | **Stele delle Chiusure** | Era II - Secolo delle Acque e del Suono | `Stele` | Cisterne Ipogee | Elena Valli |
+| `II.3` | **Diapason di Giada** | Era II - Secolo delle Acque e del Suono | `Prism` | Giardini Sospesi | Miriam Ferro |
+| `II.4` | **Cronometro a Filo** | Era II - Secolo delle Acque e del Suono | `Astrolabe` | Torre del Pendolo | Elena Valli |
+| `III.1` | **Verbale dello Scisma** | Era III - Inverno di Pece | `Cylinder` | Caldera delle Fumarole | Elena Valli |
+| `III.2` | **Stele delle Braci** | Era III - Inverno di Pece | `Stele` | Camera Geotermica | Lorenzo Altieri |
+| `III.3` | **Seme Annerito** | Era III - Inverno di Pece | `FossilSeed` | Giardini Sospesi | Miriam Ferro |
+| `III.4` | **Termometro di Basalto** | Era III - Inverno di Pece | `Astrolabe` | Camera Geotermica | Elena Valli |
+| `IV.1` | **Prisma del Congedo** | Era IV - Sigillo dell'Armonia | `Prism` | Cisterne Ipogee | Eco di Meridia |
+| `IV.2` | **Prisma delle Correnti** | Era IV - Sigillo dell'Armonia | `Prism` | Torre del Pendolo | Eco di Meridia |
+| `IV.3` | **Seme del Risveglio** | Era IV - Sigillo dell'Armonia | `FossilSeed` | Santuario dell'Armonia | Miriam Ferro |
+| `IV.4` | **Stele dell'Astrolabio** | Era IV - Sigillo dell'Armonia | `Stele` | Santuario dell'Armonia | Eco di Meridia |
 
-### Finale Grigio (`clean_path == false`)
-1. `"=== EQUILIBRIO COMPROMESSO // CICLO 404 ARCHIVIATO ==="`
-2. `"Gli impianti della Valle sono attivi, ma una cappa color ruggine resta sospesa sopra il Ponte Bucci."`
-3. `"Dalla radio, Bruno Ceneri brinda al trionfo del gasolio: 'Visto, dottoressa? Basta bruciare e tutto gira!'"`
-4. `"Lia osserva i tralicci anneriti in silenzio, mentre il cielo artificiale della conca inizia a sfarfallare."`
-5. `"// GAIA: 'Bilancio energetico raggiunto tramite combustione fossile. Degrado biosfera: irreversibile.'"`
-6. `"// GAIA: 'Anche nel Ciclo 404 la fretta ha sconfitto la matematica. Le porte del rifugio restano chiuse.'"`
-7. `"// GAIA: 'Inizializzazione Ciclo 405... Forse la prossima volta avrete la pazienza di calcolare.'"`
-8. `"FINALE GRIGIO — Riprova calibrando ogni macchina oltre l'80% senza mai usare il Bypass [B]!"`
+Ogni scheda nel Codex contiene 3 paragrafi letterari che ricostruiscono l'ascesa scientifica dei Meridiani, la siccita' e lo Scisma dell'Era III, fino al congedo e alla chiusura della Valle dei Semi.
+
+---
+
+## 6. I Tre Finali (`EndingText(clean_path, relics_found, total_relics)`)
+
+1. **`L'ALBA DI MERIDIA - FINALE RIVELATO`** (`clean_path == true && relics_found >= 12`):
+   - Cielo limpido, quattro anelli dell'Astrolabio accesi, apertura del passo verso la Valle dei Semi, riconciliazione di Matteo Verrini che depone le chiavi delle fornaci.
+2. **`LA RINASCITA DELLA CONCA - FINALE ARMONICO`** (`clean_path == true && relics_found < 12`):
+   - I cinque monumenti guariscono l'altopiano senza fumo, ma alcuni anelli dell'Astrolabio restano in penombra in attesa di raggiungere almeno 12 reliquie nel Codex `[J]`.
+3. **`IL PREZZO DELLA FRETTA - FINALE GRIGIO`** (`clean_path == false`):
+   - Le fornaci forniscono energia ma lasciano una coltre plumbea sul Ponte degli Archi e silenziano l'Eco di Meridia; il giocatore puo' tornare a ricalibrare i monumenti forzati in modo pulito.

@@ -107,9 +107,12 @@ add_library(game_core STATIC
     src/core/physics2d.cpp
     src/core/machine.cpp
     src/core/npc.cpp
+    src/core/collectible.cpp
+    src/core/collectible_content.cpp
     src/core/simulation.cpp
     src/core/story.cpp
     src/core/story_content.cpp
+    src/core/save_data.cpp
 )
 target_include_directories(game_core
     PUBLIC
@@ -135,6 +138,8 @@ add_executable(eco_proto
     src/app/render/ui_style.cpp
     src/app/render/procedural_art.cpp
     src/app/render/particles.cpp
+    src/app/audio/audio_engine.cpp
+    src/app/gpu_selector.cpp
 )
 target_link_libraries(eco_proto
     PRIVATE

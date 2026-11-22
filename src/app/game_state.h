@@ -18,6 +18,8 @@ struct AppContext {
     eco::PlayerManager& players;
     const eco::AllPlayersInput& input;
     bool quit_requested = false;
+    bool open_settings_requested = false;
+    bool relaunch_gpu_requested = false;
 };
 
 class GameState {

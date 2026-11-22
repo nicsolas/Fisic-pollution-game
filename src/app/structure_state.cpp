@@ -24,10 +24,14 @@ namespace eco::app {
 StructureState::StructureState(AppContext& ctx) : ctx_(ctx) {}
 
 void StructureState::OnEnter() {
-    ctx_.world.current_mode = eco::GameMode::Structure;
     ctx_.world.EnsureInitialized();
-    ctx_.world.structure.OnEnter(ctx_.players, ctx_.ecosystem.architect_recruited);
-    ctx_.world.UpdateProximityPrompts();
+    if (ctx_.world.loaded_from_save) {
+        ctx_.world.loaded_from_save = false;
+        ctx_.world.current_mode = eco::GameMode::Structure;
+        ctx_.world.UpdateProximityPrompts();
+    } else {
+        ctx_.world.EnterStructure(ctx_.world.active_structure);
+    }
 }
 
 void StructureState::OnExit() {}
@@ -48,7 +52,9 @@ void StructureState::Update(float dt) {
 
 void StructureState::Draw() {
     const float poll = ctx_.ecosystem.PollutionRatio();
-    ClearBackground(pal::WorldColor(pal::kSickDamBg, pal::kHealthyDamBg, poll));
+    const pal::StructurePalette& sp =
+        pal::StructurePaletteByIndex(static_cast<int>(ctx_.world.active_structure));
+    ClearBackground(pal::WorldColor(sp.bg_sick, sp.bg_healthy, poll));
 
     const eco::Tilemap& tilemap = ctx_.world.structure.tilemap;
     const float half_w = static_cast<float>(eco::kWindowWidth) * 0.5f;
@@ -71,39 +77,32 @@ void StructureState::Draw() {
 
     BeginMode2D(camera);
 
-    // 1. Sfondo in parallasse della Diga del Crati, cascate interne e passerelle metalliche
-    DrawStructureProceduralBackdropAndMap(
-        tilemap,
-        ctx_.ecosystem,
-        eco::Vec2{cam_x, cam_y},
-        ctx_.world.sim_time);
+    // 1. Sfondo in parallasse e architettura 2.5D della struttura corrente
+    //    (Cisterne Ipogee, Torre del Pendolo o Camera Geotermica)
+    DrawStructureProceduralBackdropAndMap(ctx_.world, eco::Vec2{cam_x, cam_y});
 
-    // 2. Turbina Idroelettrica, serbatoio graduato e overlay Fase 3
+    // 2. Monumento fisico della struttura, reliquie collezionabili, NPC e Trama Geodetica
     DrawSceneMachineAndOverlaysWorldSpace(ctx_.world);
 
-    // 3. Tutti i giocatori attivi (1-4 giocatori)
+    // 3. Tutti gli esploratori attivi (1-4 giocatori)
     for (const eco::Player* ap : ctx_.players.ActivePlayers()) {
         if (ap != nullptr && ap->active) {
             DrawScientistProtagonist(*ap, ctx_.world);
         }
     }
 
-    // 4. Vapore e spruzzi d'acqua in world-space
-    DrawWorldAtmosphericParticles(
-        eco::GameMode::Structure,
-        ctx_.world.sim_time,
-        ctx_.ecosystem,
-        eco::Vec2{cam_x, cam_y});
+    // 4. Particelle dedicate alla struttura e burst delle reliquie
+    DrawWorldAtmosphericParticles(ctx_.world, eco::Vec2{cam_x, cam_y});
 
     EndMode2D();
 
-    // 5. Foschia/vignettatura in screen-space
-    DrawScreenSpaceAtmosphere(eco::GameMode::Structure, ctx_.world.sim_time, ctx_.ecosystem);
+    // 5. Foschia e vignettatura in screen-space
+    DrawScreenSpaceAtmosphere(ctx_.world);
 
-    // 6. Barra superiore HUD, Scanner/Telemetria e Modal di calibrazione
+    // 6. Barra superiore HUD, Lente Empirica e Modal di calibrazione fisica
     DrawHudAndCalibrationModalScreenSpace(ctx_.world);
 
-    // 7. Layer Narrativo (Capitolo/Obiettivo, Dialoghi, Epilogo)
+    // 7. Layer Narrativo (Obiettivo, Toast di Struttura/Reliquia, Dialoghi, Diario [H] / Codex [J], Epilogo)
     DrawStoryLayer(ctx_.world);
 }
 

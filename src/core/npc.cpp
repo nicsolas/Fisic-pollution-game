@@ -4,6 +4,17 @@
 
 namespace eco {
 
+namespace {
+
+[[nodiscard]] constexpr Vec2 TileCenterPos(int row, int col) noexcept {
+    return {
+        (static_cast<float>(col) + 0.5f) * kTileSize,
+        (static_cast<float>(row) + 0.5f) * kTileSize
+    };
+}
+
+} // namespace
+
 OverlayVisibility ComputeOverlayVisibility(const EcoSystem& ecosystem) noexcept {
     OverlayVisibility out{};
     out.phase = ecosystem.ui_phase;
@@ -33,12 +44,78 @@ bool TryRequestOverlayPhase(EcoSystem& ecosystem, UiPhase requested) noexcept {
     return true;
 }
 
+WorldNpc WorldNpc::CreateDefault(NpcId id) {
+    WorldNpc npc{};
+    npc.id = id;
+    npc.name = NpcDisplayName(id);
+    npc.role = NpcRoleTitle(id);
+    npc.trigger_radius = kDefaultNpcTriggerRadius;
+
+    switch (id) {
+        case NpcId::ClaraSereni:
+            npc.location = LocationId::Overworld;
+            npc.zone = ZoneId::CanalQuarter;
+            npc.pos = TileCenterPos(17, 21); // (1032, 840) — Ponte degli Archi
+            npc.last_dialogue =
+                "Prima di aprire il Ponte degli Archi ho bisogno di una prova: riaccendi un monumento con una misura pulita.";
+            break;
+        case NpcId::LorenzoAltieri:
+            npc.location = LocationId::HypogeanCisterns;
+            npc.zone = ZoneId::CanalQuarter;
+            npc.pos = TileCenterPos(7, 28); // (1368, 360) — Galleria alta Cisterne Ipogee
+            npc.trigger_radius = 96.0f;
+            npc.last_dialogue =
+                "Qui in alto custodisco le memorie delle quattro ere. Riattiva la Turbina idrostatica e ti apriro' gli appunti antichi.";
+            break;
+        case NpcId::MiriamFerro:
+            npc.location = LocationId::Overworld;
+            npc.zone = ZoneId::HangingGardens;
+            npc.pos = TileCenterPos(19, 31); // (1512, 936) — Giardini Sospesi
+            npc.last_dialogue =
+                "I semi dormienti nei terrazzamenti aspettano una frequenza limpida. Accorda il Risonatore Armonico e torneranno a fiorire.";
+            break;
+        case NpcId::MatteoVerrini:
+            npc.location = LocationId::Overworld;
+            npc.zone = ZoneId::FumaroleCaldera;
+            npc.pos = TileCenterPos(8, 33); // (1608, 408) — Caldera delle Fumarole
+            npc.last_dialogue =
+                "I villaggi a valle non possono attendere l'inverno. Se vuoi spegnere le nostre fornaci, dimostra che Carnot basta da solo.";
+            break;
+        case NpcId::Count:
+            break;
+    }
+    return npc;
+}
+
+bool WorldNpc::IsPlayerInRange(const Player& player) const noexcept {
+    if (!player.active || !std::isfinite(player.pos.x) || !std::isfinite(player.pos.y) ||
+        !std::isfinite(pos.x) || !std::isfinite(pos.y) ||
+        !std::isfinite(trigger_radius) || trigger_radius <= 0.0f) {
+        return false;
+    }
+    return player.Center().DistanceTo(pos) <= trigger_radius;
+}
+
+bool WorldNpc::AnyActivePlayerInRange(const PlayerManager& players) const noexcept {
+    for (const Player* p : players.ActivePlayers()) {
+        if (p != nullptr && IsPlayerInRange(*p)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void WorldNpc::UpdateProximity(const PlayerManager& players) noexcept {
+    prompt_visible = AnyActivePlayerInRange(players);
+}
+
 void ArchitectNpc::Reset(Vec2 default_pos) {
     pos = default_pos;
     trigger_radius = kDefaultNpcTriggerRadius;
     recruited = false;
     hidden_bridge_revealed = false;
-    last_dialogue = "Architetto: Dimostrami una calibrazione matematica pulita (Energia Pulita > 0).";
+    last_dialogue =
+        "Clara Sereni: Dimostrami una calibrazione fisica pulita prima di aprire il Ponte degli Archi.";
 }
 
 bool ArchitectNpc::IsPlayerInRange(const Player& player) const noexcept {
@@ -47,7 +124,7 @@ bool ArchitectNpc::IsPlayerInRange(const Player& player) const noexcept {
         !std::isfinite(trigger_radius) || trigger_radius <= 0.0f) {
         return false;
     }
-    return player.pos.DistanceTo(pos) <= trigger_radius;
+    return player.Center().DistanceTo(pos) <= trigger_radius;
 }
 
 bool ArchitectNpc::AnyActivePlayerInRange(const PlayerManager& players) const noexcept {
@@ -73,7 +150,7 @@ bool ArchitectNpc::TryInteract(
         hidden_bridge_revealed = true;
         ecosystem.SetArchitectRecruited(true);
         last_dialogue =
-            "Architetto: Ponte nascosto e Overlay Fase 3 attivi! I vettori della matrice sono visibili.";
+            "Clara Sereni: Il Ponte degli Archi e' aperto e la Trama Geodetica e' attiva lungo tutta la Conca.";
         return true;
     }
 
@@ -82,16 +159,16 @@ bool ArchitectNpc::TryInteract(
         hidden_bridge_revealed = true;
         ecosystem.SetArchitectRecruited(true);
         last_dialogue =
-            "Architetto: Calibrazione matematica verificata! Mi unisco a voi: Ponte sbloccato e Fase 3 attiva.";
+            "Clara Sereni: Misura verificata senza fumo. Apro il Ponte degli Archi e ti affido la Trama Geodetica.";
         return true;
     }
 
     if (ecosystem.dirty_energy > 0.0f) {
         last_dialogue =
-            "Architetto: Rifiuto il bypass a combustione! Serve energia pulita ottenuta con la fisica.";
+            "Clara Sereni: Non apro il ponte per energia ottenuta bruciando pece. Porta una misura pulita.";
     } else {
         last_dialogue =
-            "Architetto: L'impianto non produce ancora energia pulita. Calibra un macchinario prima!";
+            "Clara Sereni: Nessun monumento produce ancora energia pulita. Calibra l'Eliostato sulle Terrazze dell'Alba.";
     }
     return false;
 }

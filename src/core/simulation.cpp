@@ -43,6 +43,41 @@ namespace {
     };
 }
 
+[[nodiscard]] Rect PortalLinkRect(const Tilemap& tilemap, const PortalLink& link) noexcept {
+    const Rect rmin = tilemap.TileRect(link.tile_min.row, link.tile_min.col);
+    const Rect rmax = tilemap.TileRect(link.tile_max.row, link.tile_max.col);
+    return {
+        rmin.Left(),
+        rmin.Top(),
+        rmax.Right() - rmin.Left(),
+        rmax.Bottom() - rmin.Top()
+    };
+}
+
+[[nodiscard]] std::size_t StructureIndex(StructureId id) noexcept {
+    const int idx = static_cast<int>(id);
+    if (idx < 0 || idx >= static_cast<int>(StructureId::Count)) {
+        return 0;
+    }
+    return static_cast<std::size_t>(idx);
+}
+
+[[nodiscard]] std::size_t MachineIndex(MachineType type) noexcept {
+    const int idx = static_cast<int>(type);
+    if (idx < 0 || idx >= static_cast<int>(MachineType::Count)) {
+        return 0;
+    }
+    return static_cast<std::size_t>(idx);
+}
+
+[[nodiscard]] std::size_t NpcIndex(NpcId id) noexcept {
+    const int idx = static_cast<int>(id);
+    if (idx < 0 || idx >= static_cast<int>(NpcId::Count)) {
+        return 0;
+    }
+    return static_cast<std::size_t>(idx);
+}
+
 } // namespace
 
 Vec2 FindSafeSpawnNear(
@@ -93,32 +128,123 @@ Vec2 FindSafeSpawnNear(
 
 void OverworldSim::InitializeDefault() {
     tilemap = Tilemap::CreateOverworldMap(kTileSize);
-    // Open spawn plaza around (row 8, col 4)
-    spawn_point = CenteredTopLeftForTile(tilemap, 8, 4);
-    // Two tiles south of StructurePortal at (row 4, cols 15..16)
-    portal_exit_spawn = CenteredTopLeftForTile(tilemap, 6, 15);
+    // Initial spawn in Terrazze dell'Alba (row 30, col 5)
+    spawn_point = CenteredTopLeftForTile(tilemap, 30, 5);
+
+    portals.clear();
+    // Portal 1: Cisterne Ipogee (Quartiere dei Canali, row 14, cols 5..6)
+    {
+        PortalLink link{};
+        link.target_structure = StructureId::HypogeanCisterns;
+        link.source_zone = ZoneId::CanalQuarter;
+        link.tile_min = {14, 5};
+        link.tile_max = {14, 6};
+        link.world_center = PortalLinkRect(tilemap, link).Center();
+        link.exit_spawn = CenteredTopLeftForTile(tilemap, 16, 5);
+        portals.push_back(link);
+    }
+    // Portal 2: Torre del Pendolo (Altopiano dei Venti, row 3, cols 11..12)
+    {
+        PortalLink link{};
+        link.target_structure = StructureId::PendulumTower;
+        link.source_zone = ZoneId::WindPlateau;
+        link.tile_min = {3, 11};
+        link.tile_max = {3, 12};
+        link.world_center = PortalLinkRect(tilemap, link).Center();
+        link.exit_spawn = CenteredTopLeftForTile(tilemap, 5, 11);
+        portals.push_back(link);
+    }
+    // Portal 3: Camera Geotermica (Caldera delle Fumarole, row 3, cols 37..38)
+    {
+        PortalLink link{};
+        link.target_structure = StructureId::GeothermalChamber;
+        link.source_zone = ZoneId::FumaroleCaldera;
+        link.tile_min = {3, 37};
+        link.tile_max = {3, 38};
+        link.world_center = PortalLinkRect(tilemap, link).Center();
+        link.exit_spawn = CenteredTopLeftForTile(tilemap, 5, 37);
+        portals.push_back(link);
+    }
+
+    last_used_structure = StructureId::HypogeanCisterns;
+    portal_exit_spawn = portals[0].exit_spawn;
     camera_target = {spawn_point.x + kPlayerWidth * 0.5f, spawn_point.y + kPlayerHeight * 0.5f};
     portal_cooldown_timer = 0.0f;
     portal_reentry_locked = false;
     initialized = true;
 }
 
+ZoneId OverworldSim::DistrictAt(Vec2 world_pos) const noexcept {
+    return tilemap.DistrictAt(world_pos);
+}
+
+ZoneId OverworldSim::DistrictAtTile(int row, int col) const noexcept {
+    return Tilemap::DistrictAtTile(row, col);
+}
+
+Rect OverworldSim::DistrictBounds(ZoneId zone) const noexcept {
+    return tilemap.DistrictBounds(zone);
+}
+
+const PortalLink* OverworldSim::FindPortal(StructureId id) const noexcept {
+    for (const auto& link : portals) {
+        if (link.target_structure == id) {
+            return &link;
+        }
+    }
+    return nullptr;
+}
+
+Vec2 OverworldSim::SafeSpawnInZone(ZoneId zone, bool bridge_unlocked) const noexcept {
+    TileCoord target{30, 5};
+    switch (zone) {
+        case ZoneId::DawnTerraces:
+            target = {30, 5};
+            break;
+        case ZoneId::CanalQuarter:
+            target = {17, 11};
+            break;
+        case ZoneId::WindPlateau:
+            target = {7, 11};
+            break;
+        case ZoneId::HangingGardens:
+            target = {17, 32};
+            break;
+        case ZoneId::FumaroleCaldera:
+            target = {8, 36};
+            break;
+        case ZoneId::HarmonySanctuary:
+            target = {29, 32};
+            break;
+        case ZoneId::Count:
+            break;
+    }
+    const Vec2 anchor = CenteredTopLeftForTile(tilemap, target.row, target.col);
+    return FindSafeSpawnNear(tilemap, anchor, {kPlayerWidth, kPlayerHeight}, spawn_point, bridge_unlocked);
+}
+
 void OverworldSim::OnEnter(
     PlayerManager& players,
     bool returning_from_structure,
-    bool bridge_unlocked) {
+    bool bridge_unlocked,
+    StructureId from_structure) {
     if (!initialized) {
         InitializeDefault();
     }
 
-    Vec2 anchor = returning_from_structure ? portal_exit_spawn : spawn_point;
-    const auto portals = tilemap.FindTiles(TileId::StructurePortal);
-    if (returning_from_structure && !portals.empty()) {
-        const Vec2 p_tl = CenteredTopLeftForTile(tilemap, portals[0].row, portals[0].col);
+    Vec2 anchor = spawn_point;
+    if (returning_from_structure) {
+        if (const PortalLink* link = FindPortal(from_structure); link != nullptr) {
+            anchor = link->exit_spawn;
+            portal_exit_spawn = link->exit_spawn;
+            last_used_structure = from_structure;
+        } else {
+            anchor = portal_exit_spawn;
+        }
         if (!IsSafeSpawnBox(tilemap, anchor, {kPlayerWidth, kPlayerHeight}, bridge_unlocked)) {
             anchor = FindSafeSpawnNear(
                 tilemap,
-                {p_tl.x, p_tl.y + kTileSize * 1.5f},
+                anchor,
                 {kPlayerWidth, kPlayerHeight},
                 spawn_point,
                 bridge_unlocked);
@@ -253,9 +379,17 @@ OverworldStepResult OverworldSim::Step(
     }
 
     bool any_on_portal = false;
+    StructureId hit_structure = last_used_structure;
     for (const Player* p : players.ActivePlayers()) {
         if (tilemap.OverlapsTileId(p->Bounds(), TileId::StructurePortal)) {
             any_on_portal = true;
+            // Match the exact portal link
+            for (const auto& link : portals) {
+                if (p->Bounds().Overlaps(PortalLinkRect(tilemap, link))) {
+                    hit_structure = link.target_structure;
+                    break;
+                }
+            }
             break;
         }
     }
@@ -266,19 +400,53 @@ OverworldStepResult OverworldSim::Step(
         }
     } else if (portal_cooldown_timer <= 0.0f && any_on_portal) {
         result.enter_structure_requested = true;
+        result.target_structure = hit_structure;
+        last_used_structure = hit_structure;
     }
 
     return result;
 }
 
 void StructureSim::InitializeDefault() {
-    tilemap = Tilemap::CreateStructureMap(kTileSize);
-    // Ground floor row 12, col 6 (away from ExitPortal at cols 2..3)
-    spawn_point = GroundedTopLeftForTile(tilemap, 12, 6);
+    tilemaps[StructureIndex(StructureId::HypogeanCisterns)] =
+        Tilemap::CreateStructureMap(StructureId::HypogeanCisterns, kTileSize);
+    tilemaps[StructureIndex(StructureId::PendulumTower)] =
+        Tilemap::CreateStructureMap(StructureId::PendulumTower, kTileSize);
+    tilemaps[StructureIndex(StructureId::GeothermalChamber)] =
+        Tilemap::CreateStructureMap(StructureId::GeothermalChamber, kTileSize);
+
+    spawn_points[StructureIndex(StructureId::HypogeanCisterns)] =
+        GroundedTopLeftForTile(tilemaps[StructureIndex(StructureId::HypogeanCisterns)], 13, 6);
+    spawn_points[StructureIndex(StructureId::PendulumTower)] =
+        GroundedTopLeftForTile(tilemaps[StructureIndex(StructureId::PendulumTower)], 15, 6);
+    spawn_points[StructureIndex(StructureId::GeothermalChamber)] =
+        GroundedTopLeftForTile(tilemaps[StructureIndex(StructureId::GeothermalChamber)], 13, 6);
+
+    active_structure = StructureId::HypogeanCisterns;
+    tilemap = tilemaps[0];
+    spawn_point = spawn_points[0];
     camera_target = {spawn_point.x + kPlayerWidth * 0.5f, spawn_point.y + kPlayerHeight * 0.5f};
     portal_cooldown_timer = 0.0f;
     portal_reentry_locked = false;
     initialized = true;
+}
+
+void StructureSim::SelectStructure(StructureId id) {
+    if (!initialized) {
+        InitializeDefault();
+    }
+    const std::size_t idx = StructureIndex(id);
+    active_structure = static_cast<StructureId>(idx);
+    tilemap = tilemaps[idx];
+    spawn_point = spawn_points[idx];
+}
+
+void StructureSim::OnEnter(StructureId id, PlayerManager& players, bool bridge_unlocked) {
+    if (!initialized) {
+        InitializeDefault();
+    }
+    SelectStructure(id);
+    OnEnter(players, bridge_unlocked);
 }
 
 void StructureSim::OnEnter(PlayerManager& players, bool bridge_unlocked) {
@@ -288,7 +456,6 @@ void StructureSim::OnEnter(PlayerManager& players, bool bridge_unlocked) {
 
     Vec2 anchor = spawn_point;
     if (!IsSafeSpawnBox(tilemap, anchor, {kPlayerWidth, kPlayerHeight}, bridge_unlocked)) {
-        // Search for any non-solid, non-portal cell in current tilemap
         bool found_cell = false;
         for (int r = tilemap.Rows() - 1; r >= 0 && !found_cell; --r) {
             for (int c = 0; c < tilemap.RowCols(r); ++c) {
@@ -301,6 +468,8 @@ void StructureSim::OnEnter(PlayerManager& players, bool bridge_unlocked) {
             }
         }
     }
+
+    players.EnsureActive(0, anchor);
 
     static constexpr std::array<Vec2, 8> kHorizOffsets{{
         {0.0f, 0.0f},
@@ -445,31 +614,39 @@ void WorldContext::Reset() {
     players = PlayerManager{};
     overworld = OverworldSim{};
     structure = StructureSim{};
-    solar_machine = Machine::CreateDefaultSolar();
-    hydro_machine = Machine::CreateDefaultHydro();
-    purifier_machine = Machine::CreateDefaultSolar({1128.0f, 432.0f});
-    purifier_machine.target_param = 120.0f;
-    purifier_machine.current_param = 30.0f;
-    purifier_machine.clean_energy_reward = 30.0f;
-    purifier_machine.clean_pollution_reduction = 100.0f;
-    purifier_machine.dirty_energy_reward = 30.0f;
-    purifier_machine.dirty_pollution_increase = 35.0f;
-    thermal_machine = Machine::CreateDefaultSolar({1128.0f, 216.0f});
-    thermal_machine.target_param = 60.0f;
-    thermal_machine.current_param = 15.0f;
-    thermal_machine.clean_energy_reward = 25.0f;
-    thermal_machine.clean_pollution_reduction = 35.0f;
-    thermal_machine.dirty_energy_reward = 25.0f;
-    thermal_machine.dirty_pollution_increase = 30.0f;
+    overworld.InitializeDefault();
+    structure.InitializeDefault();
+
+    machines[MachineIndex(MachineType::SolarArray)] =
+        Machine::CreateDefaultSolar(overworld.tilemap.TileCenter(29, 11));
+    machines[MachineIndex(MachineType::HydroTurbine)] =
+        Machine::CreateDefaultHydro(structure.tilemaps[StructureIndex(StructureId::HypogeanCisterns)].TileCenter(13, 13));
+    machines[MachineIndex(MachineType::PendulumRegulator)] =
+        Machine::CreateDefaultPendulum(structure.tilemaps[StructureIndex(StructureId::PendulumTower)].TileCenter(7, 15));
+    machines[MachineIndex(MachineType::HarmonicResonator)] =
+        Machine::CreateDefaultHarmonic(overworld.tilemap.TileCenter(17, 36));
+    machines[MachineIndex(MachineType::ThermalExchanger)] =
+        Machine::CreateDefaultThermal(structure.tilemaps[StructureIndex(StructureId::GeothermalChamber)].TileCenter(9, 26));
+    machines[MachineIndex(MachineType::CentralAstrolabe)] =
+        Machine::CreateDefaultAstrolabe(overworld.tilemap.TileCenter(29, 37));
+
+    modal_machine_type = MachineType::SolarArray;
     calibration_modal.Reset();
-    calibrating_purifier = false;
-    calibrating_thermal = false;
-    architect_npc.Reset();
-    rosa_npc.Reset({1056.0f, 322.0f});
-    rosa_npc.trigger_radius = 96.0f;
-    rosa_npc.last_dialogue = "Nonna Rosa: Sali qui sull'impalcatura della Diga quando avrai riattivato la Turbina!";
-    gaia_terminal_pos = {1128.0f, 648.0f};
-    gaia_terminal_unlocked = false;
+
+    npcs[NpcIndex(NpcId::ClaraSereni)] = WorldNpc::CreateDefault(NpcId::ClaraSereni);
+    npcs[NpcIndex(NpcId::LorenzoAltieri)] = WorldNpc::CreateDefault(NpcId::LorenzoAltieri);
+    npcs[NpcIndex(NpcId::MiriamFerro)] = WorldNpc::CreateDefault(NpcId::MiriamFerro);
+    npcs[NpcIndex(NpcId::MatteoVerrini)] = WorldNpc::CreateDefault(NpcId::MatteoVerrini);
+
+    collectibles.ResetDefault();
+    story.Reset();
+
+    current_zone = ZoneId::DawnTerraces;
+    zone_banner_timer = 0.0f;
+    banner_zone = ZoneId::DawnTerraces;
+    banner_structure = StructureId::HypogeanCisterns;
+    banner_is_structure = false;
+
     demo_mode = keep_demo;
     last_scan = EmpiricalScanReading{};
     sim_time = 0.0f;
@@ -477,85 +654,140 @@ void WorldContext::Reset() {
     scan_pulse_origin = {0.0f, 0.0f};
     simulation_completed = false;
     current_mode = GameMode::Overworld;
+    active_structure = StructureId::HypogeanCisterns;
     returning_from_structure = false;
-    story.Reset();
 }
 
 void WorldContext::EnsureInitialized() {
-    if (!overworld.initialized) {
-        overworld.InitializeDefault();
-        purifier_machine.pos = {1128.0f, 432.0f};
-        purifier_machine.target_param = 120.0f;
-        if (purifier_machine.state == MachineState::Broken &&
-            purifier_machine.current_param == 0.0f) {
-            purifier_machine.current_param = 30.0f;
-            purifier_machine.clean_energy_reward = 30.0f;
-            purifier_machine.clean_pollution_reduction = 100.0f;
-            purifier_machine.dirty_energy_reward = 30.0f;
-            purifier_machine.dirty_pollution_increase = 35.0f;
-        }
-        thermal_machine.pos = {1128.0f, 216.0f};
-        thermal_machine.target_param = 60.0f;
-        if (thermal_machine.state == MachineState::Broken &&
-            thermal_machine.current_param == 0.0f) {
-            thermal_machine.current_param = 15.0f;
-            thermal_machine.clean_energy_reward = 25.0f;
-            thermal_machine.clean_pollution_reduction = 35.0f;
-            thermal_machine.dirty_energy_reward = 25.0f;
-            thermal_machine.dirty_pollution_increase = 30.0f;
-        }
-    }
-    if (!structure.initialized) {
-        structure.InitializeDefault();
-    }
-    if (architect_npc.last_dialogue.empty()) {
-        architect_npc.Reset(architect_npc.pos);
-    }
-    if (rosa_npc.last_dialogue.empty()) {
-        rosa_npc.Reset({1056.0f, 322.0f});
-        rosa_npc.trigger_radius = 96.0f;
-        rosa_npc.last_dialogue = "Nonna Rosa: Sali qui sull'impalcatura della Diga quando avrai riattivato la Turbina!";
+    if (!overworld.initialized || !structure.initialized || collectibles.TotalCount() == 0) {
+        Reset();
     }
 }
 
-Machine& WorldContext::ActiveMachine() noexcept {
-    return (current_mode == GameMode::Overworld) ? solar_machine : hydro_machine;
-}
-
-const Machine& WorldContext::ActiveMachine() const noexcept {
-    return (current_mode == GameMode::Overworld) ? solar_machine : hydro_machine;
-}
-
-Machine& WorldContext::ModalTargetMachine() noexcept {
+LocationId WorldContext::ActiveLocation() const noexcept {
     if (current_mode == GameMode::Overworld) {
-        if (calibrating_thermal) {
-            return thermal_machine;
-        }
-        if (calibrating_purifier) {
-            return purifier_machine;
-        }
+        return LocationId::Overworld;
     }
-    return ActiveMachine();
+    return LocationFromStructure(active_structure);
 }
 
-const Machine& WorldContext::ModalTargetMachine() const noexcept {
+const char* WorldContext::ActiveLocationName() const noexcept {
+    return LocationName(ActiveLocation(), current_zone);
+}
+
+const char* WorldContext::ActiveLocationSubtitle() const noexcept {
     if (current_mode == GameMode::Overworld) {
-        if (calibrating_thermal) {
-            return thermal_machine;
-        }
-        if (calibrating_purifier) {
-            return purifier_machine;
-        }
+        return ZoneSubtitle(current_zone);
     }
-    return ActiveMachine();
+    return StructureSubtitle(active_structure);
 }
 
 Machine& WorldContext::GetMachine(MachineType type) noexcept {
-    return (type == MachineType::SolarArray) ? solar_machine : hydro_machine;
+    return machines[MachineIndex(type)];
 }
 
 const Machine& WorldContext::GetMachine(MachineType type) const noexcept {
-    return (type == MachineType::SolarArray) ? solar_machine : hydro_machine;
+    return machines[MachineIndex(type)];
+}
+
+Machine& WorldContext::ModalTargetMachine() noexcept {
+    return GetMachine(modal_machine_type);
+}
+
+const Machine& WorldContext::ModalTargetMachine() const noexcept {
+    return GetMachine(modal_machine_type);
+}
+
+Machine& WorldContext::ActiveMachine() noexcept {
+    const LocationId loc = ActiveLocation();
+    const Player* p0 = players.GetPlayer(0);
+    Machine* best = nullptr;
+    float best_dist = 1e9f;
+    for (auto& m : machines) {
+        if (m.location != loc) {
+            continue;
+        }
+        if (p0 != nullptr && p0->active) {
+            const float d = m.DistanceToPlayer(*p0);
+            if (best == nullptr || d < best_dist) {
+                best = &m;
+                best_dist = d;
+            }
+        } else if (best == nullptr) {
+            best = &m;
+        }
+    }
+    return (best != nullptr) ? *best : machines[0];
+}
+
+const Machine& WorldContext::ActiveMachine() const noexcept {
+    const LocationId loc = ActiveLocation();
+    const Player* p0 = players.GetPlayer(0);
+    const Machine* best = nullptr;
+    float best_dist = 1e9f;
+    for (const auto& m : machines) {
+        if (m.location != loc) {
+            continue;
+        }
+        if (p0 != nullptr && p0->active) {
+            const float d = m.DistanceToPlayer(*p0);
+            if (best == nullptr || d < best_dist) {
+                best = &m;
+                best_dist = d;
+            }
+        } else if (best == nullptr) {
+            best = &m;
+        }
+    }
+    return (best != nullptr) ? *best : machines[0];
+}
+
+std::vector<const Machine*> WorldContext::MachinesInCurrentScene() const {
+    std::vector<const Machine*> out;
+    const LocationId loc = ActiveLocation();
+    for (const auto& m : machines) {
+        if (m.location == loc) {
+            out.push_back(&m);
+        }
+    }
+    return out;
+}
+
+WorldNpc& WorldContext::GetNpc(NpcId id) noexcept {
+    return npcs[NpcIndex(id)];
+}
+
+const WorldNpc& WorldContext::GetNpc(NpcId id) const noexcept {
+    return npcs[NpcIndex(id)];
+}
+
+std::vector<const WorldNpc*> WorldContext::NpcsInCurrentScene() const {
+    std::vector<const WorldNpc*> out;
+    const LocationId loc = ActiveLocation();
+    for (const auto& npc : npcs) {
+        if (npc.location == loc) {
+            out.push_back(&npc);
+        }
+    }
+    return out;
+}
+
+bool WorldContext::AllFiveMonumentsActivated() const noexcept {
+    return GetMachine(MachineType::SolarArray).state != MachineState::Broken &&
+           GetMachine(MachineType::HydroTurbine).state != MachineState::Broken &&
+           GetMachine(MachineType::PendulumRegulator).state != MachineState::Broken &&
+           GetMachine(MachineType::HarmonicResonator).state != MachineState::Broken &&
+           GetMachine(MachineType::ThermalExchanger).state != MachineState::Broken;
+}
+
+int WorldContext::ActivatedMonumentsCount() const noexcept {
+    int count = 0;
+    for (const auto& m : machines) {
+        if (m.state != MachineState::Broken) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 Tilemap& WorldContext::ActiveTilemap() noexcept {
@@ -573,45 +805,134 @@ Vec2 WorldContext::ActiveCameraTarget() const noexcept {
                : structure.camera_target;
 }
 
-void WorldContext::UpdateProximityPrompts() noexcept {
-    if (current_mode == GameMode::Overworld) {
-        solar_machine.UpdateProximity(players);
-        purifier_machine.UpdateProximity(players);
-        if (!demo_mode && rosa_npc.recruited) {
-            thermal_machine.UpdateProximity(players);
-        } else {
-            thermal_machine.prompt_visible = false;
-        }
-        hydro_machine.prompt_visible = false;
-    } else {
-        hydro_machine.UpdateProximity(players);
-        solar_machine.prompt_visible = false;
-        purifier_machine.prompt_visible = false;
-        thermal_machine.prompt_visible = false;
+void WorldContext::TriggerZoneBanner(ZoneId zone) noexcept {
+    banner_zone = zone;
+    banner_is_structure = false;
+    zone_banner_timer = kZoneBannerDuration;
+}
+
+void WorldContext::TriggerStructureBanner(StructureId id) noexcept {
+    banner_structure = id;
+    banner_is_structure = true;
+    zone_banner_timer = kZoneBannerDuration;
+}
+
+void WorldContext::EnterStructure(StructureId id) {
+    EnsureInitialized();
+    active_structure = id;
+    current_mode = GameMode::Structure;
+    returning_from_structure = false;
+    overworld.last_used_structure = id;
+    structure.OnEnter(id, players, ecosystem.architect_recruited);
+    TriggerStructureBanner(id);
+    UpdateProximityPrompts();
+    story.Observe(BuildStorySnapshot());
+}
+
+void WorldContext::ExitToOverworld() {
+    EnsureInitialized();
+    const StructureId from_id = active_structure;
+    current_mode = GameMode::Overworld;
+    returning_from_structure = true;
+    overworld.OnEnter(players, true, ecosystem.architect_recruited, from_id);
+    if (const Player* p0 = players.GetPlayer(0); p0 != nullptr && p0->active) {
+        current_zone = overworld.DistrictAt(p0->Center());
     }
+    TriggerZoneBanner(current_zone);
+    UpdateProximityPrompts();
+    story.Observe(BuildStorySnapshot());
+}
+
+void WorldContext::TeleportToZone(ZoneId zone) {
+    EnsureInitialized();
+    current_mode = GameMode::Overworld;
+    returning_from_structure = false;
+    const Vec2 spawn = overworld.SafeSpawnInZone(zone, ecosystem.architect_recruited);
+    players.EnsureActive(0, spawn);
+    for (Player* p : players.ActivePlayers()) {
+        p->pos = spawn;
+        p->vel = {0.0f, 0.0f};
+        p->ResetVerticalState();
+    }
+    overworld.camera_target = players.AverageActivePosition();
+    current_zone = zone;
+    TriggerZoneBanner(zone);
+    UpdateProximityPrompts();
+    story.Observe(BuildStorySnapshot());
+}
+
+StorySnapshot WorldContext::BuildStorySnapshot() const noexcept {
+    StorySnapshot snap{};
+    snap.mode = current_mode;
+    snap.location = ActiveLocation();
+    snap.zone = current_zone;
+    snap.has_scanned = last_scan.active && last_scan.has_target;
+    snap.solar = GetMachine(MachineType::SolarArray).state;
+    snap.hydro = GetMachine(MachineType::HydroTurbine).state;
+    snap.pendulum = GetMachine(MachineType::PendulumRegulator).state;
+    snap.harmonic = GetMachine(MachineType::HarmonicResonator).state;
+    snap.thermal = GetMachine(MachineType::ThermalExchanger).state;
+    snap.astrolabe = GetMachine(MachineType::CentralAstrolabe).state;
+    snap.clara_recruited = GetNpc(NpcId::ClaraSereni).recruited || ecosystem.architect_recruited;
+    snap.lorenzo_recruited = GetNpc(NpcId::LorenzoAltieri).recruited;
+    snap.miriam_met = GetNpc(NpcId::MiriamFerro).met;
+    snap.matteo_confronted = GetNpc(NpcId::MatteoVerrini).met;
+    snap.astrolabe_unlocked = GetMachine(MachineType::CentralAstrolabe).unlocked;
+    snap.relics_collected = collectibles.CollectedCount();
+    snap.total_relics = collectibles.TotalCount();
+    snap.pollution_level = ecosystem.pollution_level;
+    snap.simulation_completed = simulation_completed;
+    return snap;
+}
+
+void WorldContext::UpdateProximityPrompts() noexcept {
+    const LocationId loc = ActiveLocation();
+    for (auto& m : machines) {
+        if (m.location == loc) {
+            m.UpdateProximity(players);
+        } else {
+            m.prompt_visible = false;
+        }
+    }
+    for (auto& npc : npcs) {
+        if (npc.location == loc) {
+            npc.UpdateProximity(players);
+        } else {
+            npc.prompt_visible = false;
+        }
+    }
+    collectibles.UpdateProximity(loc, players);
 }
 
 EmpiricalScanReading WorldContext::TriggerScan(int player_id) noexcept {
-    if (const Player* p = players.GetPlayer(player_id); p != nullptr && p->active) {
-        scan_pulse_timer = 0.85f;
-        scan_pulse_origin = p->Center();
-        if (current_mode == GameMode::Overworld && ecosystem.architect_recruited) {
-            const float d_solar = solar_machine.DistanceToPlayer(*p);
-            const float d_purifier = purifier_machine.DistanceToPlayer(*p);
-            const float d_thermal = thermal_machine.DistanceToPlayer(*p);
-            if (!demo_mode && rosa_npc.recruited &&
-                d_thermal <= kDefaultScannerRange &&
-                d_thermal < d_solar && d_thermal <= d_purifier) {
-                last_scan = PerformEmpiricalScan(player_id, players, thermal_machine);
-                return last_scan;
-            }
-            if (d_purifier < d_solar && d_purifier <= kDefaultScannerRange) {
-                last_scan = PerformEmpiricalScan(player_id, players, purifier_machine);
-                return last_scan;
-            }
+    const Player* p = players.GetPlayer(player_id);
+    if (p == nullptr || !p->active) {
+        last_scan = EmpiricalScanReading{};
+        return last_scan;
+    }
+
+    scan_pulse_timer = 0.85f;
+    scan_pulse_origin = p->Center();
+
+    const LocationId loc = ActiveLocation();
+    const Machine* best = nullptr;
+    float best_dist = 1e9f;
+    for (const auto& m : machines) {
+        if (m.location != loc) {
+            continue;
+        }
+        const float d = m.DistanceToPlayer(*p);
+        if (d <= kDefaultScannerRange && d < best_dist) {
+            best = &m;
+            best_dist = d;
         }
     }
-    last_scan = PerformEmpiricalScan(player_id, players, ActiveMachine());
+
+    if (best != nullptr) {
+        last_scan = PerformEmpiricalScan(player_id, players, *best, kDefaultScannerRange);
+    } else {
+        last_scan = PerformEmpiricalScan(player_id, players, ActiveMachine(), kDefaultScannerRange);
+    }
     return last_scan;
 }
 
@@ -624,29 +945,16 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
     if (scan_pulse_timer > 0.0f) {
         scan_pulse_timer = std::max(0.0f, scan_pulse_timer - safe_dt);
     }
-
-    auto make_story_snapshot = [this]() -> StorySnapshot {
-        StorySnapshot snap{};
-        snap.mode = current_mode;
-        snap.has_scanned = last_scan.active && last_scan.has_target;
-        snap.solar = solar_machine.state;
-        snap.hydro = hydro_machine.state;
-        snap.purifier = purifier_machine.state;
-        snap.architect_recruited = ecosystem.architect_recruited;
-        snap.pollution_level = ecosystem.pollution_level;
-        snap.simulation_completed = simulation_completed;
-        snap.rosa_recruited = rosa_npc.recruited;
-        snap.thermal = thermal_machine.state;
-        snap.gaia_terminal_unlocked = gaia_terminal_unlocked;
-        snap.demo_mode = demo_mode;
-        return snap;
-    };
+    if (zone_banner_timer > 0.0f) {
+        zone_banner_timer = std::max(0.0f, zone_banner_timer - safe_dt);
+    }
+    collectibles.Tick(safe_dt);
 
     if (input.advance_dialogue_pressed) {
         story.AdvanceDialogue();
     }
 
-    // 1. UI Phase cycling (respects MaxUnlockedUiPhase gates)
+    // 1. UI Phase cycling (Sguardo Empirico -> Rilievo Metrico -> Trama Geodetica)
     bool wants_cycle_phase = input.toggle_ui_phase_pressed;
     for (const Player* p : players.ActivePlayers()) {
         if (p != nullptr && input.Get(p->player_id).toggle_overlay_pressed) {
@@ -665,7 +973,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         }
     }
 
-    // 3. If modal calibration popup is open, freeze player movement and handle modal controls
+    // 3. Calibration modal (freezes movement while open)
     if (calibration_modal.is_open) {
         Machine& machine = ModalTargetMachine();
         for (const Player* p : players.ActivePlayers()) {
@@ -678,46 +986,50 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
             }
             if (in.cancel_pressed) {
                 calibration_modal.Cancel();
-                calibrating_purifier = false;
-                calibrating_thermal = false;
                 break;
             }
-            if (in.bypass_pressed) {
+            if (in.bypass_pressed && machine.allow_bypass) {
                 calibration_modal.TriggerBypass(machine, ecosystem);
-                if (calibrating_purifier && demo_mode) {
-                    simulation_completed = true;
-                }
-                calibrating_purifier = false;
-                calibrating_thermal = false;
                 break;
             }
             if (in.confirm_pressed) {
                 if (calibration_modal.ConfirmClean(machine, ecosystem)) {
-                    if (calibrating_purifier) {
-                        if (demo_mode) {
-                            simulation_completed = true;
-                        }
-                        architect_npc.last_dialogue =
-                            "MATRICE PURIFICATA (0% Smog): L'ecosistema e le leggi fisiche sono in equilibrio perfetto!";
+                    if (machine.type == MachineType::CentralAstrolabe) {
+                        simulation_completed = true;
                     }
-                    calibrating_purifier = false;
-                    calibrating_thermal = false;
                 }
                 break;
             }
         }
+        if (AllFiveMonumentsActivated()) {
+            GetMachine(MachineType::CentralAstrolabe).unlocked = true;
+        }
         UpdateProximityPrompts();
-        story.Observe(make_story_snapshot());
+        story.Observe(BuildStorySnapshot());
         story.Tick(safe_dt);
         return out;
     }
 
-    // 4. Step physics & scene simulation
+    // 4. Step active scene physics
     if (current_mode == GameMode::Overworld) {
         const OverworldStepResult ow_res =
             overworld.Step(players, input, dt, ecosystem.architect_recruited);
         out.enter_structure_requested = ow_res.enter_structure_requested;
+        out.target_structure = ow_res.target_structure;
         out.newly_joined_count = ow_res.newly_joined_count;
+        if (ow_res.enter_structure_requested) {
+            active_structure = ow_res.target_structure;
+        }
+        // Detect Overworld district transitions
+        if (const Player* p0 = players.GetPlayer(0); p0 != nullptr && p0->active) {
+            const ZoneId next_zone = overworld.DistrictAt(p0->Center());
+            if (next_zone != current_zone) {
+                current_zone = next_zone;
+                out.zone_changed = true;
+                out.new_zone = next_zone;
+                TriggerZoneBanner(next_zone);
+            }
+        }
     } else {
         const StructureStepResult st_res =
             structure.Step(players, input, dt, ecosystem.architect_recruited);
@@ -725,84 +1037,150 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         out.newly_joined_count = st_res.newly_joined_count;
     }
 
-    // 5. Update machine proximity prompts for active scene
+    // 5. Update proximity prompts
     UpdateProximityPrompts();
 
-    // 6. Handle interaction presses (Machine modal, Purifier modal, Thermal modal, Rosa NPC, GAIA Terminal, Architect NPC)
-    Machine& machine = ActiveMachine();
+    // 6. Check if any active player pressed [E] interact
+    bool any_interact = false;
     for (const Player* p : players.ActivePlayers()) {
-        if (p == nullptr) {
-            continue;
-        }
-        const PlayerInput& in = input.Get(p->player_id);
-        if (!in.interact_pressed) {
-            continue;
-        }
-        if (machine.IsPlayerInRange(*p)) {
-            calibrating_purifier = false;
-            calibrating_thermal = false;
-            calibration_modal.OpenFor(machine);
+        if (p != nullptr && input.Get(p->player_id).interact_pressed) {
+            any_interact = true;
             break;
-        }
-        if (current_mode == GameMode::Overworld &&
-            ecosystem.architect_recruited &&
-            purifier_machine.IsPlayerInRange(*p)) {
-            calibrating_purifier = true;
-            calibrating_thermal = false;
-            calibration_modal.OpenFor(purifier_machine);
-            break;
-        }
-        if (current_mode == GameMode::Overworld &&
-            !demo_mode &&
-            rosa_npc.recruited &&
-            thermal_machine.IsPlayerInRange(*p)) {
-            calibrating_thermal = true;
-            calibrating_purifier = false;
-            calibration_modal.OpenFor(thermal_machine);
-            break;
-        }
-        if (current_mode == GameMode::Overworld &&
-            !demo_mode &&
-            rosa_npc.recruited &&
-            thermal_machine.state != MachineState::Broken &&
-            (p->Center() - gaia_terminal_pos).Length() <= 78.0f) {
-            gaia_terminal_unlocked = true;
-            simulation_completed = true;
-            break;
-        }
-        if (current_mode == GameMode::Structure &&
-            !demo_mode &&
-            rosa_npc.IsPlayerInRange(*p)) {
-            if (hydro_machine.state != MachineState::Broken) {
-                rosa_npc.recruited = true;
-                rosa_npc.last_dialogue =
-                    "Nonna Rosa: Ecco le chiavi dello Scambiatore Geotermico nel Settore Est!";
-            } else {
-                rosa_npc.last_dialogue =
-                    "Nonna Rosa: Prima riattiva la Turbina qui sotto, poi ti daro' i codici geotermici!";
-            }
-            break;
-        }
-        if (current_mode == GameMode::Overworld && architect_npc.IsPlayerInRange(*p)) {
-            (void)architect_npc.TryInteract(p->player_id, players, ecosystem);
         }
     }
 
-    if (demo_mode) {
-        if ((solar_machine.state == MachineState::CleanActive &&
-             hydro_machine.state == MachineState::CleanActive &&
-             purifier_machine.state == MachineState::CleanActive &&
-             ecosystem.pollution_level <= 0.01f) ||
-            (solar_machine.state != MachineState::Broken &&
-             hydro_machine.state != MachineState::Broken &&
-             purifier_machine.state != MachineState::Broken)) {
-            simulation_completed = true;
+    // 7. Collectibles pickup (auto-pickup on close touch OR [E] within interact radius)
+    if (const auto picked = collectibles.TryPickupNear(ActiveLocation(), players, any_interact);
+        picked.has_value()) {
+        out.collectible_picked_up = true;
+        out.picked_up_id = *picked;
+        const CollectibleMeta& meta = CollectibleMetadata(*picked);
+        if (!meta.pickup_line.empty()) {
+            story.PushAdHocLine(
+                meta.pickup_speaker.empty() ? "Elena Valli" : meta.pickup_speaker,
+                meta.pickup_line,
+                current_zone,
+                ActiveLocationName());
         }
-    } else if (gaia_terminal_unlocked) {
+    }
+
+    // 8. Unlock Central Astrolabe once all 5 district/structure monuments are activated
+    if (AllFiveMonumentsActivated()) {
+        GetMachine(MachineType::CentralAstrolabe).unlocked = true;
+    }
+
+    // 9. Handle [E] interactions with Machines & NPCs
+    const LocationId loc = ActiveLocation();
+    for (const Player* p : players.ActivePlayers()) {
+        if (p == nullptr || !input.Get(p->player_id).interact_pressed) {
+            continue;
+        }
+
+        // 9a. Machines in current scene
+        bool handled = false;
+        for (auto& m : machines) {
+            if (m.location != loc || !m.IsPlayerInRange(*p)) {
+                continue;
+            }
+            if (!m.unlocked) {
+                story.PushAdHocLine(
+                    "Elena Valli",
+                    "L'Astrolabio Centrale e' ancora sigillato: occorre riattivare prima i cinque monumenti della Conca.",
+                    current_zone,
+                    ActiveLocationName());
+                handled = true;
+                break;
+            }
+            modal_machine_type = m.type;
+            calibration_modal.OpenFor(m);
+            handled = true;
+            break;
+        }
+        if (handled) {
+            break;
+        }
+
+        // 9b. NPCs in current scene
+        for (auto& npc : npcs) {
+            if (npc.location != loc || !npc.IsPlayerInRange(*p)) {
+                continue;
+            }
+            npc.met = true;
+            if (npc.id == NpcId::ClaraSereni) {
+                if (npc.recruited || ecosystem.architect_recruited) {
+                    npc.recruited = true;
+                    npc.hidden_bridge_revealed = true;
+                    ecosystem.SetArchitectRecruited(true);
+                    npc.last_dialogue =
+                        "Il Ponte degli Archi e' libero e la Trama Geodetica mostra le linee di forza della Conca.";
+                    story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
+                } else if (ecosystem.clean_energy > 0.0f) {
+                    npc.recruited = true;
+                    npc.hidden_bridge_revealed = true;
+                    ecosystem.SetArchitectRecruited(true);
+                    npc.last_dialogue =
+                        "Calibrazione verificata senza pece. Apro il Ponte degli Archi e condivido con te la Trama Geodetica.";
+                } else if (ecosystem.dirty_energy > 0.0f) {
+                    npc.last_dialogue =
+                        "Non apro il Ponte degli Archi per fumo di fornace. Riaccendi un monumento con la fisica pulita.";
+                    story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
+                } else {
+                    npc.last_dialogue =
+                        "Prima di aprire il Ponte degli Archi calibra l'Eliostato sulle Terrazze dell'Alba.";
+                    story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
+                }
+            } else if (npc.id == NpcId::LorenzoAltieri) {
+                if (GetMachine(MachineType::HydroTurbine).state != MachineState::Broken) {
+                    const bool was_recruited = npc.recruited;
+                    npc.recruited = true;
+                    npc.last_dialogue =
+                        "L'acqua torna a cantare sotto le volte. Cerca le reliquie nelle quattro ere: la Conca ricorda tutto.";
+                    if (was_recruited) {
+                        story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
+                    }
+                } else {
+                    npc.last_dialogue =
+                        "Riavvia prima la Turbina Idrostatica qui sotto: solo allora ti consegniero' le mappe dell'archivio.";
+                    story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
+                }
+            } else if (npc.id == NpcId::MiriamFerro) {
+                if (GetMachine(MachineType::HarmonicResonator).state != MachineState::Broken) {
+                    npc.recruited = true;
+                    npc.last_dialogue =
+                        "Senti il tremito della giada? I semi di Meridia stanno gia' rompendo la crosta di cenere.";
+                } else {
+                    npc.last_dialogue =
+                        "Il Risonatore Armonico qui vicino attende i suoi 120 Hz. Accordalo e i Giardini Sospesi rinasceranno.";
+                }
+                if (story.EventFired(StoryEvent::MiriamMet)) {
+                    story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
+                }
+            } else if (npc.id == NpcId::MatteoVerrini) {
+                if (GetMachine(MachineType::ThermalExchanger).state == MachineState::CleanActive) {
+                    npc.recruited = true;
+                    npc.last_dialogue =
+                        "Hai tenuto calda la valle senza bruciare una goccia di pece. Forse avevo torto a temere il tempo.";
+                } else {
+                    npc.last_dialogue =
+                        "La Camera Geotermica e' qui dietro. Dimostra che Carnot regge il carico invernale e spegnero' le fornaci.";
+                }
+                if (story.EventFired(StoryEvent::MatteoConfronted)) {
+                    story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
+                }
+            }
+            handled = true;
+            break;
+        }
+        if (handled) {
+            break;
+        }
+    }
+
+    if (GetMachine(MachineType::CentralAstrolabe).state != MachineState::Broken) {
         simulation_completed = true;
     }
 
-    story.Observe(make_story_snapshot());
+    story.Observe(BuildStorySnapshot());
     story.Tick(safe_dt);
 
     return out;

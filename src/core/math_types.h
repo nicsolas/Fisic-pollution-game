@@ -45,19 +45,173 @@ inline constexpr float kInitialPollution = 35.0f;
 inline constexpr float kMinEcoValue = 0.0f;
 inline constexpr float kMaxEcoValue = 100.0f;
 
-// Authoritative Interface Contract Enums
+// Authoritative Interface Contract Enums (La Conca di Meridia)
 enum class TileId : int {
     Walkable = 0,
     Wall = 1,
     StructurePortal = 2,
     ExitPortal = 3,
-    HiddenBridge = 4
+    HiddenBridge = 4,
+    Water = 5,
+    PavedPath = 6,
+    SanctuaryFloor = 7,
+    RuinsWall = 8,
+    GardenFloor = 9
 };
 
 enum class GameMode { Overworld, Structure };
-enum class MachineType { SolarArray, HydroTurbine };
+
+enum class ZoneId : int {
+    DawnTerraces = 0,      // Terrazze dell'Alba (SO)
+    CanalQuarter = 1,      // Quartiere dei Canali & Ponte degli Archi (Centro-Ovest)
+    WindPlateau = 2,       // Altopiano dei Venti (NO)
+    HangingGardens = 3,    // Giardini Sospesi (Centro-Est)
+    FumaroleCaldera = 4,   // Caldera delle Fumarole (NE)
+    HarmonySanctuary = 5,  // Santuario dell'Armonia (SE)
+    Count = 6
+};
+
+enum class StructureId : int {
+    HypogeanCisterns = 0,  // Cisterne Ipogee
+    PendulumTower = 1,     // Torre del Pendolo
+    GeothermalChamber = 2, // Camera Geotermica
+    Count = 3
+};
+
+enum class LocationId : int {
+    Overworld = 0,
+    HypogeanCisterns = 1,
+    PendulumTower = 2,
+    GeothermalChamber = 3
+};
+
+enum class MachineType : int {
+    SolarArray = 0,        // Eliostato Solare (Legge di Lambert)
+    HydroTurbine = 1,      // Turbina Idrostatica (Legge di Stevino)
+    PendulumRegulator = 2, // Pendolo Isochronos (Isocronismo di Galileo)
+    HarmonicResonator = 3, // Risonatore Armonico (Curva di Risonanza)
+    ThermalExchanger = 4,  // Scambiatore di Carnot (Termodinamica)
+    CentralAstrolabe = 5,  // Astrolabio Centrale (Sintesi Armonica)
+    Count = 6
+};
+
 enum class MachineState { Broken, CleanActive, BypassedDirty };
 enum class UiPhase { Phase1_Minimal = 1, Phase2_Telemetry = 2, Phase3_EngineOverlay = 3 };
+
+[[nodiscard]] constexpr LocationId LocationFromStructure(StructureId id) noexcept {
+    switch (id) {
+        case StructureId::HypogeanCisterns:
+            return LocationId::HypogeanCisterns;
+        case StructureId::PendulumTower:
+            return LocationId::PendulumTower;
+        case StructureId::GeothermalChamber:
+            return LocationId::GeothermalChamber;
+        case StructureId::Count:
+            break;
+    }
+    return LocationId::HypogeanCisterns;
+}
+
+[[nodiscard]] constexpr StructureId StructureFromLocation(LocationId loc) noexcept {
+    switch (loc) {
+        case LocationId::HypogeanCisterns:
+            return StructureId::HypogeanCisterns;
+        case LocationId::PendulumTower:
+            return StructureId::PendulumTower;
+        case LocationId::GeothermalChamber:
+            return StructureId::GeothermalChamber;
+        case LocationId::Overworld:
+            break;
+    }
+    return StructureId::HypogeanCisterns;
+}
+
+[[nodiscard]] constexpr const char* ZoneName(ZoneId zone) noexcept {
+    switch (zone) {
+        case ZoneId::DawnTerraces:
+            return "Terrazze dell'Alba";
+        case ZoneId::CanalQuarter:
+            return "Quartiere dei Canali";
+        case ZoneId::WindPlateau:
+            return "Altopiano dei Venti";
+        case ZoneId::HangingGardens:
+            return "Giardini Sospesi";
+        case ZoneId::FumaroleCaldera:
+            return "Caldera delle Fumarole";
+        case ZoneId::HarmonySanctuary:
+            return "Santuario dell'Armonia";
+        case ZoneId::Count:
+            break;
+    }
+    return "Conca di Meridia";
+}
+
+[[nodiscard]] constexpr const char* ZoneSubtitle(ZoneId zone) noexcept {
+    switch (zone) {
+        case ZoneId::DawnTerraces:
+            return "Meridiane di travertino e luce nascente";
+        case ZoneId::CanalQuarter:
+            return "Acquedotti antichi e Ponte degli Archi";
+        case ZoneId::WindPlateau:
+            return "Creste di basalto e torri del tempo";
+        case ZoneId::HangingGardens:
+            return "Terrazze fiorite e risonanze di giada";
+        case ZoneId::FumaroleCaldera:
+            return "Rovine delle fornaci e vene termali";
+        case ZoneId::HarmonySanctuary:
+            return "Mosaico astronomico e Astrolabio Centrale";
+        case ZoneId::Count:
+            break;
+    }
+    return "Altopiano dei Meridiani";
+}
+
+[[nodiscard]] constexpr const char* StructureName(StructureId id) noexcept {
+    switch (id) {
+        case StructureId::HypogeanCisterns:
+            return "Cisterne Ipogee";
+        case StructureId::PendulumTower:
+            return "Torre del Pendolo";
+        case StructureId::GeothermalChamber:
+            return "Camera Geotermica";
+        case StructureId::Count:
+            break;
+    }
+    return "Struttura di Meridia";
+}
+
+[[nodiscard]] constexpr const char* StructureSubtitle(StructureId id) noexcept {
+    switch (id) {
+        case StructureId::HypogeanCisterns:
+            return "Volte idrauliche e bacino di Stevino";
+        case StructureId::PendulumTower:
+            return "Oculi solari e quadrante isocrono";
+        case StructureId::GeothermalChamber:
+            return "Colonne di basalto e scambiatore di Carnot";
+        case StructureId::Count:
+            break;
+    }
+    return "Architettura dei Meridiani";
+}
+
+[[nodiscard]] constexpr const char* LocationName(LocationId loc, ZoneId zone) noexcept {
+    if (loc == LocationId::Overworld) {
+        return ZoneName(zone);
+    }
+    return StructureName(StructureFromLocation(loc));
+}
+
+[[nodiscard]] constexpr const char* UiPhaseName(UiPhase phase) noexcept {
+    switch (phase) {
+        case UiPhase::Phase1_Minimal:
+            return "Sguardo Empirico";
+        case UiPhase::Phase2_Telemetry:
+            return "Rilievo Metrico";
+        case UiPhase::Phase3_EngineOverlay:
+            return "Trama Geodetica";
+    }
+    return "Sguardo Empirico";
+}
 
 struct Vec2 {
     float x = 0.0f;

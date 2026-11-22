@@ -2,8 +2,8 @@
 
 #include <raylib.h>
 
-#include "core/ecosystem.h"
 #include "core/math_types.h"
+#include "core/simulation.h"
 
 namespace eco::app {
 
@@ -11,17 +11,14 @@ namespace eco::app {
 void SetParticleQualityScale(float scale) noexcept;
 [[nodiscard]] float GetParticleQualityScale() noexcept;
 
-// Sistema particellare cosmetico e post-processing screen-space (proprietario: artista).
+// Sistema particellare cosmetico differenziato per distretto/struttura + burst raccolta reliquie.
 // Non modifica MAI lo stato della simulazione.
 void DrawWorldAtmosphericParticles(
-    eco::GameMode mode,
-    float sim_time,
-    const eco::EcoSystem& ecosystem,
+    const eco::WorldContext& world,
     eco::Vec2 camera_target);
 
+// Post-processing atmosferico screen-space (raggi d'alba, foschia/cenere di pece, vignettatura).
 void DrawScreenSpaceAtmosphere(
-    eco::GameMode mode,
-    float sim_time,
-    const eco::EcoSystem& ecosystem);
+    const eco::WorldContext& world);
 
 } // namespace eco::app

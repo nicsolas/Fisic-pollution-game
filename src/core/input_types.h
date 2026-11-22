@@ -39,6 +39,8 @@ struct AllPlayersInput {
     bool toggle_state_pressed = false;
     bool toggle_ui_phase_pressed = false;
     bool advance_dialogue_pressed = false;
+    bool toggle_history_pressed = false;
+    bool toggle_codex_pressed = false;
 
     [[nodiscard]] inline const PlayerInput& Get(int player_id) const noexcept {
         static const PlayerInput kEmpty{};
@@ -151,6 +153,10 @@ inline void LatchFrameInput(AllPlayersInput& pending, const AllPlayersInput& fra
         pending.toggle_ui_phase_pressed || frame_sample.toggle_ui_phase_pressed;
     pending.advance_dialogue_pressed =
         pending.advance_dialogue_pressed || frame_sample.advance_dialogue_pressed;
+    pending.toggle_history_pressed =
+        pending.toggle_history_pressed || frame_sample.toggle_history_pressed;
+    pending.toggle_codex_pressed =
+        pending.toggle_codex_pressed || frame_sample.toggle_codex_pressed;
 }
 
 inline void ConsumePressedEdges(AllPlayersInput& pending) noexcept {
@@ -168,6 +174,8 @@ inline void ConsumePressedEdges(AllPlayersInput& pending) noexcept {
     pending.toggle_state_pressed = false;
     pending.toggle_ui_phase_pressed = false;
     pending.advance_dialogue_pressed = false;
+    pending.toggle_history_pressed = false;
+    pending.toggle_codex_pressed = false;
 }
 
 } // namespace eco

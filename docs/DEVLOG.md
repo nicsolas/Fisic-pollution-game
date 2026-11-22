@@ -96,3 +96,32 @@
   - Aggiunto un test fisico automatico in `tests/test_main.cpp` che fa camminare e saltare realmente il giocatore dal pavimento fino alla piattaforma di Nonna Rosa e interagisce con `[E]`.
 - **Fix Errore Fullscreen su Wayland (`src/app/pause_settings_menu.cpp`)**:
   - Sostituito `ToggleBorderlessWindowed()` (che in Raylib 5.5 chiama `glfwSetWindowPos`, non supportato dal protocollo Wayland con `WARNING: GLFW: Error: 65548`) con `SetWindowSize(mon_w, mon_h)` + `ToggleFullscreen()`, che su Wayland usa nativamente `xdg_toplevel_set_fullscreen` senza alcun errore di posizionamento finestra.
+
+---
+
+## 2026-11-22 — Milestone v0.4.0 "La Conca di Meridia" (Squadra a 6 Agenti)
+
+- **`narratore-1`**: rifondata l'intera ambientazione (rimossa la Calabria e ogni tono da script) nella civilta' perduta dei **Meridiani** (*La Conca di Meridia*), 4 Ere storiche, 6 distretti, 3 strutture, 5 personaggi principali + Eco di Meridia, 7 capitoli e 3 finali (`docs/STORIA.md`, `docs/VISION.md`, `docs/modifiche/01_mondo_e_civilta.md`).
+- **`narratore-2`**: scritti tutti i dialoghi letterari per i 7 capitoli e 32 eventi (`src/core/story_content.cpp`), le 16 reliquie `I.1`..`IV.4` con note di raccolta e schede Codex (`src/core/collectible_content.cpp`), e aggiornato `docs/DIALOGHI.md` (`docs/modifiche/02_dialoghi_e_reliquie.md`).
+- **`ingegnere-1`**: espanso il motore core puro C++20 con Overworld `36x50` a 6 distretti, 10 `TileId`, 3 strutture side-scrolling con portali dedicati, 6 leggi fisiche autentiche (Lambert, Stevino, Pendolo di Galileo, Risonanza Lorentziana, Carnot, Interferenza di Fase), registro 16 collezionabili, 4 NPC e `StoryDirector::History()` (`docs/modifiche/03_motore_core_e_zone.md`).
+- **`ingegnere-2`**: integrato il **Diario di Campo** (`[H]` Cronologia Dialoghi scorribile/filtrabile + `[J]` Codex Reliquie), banner diegetici di zona/reliquia, schermate Titolo/Intro/Pausa Meridia, flag CLI per screenshot, `CMakeLists.txt` e suite completa `eco_tests` + `headless_e2e` (`docs/modifiche/04_ui_cronologia_e_test.md`, `docs/modifiche/04b_fix_separatore_cronologia.md`).
+- **`artista-1`**: realizzate le palette multi-bioma (`palette.h`), il rendering 2.5D con viewport culling dei 6 distretti (mosaici astronomici, acquedotti, Ponte degli Archi, rovine, flora dinamica, 3 portali) e i 3 fondali in parallasse delle strutture interne (`docs/ART_DIRECTION.md`, `docs/modifiche/05_ambientazioni_e_dettagli.md`).
+- **`artista-2`**: disegnati Elena Valli + 4 NPC, i 6 monumenti fisici con diagrammi live nel modal di calibrazione, le 16 reliquie animate in 5 forme, la minimappa `MAPPA DI MERIDIA`, i VFX per bioma/struttura e gli helper condivisi in `ui_style.*` (`docs/modifiche/06_personaggi_collezionabili_vfx.md`).
+- **`coordinatore`**: integrazione finale in `./build/` (0 errori, 0 warning, `ctest` 2/2 PASS), audit zero residui legacy, aggiornamento `README.md`/`docs/*` e raccolta 12 nuovi screenshot (`docs/modifiche/07_integrazione_finale_e_verifica.md`).
+
+---
+
+## 2026-11-22 — Milestone v0.4.1 "Audio Procedurale & Suoni di Interazione"
+
+- **Audio Engine (`src/app/audio/audio_engine.h/.cpp`)**: sintetizzatore PCM procedurale in C++20 su Raylib/miniaudio (zero asset esterni, `src/core/` invariato) con **18 suoni di interazione e fisica** (passi su pietra/erba, salto/atterraggio, Lente Empirica, reliquie, calibrazione pulita/bypass, Ponte degli Archi, portali, cambio distretto/fase, menu/tab — **nessun suono o voce sui dialoghi**) e **5 loop ambientali continui** (Overworld pulito/foschia, Cisterne Ipogee, Torre del Pendolo, Camera Geotermica).
+- **Impostazioni & Controlli (`pause_settings_menu.*`, `main.cpp`)**: aggiunte le voci `Volume Audio [M Muto]` e `Paesaggio Sonoro` (`Ambiente + Interazioni` / `Solo Interazioni`), scorciatoia `[M]` e flag `--mute`.
+- **Verifica & Log**: build pulita (0 warning), `ctest` 2/2 PASS, verifica su PulseAudio/miniaudio, screenshot `docs/screenshots/20_impostazioni_audio.png` e log in `docs/modifiche/08_audio_procedurale_e_interazioni.md`.
+
+---
+
+## 2026-11-22 — Milestone v0.4.2 "Selezione Monitor, Selezione GPU & Salvataggio Partita"
+
+- **Salvataggio & Menu Riprendi (`src/core/save_data.*`, `story.*`, `title_state.*`)**: salvataggio atomico in `saves/conca_di_meridia.sav` (posizione, zona/struttura, 6 monumenti, 4 NPC, 16 reliquie, Cronologia Dialoghi integrale), autosave su traguardi/cambi zona, pulsante `Salva Partita Ora` in pausa e menu del Titolo **"Riprendi da dove hai lasciato"** con **9 sfondi procedurali ridisegnati** in base alla zona o struttura salvata e al suo livello di foschia.
+- **Selezione Monitor (`pause_settings_menu.*`)**: selettore `Monitor Schermo Intero` con `SetWindowMonitor` (fix Wayland/X11 multi-monitor) e persistenza in `saves/settings.cfg`.
+- **Selezione GPU (`src/app/gpu_selector.*`, `main.cpp`)**: rilevazione GPU Linux DRM (`NVIDIA`, `Intel`, `AMD`), commutazione pre-`InitWindow()` via EGL/PRIME/DRI_PRIME (verificata dal vivo tra `NVIDIA GeForce RTX 3050` e `Mesa Intel(R) Graphics`), `GPU Attiva Ora` nelle Impostazioni, pulsante `Applica GPU & Riavvia` e flag CLI `--gpu` / `--monitor`.
+- **Verifica & Log**: build pulita (0 warning), `ctest` 2/2 PASS (incluso `TestSaveAndLoadPersistence`), screenshot `docs/screenshots/21_impostazioni_monitor_gpu.png` e `22_titolo_riprendi_zona.png`, log in `docs/modifiche/09_monitor_gpu_e_salvataggio.md`.

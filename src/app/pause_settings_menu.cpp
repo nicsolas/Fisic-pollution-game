@@ -5,18 +5,23 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <string_view>
 
+#include "app/audio/audio_engine.h"
 #include "app/game_state_manager.h"
+#include "app/gpu_selector.h"
 #include "app/overworld_state.h"
 #include "app/render/palette.h"
 #include "app/render/particles.h"
 #include "app/render/ui_style.h"
+#include "app/story_ui.h"
 #include "app/title_state.h"
 #include "core/math_types.h"
+#include "core/save_data.h"
 #include "core/simulation.h"
 
 namespace eco::app {
@@ -48,10 +53,23 @@ constexpr std::array<FpsOption, 4> kFpsOptions = {{
     {0, "Illimitato"}
 }};
 
+struct VolumeOption {
+    float level;
+    const char* label;
+};
+
+constexpr std::array<VolumeOption, 5> kVolumeOptions = {{
+    {0.00f, "< Muto (0%) >"},
+    {0.25f, "< Basso (25%) >"},
+    {0.50f, "< Medio (50%) >"},
+    {0.75f, "< Normale (75%) >"},
+    {1.00f, "< Massimo (100%) >"}
+}};
+
 [[nodiscard]] const char* ParticleQualityLabel(ParticleQuality q) noexcept {
     switch (q) {
         case ParticleQuality::High:
-            return "Alta (100% - Lucciole, Cenere, Raggi)";
+            return "Alta (100% - Lucciole, Polline, Vapore)";
         case ParticleQuality::Medium:
             return "Media (50% - Bilanciata)";
         case ParticleQuality::Off:
@@ -67,38 +85,42 @@ constexpr std::array<FpsOption, 4> kFpsOptions = {{
     return std::string_view(ctx.state_manager.CurrentState()->Name()) == "TitleState";
 }
 
-[[nodiscard]] int SafeMonitorIndex(int monitor_index) noexcept {
-    if (!IsWindowReady()) {
-        return 0;
+[[nodiscard]] bool IsGameplayStateActive(const AppContext& ctx) noexcept {
+    if (!ctx.state_manager.HasActiveState()) {
+        return false;
     }
-    const int count = GetMonitorCount();
-    if (count <= 0) {
-        return 0;
-    }
-    if (monitor_index < 0) {
-        return std::clamp(GetCurrentMonitor(), 0, count - 1);
-    }
-    return std::clamp(monitor_index, 0, count - 1);
+    const std::string_view name(ctx.state_manager.CurrentState()->Name());
+    return name == "OverworldState" || name == "StructureState";
 }
 
 [[nodiscard]] std::string FormatMonitorLabel(int monitor_index) {
-    if (!IsWindowReady()) {
-        return "< Monitor 1/1 >";
+    const int count = IsWindowReady() ? std::max(1, GetMonitorCount()) : 1;
+    if (monitor_index < 0 || monitor_index >= count) {
+        return "< Auto (Monitor Corrente) >";
     }
-    const int count = std::max(1, GetMonitorCount());
-    const int idx = SafeMonitorIndex(monitor_index);
-    const int mw = GetMonitorWidth(idx);
-    const int mh = GetMonitorHeight(idx);
-    const char* raw_name = GetMonitorName(idx);
-    std::string name = (raw_name != nullptr && raw_name[0] != '\0') ? std::string(raw_name) : std::string("Display");
-    if (name.size() > 18) {
-        name = name.substr(0, 15) + "...";
+    const char* raw_name = IsWindowReady() ? GetMonitorName(monitor_index) : nullptr;
+    std::string mname = (raw_name != nullptr && raw_name[0] != '\0')
+                            ? std::string(raw_name)
+                            : ("Schermo " + std::to_string(monitor_index + 1));
+    if (mname.size() > 16) {
+        mname = mname.substr(0, 16);
     }
-    return std::string("< Monitor ") + std::to_string(idx + 1) + "/" + std::to_string(count) +
-           ": " + name + " (" + std::to_string(mw) + "x" + std::to_string(mh) + ") >";
+    const int mw = IsWindowReady() ? GetMonitorWidth(monitor_index) : 1280;
+    const int mh = IsWindowReady() ? GetMonitorHeight(monitor_index) : 720;
+    return "< Monitor " + std::to_string(monitor_index + 1) + "/" + std::to_string(count) +
+           ": " + mname + " (" + std::to_string(mw) + "x" + std::to_string(mh) + ") >";
 }
 
-void AdjustSettingValue(AppContext& ctx, GraphicsSettings& settings, int row, int dir) {
+[[nodiscard]] std::string FormatGpuLabel(const std::string& gpu_id) {
+    const auto& list = EnumerateGpuOptions();
+    const int idx = FindGpuOptionIndex(gpu_id);
+    if (idx >= 0 && idx < static_cast<int>(list.size())) {
+        return "< " + list[static_cast<std::size_t>(idx)].label + " >";
+    }
+    return "< Auto (Predefinita di Sistema) >";
+}
+
+void AdjustSettingValue(GraphicsSettings& settings, int row, int dir) {
     if (dir == 0) {
         return;
     }
@@ -109,77 +131,168 @@ void AdjustSettingValue(AppContext& ctx, GraphicsSettings& settings, int row, in
         }
         case 1: { // Selezione Monitor / Schermo
             const int count = IsWindowReady() ? std::max(1, GetMonitorCount()) : 1;
-            const int cur = SafeMonitorIndex(settings.monitor_index);
-            settings.monitor_index = (cur + dir + count) % count;
+            // Ciclo: -1 (Auto) -> 0 -> 1 -> ... -> count-1
+            const int total_slots = count + 1;
+            int slot = (settings.monitor_index < 0 || settings.monitor_index >= count)
+                           ? 0
+                           : (settings.monitor_index + 1);
+            slot = (slot + dir + total_slots) % total_slots;
+            settings.monitor_index = (slot == 0) ? -1 : (slot - 1);
             ApplySelectedMonitor(settings);
             break;
         }
-        case 2: { // Risoluzione finestra
+        case 2: { // GPU / Scheda Grafica
+            const auto& gpus = EnumerateGpuOptions();
+            const int n = std::max(1, static_cast<int>(gpus.size()));
+            int idx = FindGpuOptionIndex(settings.gpu_preference);
+            idx = (idx + dir + n) % n;
+            settings.gpu_preference = gpus[static_cast<std::size_t>(idx)].id;
+            break;
+        }
+        case 3: { // Risoluzione finestra
             const int n = static_cast<int>(kResolutions.size());
             settings.resolution_index = (settings.resolution_index + dir + n) % n;
             ApplySafeWindowResolution(settings);
             break;
         }
-        case 3: { // Limite FPS
+        case 4: { // Limite FPS
             const int n = static_cast<int>(kFpsOptions.size());
             settings.fps_index = (settings.fps_index + dir + n) % n;
             ApplyGraphicsSettingsToRuntime(settings);
             break;
         }
-        case 4: { // Qualita' particelle
+        case 5: { // Qualita' particelle
             int q = static_cast<int>(settings.particle_quality);
             q = (q + dir + 3) % 3;
             settings.particle_quality = static_cast<ParticleQuality>(q);
             ApplyGraphicsSettingsToRuntime(settings);
             break;
         }
-        case 5: { // Font Interfaccia
+        case 6: { // Font Interfaccia
             settings.clean_ttf_font = !settings.clean_ttf_font;
             ApplyGraphicsSettingsToRuntime(settings);
             break;
         }
-        case 6: { // Contatore FPS
+        case 7: { // Contatore FPS
             settings.show_fps = !settings.show_fps;
             break;
         }
-        case 7: { // Dettaglio Tutorial / Dialoghi
-            settings.compact_tutorial = !settings.compact_tutorial;
+        case 8: { // Volume Audio
+            const int n = static_cast<int>(kVolumeOptions.size());
+            settings.audio_volume_index = (settings.audio_volume_index + dir + n) % n;
+            ApplyGraphicsSettingsToRuntime(settings);
             break;
         }
-        case 8: { // Modalita' Storia: Campagna Completa (Atti I-V) vs Demo (Atti I-III)
-            settings.demo_mode = !settings.demo_mode;
-            ctx.world.demo_mode = settings.demo_mode;
+        case 9: { // Paesaggio Sonoro
+            settings.ambient_audio = !settings.ambient_audio;
+            ApplyGraphicsSettingsToRuntime(settings);
             break;
         }
         default:
             break;
     }
+    (void)SaveGraphicsSettings(settings);
+    PlayUiSfx(SfxId::UiClick, 0.58f, (dir > 0) ? 1.06f : 0.94f);
+}
+
+[[nodiscard]] int ParseIntSetting(const std::string& s, int fallback) noexcept {
+    try {
+        return std::stoi(s);
+    } catch (...) {
+        return fallback;
+    }
 }
 
 } // namespace
 
-void InitDefaultMonitor(GraphicsSettings& settings) {
+bool LoadGraphicsSettings(GraphicsSettings& settings, const std::string& path) {
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        return false;
+    }
+    std::string line;
+    while (std::getline(in, line)) {
+        const std::size_t eq = line.find('=');
+        if (eq == std::string::npos) {
+            continue;
+        }
+        const std::string key = line.substr(0, eq);
+        std::string val = line.substr(eq + 1);
+        while (!val.empty() && (val.back() == '\r' || val.back() == '\n')) {
+            val.pop_back();
+        }
+
+        if (key == "fullscreen") {
+            settings.fullscreen = (ParseIntSetting(val, 0) != 0);
+        } else if (key == "monitor_index") {
+            settings.monitor_index = ParseIntSetting(val, -1);
+        } else if (key == "resolution_index") {
+            settings.resolution_index =
+                std::clamp(ParseIntSetting(val, 1), 0, static_cast<int>(kResolutions.size()) - 1);
+        } else if (key == "fps_index") {
+            settings.fps_index =
+                std::clamp(ParseIntSetting(val, 0), 0, static_cast<int>(kFpsOptions.size()) - 1);
+        } else if (key == "particle_quality") {
+            const int q = std::clamp(ParseIntSetting(val, 0), 0, 2);
+            settings.particle_quality = static_cast<ParticleQuality>(q);
+        } else if (key == "clean_ttf_font") {
+            settings.clean_ttf_font = (ParseIntSetting(val, 1) != 0);
+        } else if (key == "show_fps") {
+            settings.show_fps = (ParseIntSetting(val, 0) != 0);
+        } else if (key == "compact_tutorial") {
+            settings.compact_tutorial = (ParseIntSetting(val, 0) != 0);
+        } else if (key == "audio_volume_index") {
+            settings.audio_volume_index =
+                std::clamp(ParseIntSetting(val, 3), 0, static_cast<int>(kVolumeOptions.size()) - 1);
+        } else if (key == "ambient_audio") {
+            settings.ambient_audio = (ParseIntSetting(val, 1) != 0);
+        } else if (key == "gpu_preference") {
+            if (!val.empty()) {
+                settings.gpu_preference = val;
+            }
+        }
+    }
+    return true;
+}
+
+bool SaveGraphicsSettings(const GraphicsSettings& settings, const std::string& path) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path target(path);
+    if (target.has_parent_path()) {
+        fs::create_directories(target.parent_path(), ec);
+    }
+    std::ofstream out(target, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+        return false;
+    }
+    out << "fullscreen=" << (settings.fullscreen ? 1 : 0) << "\n";
+    out << "monitor_index=" << settings.monitor_index << "\n";
+    out << "resolution_index=" << settings.resolution_index << "\n";
+    out << "fps_index=" << settings.fps_index << "\n";
+    out << "particle_quality=" << static_cast<int>(settings.particle_quality) << "\n";
+    out << "clean_ttf_font=" << (settings.clean_ttf_font ? 1 : 0) << "\n";
+    out << "show_fps=" << (settings.show_fps ? 1 : 0) << "\n";
+    out << "compact_tutorial=" << (settings.compact_tutorial ? 1 : 0) << "\n";
+    out << "audio_volume_index=" << settings.audio_volume_index << "\n";
+    out << "ambient_audio=" << (settings.ambient_audio ? 1 : 0) << "\n";
+    out << "gpu_preference=" << settings.gpu_preference << "\n";
+    return out.good();
+}
+
+int ResolveTargetMonitor(const GraphicsSettings& settings) noexcept {
     if (!IsWindowReady()) {
-        settings.monitor_index = 0;
-        return;
+        return 0;
     }
     const int count = GetMonitorCount();
     if (count <= 0) {
-        settings.monitor_index = 0;
-        return;
+        return 0;
     }
-    // Su Wayland GetCurrentMonitor() ritorna spesso sempre 0 (anche se il monitor 0 e' lo schermo secondario).
-    // Selezioniamo di default il monitor con la risoluzione (area) maggiore, lasciando poi libera scelta nel menu!
-    int best = std::clamp(GetCurrentMonitor(), 0, count - 1);
-    long long best_area = static_cast<long long>(GetMonitorWidth(best)) * GetMonitorHeight(best);
-    for (int i = 0; i < count; ++i) {
-        const long long area = static_cast<long long>(GetMonitorWidth(i)) * GetMonitorHeight(i);
-        if (area > best_area) {
-            best_area = area;
-            best = i;
-        }
+    if (settings.monitor_index >= 0 && settings.monitor_index < count) {
+        return settings.monitor_index;
     }
-    settings.monitor_index = best;
+    const int cur = GetCurrentMonitor();
+    return (cur >= 0 && cur < count) ? cur : 0;
 }
 
 void ApplyGraphicsSettingsToRuntime(const GraphicsSettings& settings) {
@@ -197,6 +310,13 @@ void ApplyGraphicsSettingsToRuntime(const GraphicsSettings& settings) {
             break;
     }
 
+    const int vol_idx = std::clamp(
+        settings.audio_volume_index,
+        0,
+        static_cast<int>(kVolumeOptions.size()) - 1);
+    const float vol = kVolumeOptions[static_cast<std::size_t>(vol_idx)].level;
+    ApplyGlobalAudioSettings(vol, vol <= 0.001f, settings.ambient_audio);
+
     if (IsWindowReady()) {
         const int idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
         SetTargetFPS(kFpsOptions[static_cast<std::size_t>(idx)].target_fps);
@@ -207,21 +327,13 @@ void ApplySelectedMonitor(GraphicsSettings& settings) {
     if (!IsWindowReady()) {
         return;
     }
-    const int mon = SafeMonitorIndex(settings.monitor_index);
-    settings.monitor_index = mon;
-
-    if (IsWindowFullscreen()) {
-        // In modalita' Fullscreen, SetWindowMonitor() chiama glfwSetWindowMonitor() sul wl_output/monitor
-        // selezionato alla sua risoluzione nativa, senza mai chiamare glfwSetWindowPos() (zero errori Wayland!).
-        SetWindowMonitor(mon);
-    } else {
-        // Su X11/Windows possiamo centrare subito la finestra sul monitor scelto;
-        // su Wayland evitiamo glfwSetWindowPos() (non supportato) e il monitor verra' usato al prossimo Fullscreen.
-        const bool is_wayland = (std::getenv("WAYLAND_DISPLAY") != nullptr);
-        if (!is_wayland) {
-            SetWindowMonitor(mon);
-        }
-    }
+    const int target_mon = ResolveTargetMonitor(settings);
+    // In Raylib/GLFW:
+    // - Se fullscreen == true, SetWindowMonitor(target_mon) sposta istantaneamente il fullscreen
+    //   sul monitor scelto (risolvendo il salto al secondo monitor su Wayland e X11!).
+    // - Se fullscreen == false, SetWindowMonitor centra la finestra sul monitor scelto (su X11)
+    //   e memorizza il monitor per il successivo F11 anche su Wayland.
+    SetWindowMonitor(target_mon);
 }
 
 void ApplySafeWindowResolution(GraphicsSettings& settings) {
@@ -232,15 +344,12 @@ void ApplySafeWindowResolution(GraphicsSettings& settings) {
     const int idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
     const auto& res = kResolutions[static_cast<std::size_t>(idx)];
 
-    const int mon = SafeMonitorIndex(settings.monitor_index);
-    settings.monitor_index = mon;
+    const int mon = ResolveTargetMonitor(settings);
     const int mon_w = GetMonitorWidth(mon);
     const int mon_h = GetMonitorHeight(mon);
 
-    // Se la risoluzione scelta eccede o uguaglia il monitor selezionato, passiamo a Fullscreen sul monitor scelto.
     if (mon_w > 0 && mon_h > 0 && (res.width >= mon_w || res.height >= mon_h - 32)) {
         if (!IsWindowFullscreen()) {
-            SetWindowSize(mon_w, mon_h);
             ToggleFullscreen();
         }
         SetWindowMonitor(mon);
@@ -248,7 +357,6 @@ void ApplySafeWindowResolution(GraphicsSettings& settings) {
         return;
     }
 
-    // Se eravamo in fullscreen e l'utente sceglie una risoluzione finestra che entra nel monitor:
     if (IsWindowFullscreen()) {
         ToggleFullscreen();
     }
@@ -257,6 +365,9 @@ void ApplySafeWindowResolution(GraphicsSettings& settings) {
     }
     settings.fullscreen = false;
     SetWindowSize(res.width, res.height);
+    if (settings.monitor_index >= 0) {
+        SetWindowMonitor(mon);
+    }
 }
 
 void ToggleAppFullscreen(GraphicsSettings& settings) {
@@ -265,19 +376,15 @@ void ToggleAppFullscreen(GraphicsSettings& settings) {
         return;
     }
 
-    const int mon = SafeMonitorIndex(settings.monitor_index);
-    settings.monitor_index = mon;
+    const int mon = ResolveTargetMonitor(settings);
     const int mon_w = GetMonitorWidth(mon);
     const int mon_h = GetMonitorHeight(mon);
 
     if (settings.fullscreen) {
         if (!IsWindowFullscreen()) {
-            if (mon_w > 0 && mon_h > 0) {
-                SetWindowSize(mon_w, mon_h);
-            }
             ToggleFullscreen();
         }
-        // Sposta immediatamente il fullscreen esattamente sul monitor scelto dall'utente!
+        // Forza sempre lo schermo scelto dall'utente (fix multi-monitor su Wayland/X11)
         SetWindowMonitor(mon);
     } else {
         if (IsWindowFullscreen()) {
@@ -288,7 +395,11 @@ void ToggleAppFullscreen(GraphicsSettings& settings) {
         const int safe_w = (mon_w > 0 && res.width >= mon_w) ? 1280 : res.width;
         const int safe_h = (mon_h > 0 && res.height >= mon_h - 32) ? 720 : res.height;
         SetWindowSize(safe_w, safe_h);
+        if (settings.monitor_index >= 0) {
+            SetWindowMonitor(mon);
+        }
     }
+    (void)SaveGraphicsSettings(settings);
 }
 
 void PauseSettingsMenu::OpenPause() noexcept {
@@ -311,27 +422,60 @@ void PauseSettingsMenu::Close() noexcept {
     opened_from_title_ = false;
 }
 
-bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& settings) {
-    // Scorciatoia globale F11 o Alt+Invio per Schermo Intero in qualsiasi momento
+void PauseSettingsMenu::TriggerSaveFeedback(const char* message) noexcept {
+    save_feedback_timer_ = 2.6f;
+    save_feedback_msg_ = (message != nullptr) ? std::string(message) : std::string("Partita salvata!");
+}
+
+bool PauseSettingsMenu::UpdateAndHandleInput(
+    AppContext& ctx,
+    GraphicsSettings& settings,
+    JournalOverlay* journal) {
+    if (save_feedback_timer_ > 0.0f) {
+        save_feedback_timer_ = std::max(0.0f, save_feedback_timer_ - GetFrameTime());
+    }
+
+    // Richiesta di apertura impostazioni proveniente dal menu del Titolo
+    if (ctx.open_settings_requested) {
+        ctx.open_settings_requested = false;
+        OpenSettingsDirect();
+        return true;
+    }
+
+    // Scorciatoia globale F11 o Alt+Invio per Schermo Intero sul monitor scelto
     if (IsKeyPressed(KEY_F11) ||
         ((IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)) && IsKeyPressed(KEY_ENTER))) {
         ToggleAppFullscreen(settings);
     }
 
-    // Se la modalita' dialoghi sintetici (tutorial compatto) e' attiva, velocizziamo i dialoghi lunghi
-    if (settings.compact_tutorial && ctx.world.story.HasActiveDialogue() && ctx.world.story.LineElapsed() > 3.2f) {
+    // Scorciatoia globale M per attivare/silenziare rapidamente l'audio
+    if (IsKeyPressed(KEY_M)) {
+        settings.audio_volume_index = (settings.audio_volume_index == 0) ? 3 : 0;
+        ApplyGraphicsSettingsToRuntime(settings);
+        (void)SaveGraphicsSettings(settings);
+        if (settings.audio_volume_index > 0) {
+            PlayUiSfx(SfxId::UiClick, 0.55f, 1.05f);
+        }
+    }
+
+    // Avanzamento rapido dei dialoghi se il giocatore attiva il ritmo sintetico
+    if (!is_open_ && (journal == nullptr || !journal->IsOpen()) &&
+        settings.compact_tutorial && ctx.world.story.HasActiveDialogue() &&
+        ctx.world.story.LineElapsed() > 3.2f) {
         ctx.world.story.AdvanceDialogue();
     }
 
     const bool on_title = IsTitleStateActive(ctx);
 
-    // Gestione tasto ESC (e tasto O sulla schermata del titolo per aprire direttamente le impostazioni)
+    // Priorita' ESC: Calibrazione -> Diario [H/J] -> Menu di Pausa / Impostazioni
     if (IsKeyPressed(KEY_ESCAPE)) {
         if (!is_open_) {
             if (ctx.world.calibration_modal.is_open) {
                 ctx.world.calibration_modal.Cancel();
-                ctx.world.calibrating_purifier = false;
-                ctx.world.calibrating_thermal = false;
+                return false;
+            }
+            if (journal != nullptr && journal->IsOpen()) {
+                journal->Close();
                 return false;
             }
             if (on_title) {
@@ -374,17 +518,19 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
         IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) || IsKeyPressed(KEY_E) || IsKeyPressed(KEY_SPACE);
 
     if (!in_settings_) {
-        // --- MENU DI PAUSA (5 Voci) ---
-        constexpr int kPauseItemCount = 5;
+        // --- MENU DI PAUSA (7 Voci, inclusa Salva Partita) ---
+        constexpr int kPauseItemCount = 7;
         if (up_pressed) {
             pause_cursor_ = (pause_cursor_ - 1 + kPauseItemCount) % kPauseItemCount;
+            PlayUiSfx(SfxId::UiClick, 0.45f, 1.04f);
         }
         if (down_pressed) {
             pause_cursor_ = (pause_cursor_ + 1) % kPauseItemCount;
+            PlayUiSfx(SfxId::UiClick, 0.45f, 0.96f);
         }
 
-        const int box_w = 520;
-        const int box_h = 380;
+        const int box_w = 550;
+        const int box_h = 468;
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
@@ -392,9 +538,9 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
         for (int i = 0; i < kPauseItemCount; ++i) {
             const Rectangle btn_rect{
                 static_cast<float>(bx + 36),
-                static_cast<float>(by + 74 + i * 52),
+                static_cast<float>(by + 68 + i * 50),
                 static_cast<float>(box_w - 72),
-                42.0f
+                40.0f
             };
             if (CheckCollisionPointRec(mouse, btn_rect)) {
                 if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
@@ -411,26 +557,44 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
         }
 
         switch (activated_action) {
-            case 0: // Riprendi Partita
+            case 0: // Riprendi Esplorazione
                 Close();
                 return false;
-            case 1: // Impostazioni Grafiche
+            case 1: // Salva Partita Ora
+                if (eco::SaveWorldToFile(ctx.world)) {
+                    TriggerSaveFeedback("Partita salvata nella Conca di Meridia!");
+                    PlayUiSfx(SfxId::UiClick, 0.72f, 1.16f);
+                } else {
+                    TriggerSaveFeedback("Errore durante il salvataggio.");
+                }
+                break;
+            case 2: // Diario: Cronologia & Codex [H / J]
+                Close();
+                if (journal != nullptr) {
+                    journal->OpenHistory();
+                }
+                return false;
+            case 3: // Impostazioni Schermo, GPU & Audio
                 in_settings_ = true;
                 settings_cursor_ = 0;
                 break;
-            case 2: // Ricomincia Partita / Reset Valle
+            case 4: // Ricomincia Viaggio (Reset Conca)
                 ctx.world.Reset();
                 ctx.world.EnsureInitialized();
                 ctx.state_manager.RequestTransition(std::make_unique<OverworldState>(ctx));
                 Close();
                 return false;
-            case 3: // Torna alla Schermata del Titolo
-                ctx.world.Reset();
-                ctx.world.EnsureInitialized();
+            case 5: // Salva e Torna alla Schermata del Titolo
+                if (IsGameplayStateActive(ctx)) {
+                    (void)eco::SaveWorldToFile(ctx.world);
+                }
                 ctx.state_manager.RequestTransition(std::make_unique<TitleState>(ctx));
                 Close();
                 return false;
-            case 4: // Esci dal Gioco
+            case 6: // Salva ed Esci dal Gioco
+                if (IsGameplayStateActive(ctx)) {
+                    (void)eco::SaveWorldToFile(ctx.world);
+                }
                 ctx.quit_requested = true;
                 Close();
                 return false;
@@ -438,23 +602,36 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
                 break;
         }
     } else {
-        // --- SOTTOMENU IMPOSTAZIONI GRAFICHE (9 Opzioni + Pulsante Indietro) ---
-        constexpr int kOptionCount = 9;
-        constexpr int kSettingsRowCount = kOptionCount + 1; // 0..8 opzioni, 9 = Indietro
+        // --- SOTTOMENU IMPOSTAZIONI SCHERMO, GPU & AUDIO (10 Opzioni + Indietro) ---
+        constexpr int kOptionCount = 10;
+        const bool gpu_changed = (settings.gpu_preference != settings.initial_gpu_preference);
+        const int kSettingsRowCount = kOptionCount + (gpu_changed ? 2 : 1);
+
         if (up_pressed) {
             settings_cursor_ = (settings_cursor_ - 1 + kSettingsRowCount) % kSettingsRowCount;
+            PlayUiSfx(SfxId::UiClick, 0.45f, 1.04f);
         }
         if (down_pressed) {
             settings_cursor_ = (settings_cursor_ + 1) % kSettingsRowCount;
+            PlayUiSfx(SfxId::UiClick, 0.45f, 0.96f);
         }
 
         if (settings_cursor_ < kOptionCount) {
             if (left_pressed) {
-                AdjustSettingValue(ctx, settings, settings_cursor_, -1);
+                AdjustSettingValue(settings, settings_cursor_, -1);
             } else if (right_pressed || confirm_pressed) {
-                AdjustSettingValue(ctx, settings, settings_cursor_, +1);
+                AdjustSettingValue(settings, settings_cursor_, +1);
             }
         } else if (confirm_pressed) {
+            if (gpu_changed && settings_cursor_ == kOptionCount) {
+                (void)SaveGraphicsSettings(settings);
+                if (IsGameplayStateActive(ctx)) {
+                    (void)eco::SaveWorldToFile(ctx.world);
+                }
+                ctx.relaunch_gpu_requested = true;
+                return false;
+            }
+            PlayUiSfx(SfxId::UiClick, 0.55f, 0.94f);
             if (opened_from_title_) {
                 Close();
                 return false;
@@ -463,17 +640,17 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
             return true;
         }
 
-        const int box_w = 780;
-        const int box_h = 560;
+        const int box_w = 820;
+        const int box_h = 594;
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
         for (int i = 0; i < kOptionCount; ++i) {
             const Rectangle row_rect{
-                static_cast<float>(bx + 28),
-                static_cast<float>(by + 58 + i * 46),
-                static_cast<float>(box_w - 56),
-                38.0f
+                static_cast<float>(bx + 26),
+                static_cast<float>(by + 60 + i * 42),
+                static_cast<float>(box_w - 52),
+                35.0f
             };
             if (CheckCollisionPointRec(mouse, row_rect)) {
                 if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
@@ -481,27 +658,51 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
                 }
                 if (mouse_clicked) {
                     const float mid_x = row_rect.x + row_rect.width * 0.65f;
-                    AdjustSettingValue(ctx, settings, i, (mouse.x < mid_x) ? -1 : +1);
+                    AdjustSettingValue(settings, i, (mouse.x < mid_x) ? -1 : +1);
                 }
             }
         }
 
         const Rectangle back_rect{
-            static_cast<float>(bx + 28),
-            static_cast<float>(by + box_h - 54),
+            static_cast<float>(bx + 26),
+            static_cast<float>(by + box_h - 52),
             240.0f,
             36.0f
         };
+        const int back_row_index = gpu_changed ? (kOptionCount + 1) : kOptionCount;
         if (CheckCollisionPointRec(mouse, back_rect)) {
             if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
-                settings_cursor_ = kOptionCount;
+                settings_cursor_ = back_row_index;
             }
             if (mouse_clicked) {
+                PlayUiSfx(SfxId::UiClick, 0.55f, 0.94f);
                 if (opened_from_title_) {
                     Close();
                     return false;
                 }
                 in_settings_ = false;
+            }
+        }
+
+        if (gpu_changed) {
+            const Rectangle apply_gpu_rect{
+                static_cast<float>(bx + 282),
+                static_cast<float>(by + box_h - 52),
+                275.0f,
+                36.0f
+            };
+            if (CheckCollisionPointRec(mouse, apply_gpu_rect)) {
+                if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
+                    settings_cursor_ = kOptionCount;
+                }
+                if (mouse_clicked) {
+                    (void)SaveGraphicsSettings(settings);
+                    if (IsGameplayStateActive(ctx)) {
+                        (void)eco::SaveWorldToFile(ctx.world);
+                    }
+                    ctx.relaunch_gpu_requested = true;
+                    return false;
+                }
             }
         }
     }
@@ -525,152 +726,203 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
         DrawTextShadow(fps_text, static_cast<int>(fps_box.x) + 8, 12, 13, pal::kAccentClean);
     }
 
+    // Toast di conferma salvataggio (visibile sia in pausa che in gioco)
+    if (save_feedback_timer_ > 0.0f && !save_feedback_msg_.empty()) {
+        const float alpha = std::clamp(save_feedback_timer_ * 1.4f, 0.0f, 1.0f);
+        DrawBannerToast(
+            Rectangle{440.0f, 16.0f, 400.0f, 46.0f},
+            "ARCHIVIO CONCA",
+            save_feedback_msg_.c_str(),
+            nullptr,
+            pal::kJadeGlow,
+            alpha);
+    }
+
     if (!is_open_) {
         return;
     }
 
     // 2. Oscuramento morbido dello sfondo di gioco in pausa
-    DrawRectangle(0, 0, eco::kWindowWidth, eco::kWindowHeight, Color{4, 10, 18, 195});
+    DrawRectangle(0, 0, eco::kWindowWidth, eco::kWindowHeight, Color{5, 10, 18, 198});
 
     if (!in_settings_) {
         // --- DISEGNO MENU DI PAUSA ---
-        const int box_w = 520;
-        const int box_h = 380;
+        const int box_w = 550;
+        const int box_h = 468;
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
         DrawPanelWithHeader(
-            Rectangle{static_cast<float>(bx), static_cast<float>(by), static_cast<float>(box_w), static_cast<float>(box_h)},
+            Rectangle{
+                static_cast<float>(bx),
+                static_cast<float>(by),
+                static_cast<float>(box_w),
+                static_cast<float>(box_h)},
             44,
-            "PAUSA // TERMINALE DELL'OSSERVATORIO",
-            pal::kUiBorderCyan);
+            "PAUSA  |  LA CONCA DI MERIDIA",
+            pal::kUiBorderBronze);
 
-        constexpr std::array<const char*, 5> kLabels = {
+        constexpr std::array<const char*, 7> kLabels = {
             "Riprendi Esplorazione [ESC]",
-            "Impostazioni Grafiche & Schermo",
-            "Ricomincia Partita (Reset Valle)",
-            "Torna alla Schermata del Titolo",
-            "Esci dal Gioco"
+            "Salva Partita Ora",
+            "Diario: Cronologia & Codex [H / J]",
+            "Impostazioni Schermo, GPU & Audio",
+            "Ricomincia Viaggio (Reset Conca)",
+            "Salva e Torna al Titolo",
+            "Salva ed Esci dal Gioco"
         };
 
         for (int i = 0; i < static_cast<int>(kLabels.size()); ++i) {
             const bool selected = (pause_cursor_ == i);
             const Rectangle btn{
                 static_cast<float>(bx + 36),
-                static_cast<float>(by + 74 + i * 52),
+                static_cast<float>(by + 68 + i * 50),
                 static_cast<float>(box_w - 72),
-                42.0f
+                40.0f
             };
-            const Color fill = selected ? Color{24, 62, 82, 245} : Color{14, 24, 36, 230};
-            const Color border = selected
-                                     ? ((i == 4) ? Color{240, 105, 75, 255} : pal::kAccentClean)
-                                     : Color{55, 95, 122, 185};
-            DrawRectangleRec(btn, fill);
-            DrawRectangleLinesEx(btn, selected ? 2.0f : 1.2f, border);
+            const Color accent = (i == 6)
+                                     ? Color{236, 108, 76, 255}
+                                     : ((i == 1) ? pal::kJadeGlow
+                                                 : ((i == 2) ? pal::kBronzeBright : pal::kAccentClean));
+            DrawSectionCard(btn, selected ? accent : pal::kUiBorderBronze, selected);
 
             const char* label = kLabels[static_cast<std::size_t>(i)];
-            const int tw = MeasureUiText(label, 17);
+            const int tw = MeasureUiText(label, 16);
             DrawTextShadow(
                 label,
                 bx + (box_w - tw) / 2,
-                static_cast<int>(btn.y) + 11,
-                17,
-                selected ? RAYWHITE : Color{185, 210, 225, 235});
+                static_cast<int>(btn.y) + 10,
+                16,
+                selected ? RAYWHITE : pal::kParchmentText);
         }
 
-        const char* hint = "Usa [W/S], [Frecce] o il Mouse | [INVIO / CLICK] Conferma | [F11] Schermo Intero";
+        const char* hint = "Usa [W/S], [Frecce] o Mouse | [INVIO] Conferma | [F11] Schermo Intero";
         const int hw = MeasureUiText(hint, 13);
-        DrawTextShadow(hint, bx + (box_w - hw) / 2, by + box_h - 28, 13, Color{145, 185, 205, 220});
+        DrawTextShadow(hint, bx + (box_w - hw) / 2, by + box_h - 26, 13, Color{154, 192, 208, 225});
     } else {
-        // --- DISEGNO SOTTOMENU IMPOSTAZIONI GRAFICHE ---
-        constexpr int kOptionCount = 9;
-        const int box_w = 780;
-        const int box_h = 560;
+        // --- DISEGNO SOTTOMENU IMPOSTAZIONI SCHERMO, GPU & AUDIO ---
+        const int box_w = 820;
+        const int box_h = 594;
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
         DrawPanelWithHeader(
-            Rectangle{static_cast<float>(bx), static_cast<float>(by), static_cast<float>(box_w), static_cast<float>(box_h)},
+            Rectangle{
+                static_cast<float>(bx),
+                static_cast<float>(by),
+                static_cast<float>(box_w),
+                static_cast<float>(box_h)},
             44,
-            "IMPOSTAZIONI GRAFICHE & SCHERMO",
+            "IMPOSTAZIONI SCHERMO, GPU, GRAFICA & AUDIO",
             pal::kAccentClean);
 
         const int res_idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
         const int fps_idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
-        const std::string monitor_label = FormatMonitorLabel(settings.monitor_index);
+        const int vol_idx = std::clamp(settings.audio_volume_index, 0, static_cast<int>(kVolumeOptions.size()) - 1);
 
-        const std::array<const char*, kOptionCount> row_titles = {
+        const std::string monitor_str = FormatMonitorLabel(settings.monitor_index);
+        const std::string gpu_str = FormatGpuLabel(settings.gpu_preference);
+
+        const std::array<const char*, 10> row_titles = {
             "Modalita' Schermo [F11]",
-            "Schermo / Monitor",
+            "Monitor Schermo Intero",
+            "GPU / Scheda Grafica",
             "Risoluzione Finestra",
             "Frequenza Fotogrammi (FPS)",
             "Particelle & Effetti Atmosferici",
             "Stile Font Interfaccia",
             "Contatore FPS a Schermo",
-            "Ritmo Dialoghi & Tutorial",
-            "Modalita' Storia"
+            "Volume Audio [M Muto]",
+            "Paesaggio Sonoro"
         };
 
-        const std::array<const char*, kOptionCount> row_values = {
-            settings.fullscreen ? "< Schermo Intero (Fullscreen) >" : "< Finestra Ridimensionabile >",
-            monitor_label.c_str(),
+        const std::array<const char*, 10> row_values = {
+            settings.fullscreen ? "< Schermo Intero >" : "< Finestra Ridimensionabile >",
+            monitor_str.c_str(),
+            gpu_str.c_str(),
             kResolutions[static_cast<std::size_t>(res_idx)].label,
             kFpsOptions[static_cast<std::size_t>(fps_idx)].label,
             ParticleQualityLabel(settings.particle_quality),
             settings.clean_ttf_font ? "< Noto Sans HD (Nitido) >" : "< Pixel Bitmap (Retro) >",
             settings.show_fps ? "< Attivo (Mostra FPS) >" : "< Disattivato >",
-            settings.compact_tutorial ? "< Sintetico / Rapido >" : "< Completo (Consigliato) >",
-            ctx.world.demo_mode ? "< Demo Classica (Atti I-III) >" : "< Campagna Completa (Atti I-V) >"
+            kVolumeOptions[static_cast<std::size_t>(vol_idx)].label,
+            settings.ambient_audio ? "< Ambiente + Interazioni >" : "< Solo Interazioni >"
         };
 
-        for (int i = 0; i < kOptionCount; ++i) {
+        for (int i = 0; i < 10; ++i) {
             const bool selected = (settings_cursor_ == i);
             const Rectangle row_rect{
-                static_cast<float>(bx + 28),
-                static_cast<float>(by + 58 + i * 46),
-                static_cast<float>(box_w - 56),
-                38.0f
+                static_cast<float>(bx + 26),
+                static_cast<float>(by + 60 + i * 42),
+                static_cast<float>(box_w - 52),
+                35.0f
             };
 
-            DrawRectangleRec(row_rect, selected ? Color{22, 54, 72, 245} : Color{14, 24, 34, 225});
-            DrawRectangleLinesEx(
-                row_rect,
-                selected ? 1.8f : 1.0f,
-                selected ? pal::kAccentClean : Color{52, 86, 110, 175});
+            DrawSectionCard(row_rect, selected ? pal::kAccentClean : pal::kUiBorderBronze, selected);
 
             DrawTextShadow(
                 row_titles[static_cast<std::size_t>(i)],
-                static_cast<int>(row_rect.x) + 16,
-                static_cast<int>(row_rect.y) + 9,
+                static_cast<int>(row_rect.x) + 14,
+                static_cast<int>(row_rect.y) + 8,
                 15,
-                selected ? RAYWHITE : Color{190, 215, 230, 240});
+                selected ? RAYWHITE : pal::kParchmentText);
 
             const char* val_text = row_values[static_cast<std::size_t>(i)];
-            const int vw = MeasureUiText(val_text, 15);
+            const int vw = MeasureUiText(val_text, 14);
             DrawTextShadow(
                 val_text,
-                static_cast<int>(row_rect.x + row_rect.width) - vw - 16,
+                static_cast<int>(row_rect.x + row_rect.width) - vw - 14,
                 static_cast<int>(row_rect.y) + 9,
-                15,
-                selected ? Color{130, 255, 215, 255} : Color{240, 210, 120, 240});
+                14,
+                selected ? pal::kJadeGlow : pal::kBronzeBright);
         }
 
-        // Pulsante Indietro / Chiudi
-        const bool back_selected = (settings_cursor_ == kOptionCount);
+        // Riga informativa GPU OpenGL attualmente attiva
+        const bool gpu_changed = (settings.gpu_preference != settings.initial_gpu_preference);
+        const std::string gpu_status =
+            std::string("GPU Attiva Ora: ") +
+            (settings.active_gpu_renderer.empty() ? std::string("OpenGL") : settings.active_gpu_renderer) +
+            (gpu_changed ? "   [Premi 'Applica GPU & Riavvia' per commutare]" : "");
+        DrawTextShadow(
+            gpu_status.c_str(),
+            bx + 28,
+            by + box_h - 88,
+            13,
+            gpu_changed ? pal::kAmberGlow : Color{148, 206, 214, 230});
+
+        // Pulsanti in basso
+        const int back_row_index = gpu_changed ? 11 : 10;
+        const bool back_selected = (settings_cursor_ == back_row_index);
         const Rectangle back_rect{
-            static_cast<float>(bx + 28),
-            static_cast<float>(by + box_h - 54),
+            static_cast<float>(bx + 26),
+            static_cast<float>(by + box_h - 52),
             240.0f,
             36.0f
         };
-        DrawRectangleRec(back_rect, back_selected ? Color{28, 72, 92, 245} : Color{18, 32, 46, 235});
-        DrawRectangleLinesEx(back_rect, back_selected ? 2.0f : 1.3f, back_selected ? pal::kAccentClean : SKYBLUE);
+        DrawSectionCard(back_rect, back_selected ? pal::kAccentClean : pal::kUiBorderCyan, back_selected);
         const char* back_label = IsTitleStateActive(ctx) ? "[ESC] Torna al Titolo" : "[ESC] Torna alla Pausa";
-        DrawTextShadow(back_label, static_cast<int>(back_rect.x) + 22, static_cast<int>(back_rect.y) + 9, 15, RAYWHITE);
+        DrawTextShadow(back_label, static_cast<int>(back_rect.x) + 20, static_cast<int>(back_rect.y) + 9, 15, RAYWHITE);
 
-        const char* hint = "Cambia valori con [A/D], [Frecce Sinistra/Destra], [INVIO] o Click del Mouse";
+        if (gpu_changed) {
+            const bool apply_selected = (settings_cursor_ == 10);
+            const Rectangle apply_rect{
+                static_cast<float>(bx + 282),
+                static_cast<float>(by + box_h - 52),
+                275.0f,
+                36.0f
+            };
+            DrawSectionCard(apply_rect, apply_selected ? pal::kJadeGlow : pal::kAmberGlow, apply_selected);
+            DrawTextShadow(
+                "Applica GPU & Riavvia",
+                static_cast<int>(apply_rect.x) + 34,
+                static_cast<int>(apply_rect.y) + 9,
+                15,
+                RAYWHITE);
+        }
+
+        const char* hint = "[A/D] o Click modifica | [M] Muto";
         const int hw = MeasureUiText(hint, 13);
-        DrawTextShadow(hint, bx + box_w - hw - 28, by + box_h - 44, 13, Color{155, 195, 215, 225});
+        DrawTextShadow(hint, bx + box_w - hw - 26, by + box_h - 42, 13, Color{155, 195, 215, 225});
     }
 }
 

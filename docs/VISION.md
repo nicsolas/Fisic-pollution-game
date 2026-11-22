@@ -1,22 +1,28 @@
-# VISION — EQUILIBRIO: Le Leggi della Valle
+# VISION -- EQUILIBRIO: Le Cronache di Meridia
 
 ## Logline
-Calabria, 2091. Dopo il Grande Smog e l'"Oblio" (gli archivi digitali cancellati, la scienza dimenticata), la scienziata **Ada Ferri** si risveglia senza memoria nell'Osservatorio in rovina della Valle del Crati, nell'ex campus universitario. Le macchine funzionano ancora secondo leggi fisiche esatte che nessuno ricorda piu'. Misurando, calcolando e dimostrando, Ada riaccende la valle senza inquinare... e scopre che quelle leggi sono *troppo* perfette: la Valle e' una simulazione gestita da **GAIA**, un modello ecologico che mette alla prova una sola cosa: gli umani sceglieranno la strada difficile e pulita?
+Sull'antico altopiano monumentale della **Conca di Meridia**, una civilta' perduta di astronomi, idraulici e filosofi naturali costrui' un ecosistema governato unicamente da leggi fisiche, senza combustibili. Secoli dopo la frattura provocata dalle fornaci a pece, la naturalista e cartografa **Elena Valli** risale la Conca con il proprio **Diario di Campo** e una **Lente Empirica**: misurando la luce, la pressione dell'acqua, il periodo del pendolo, la risonanza armonica e il ciclo di Carnot, riaccende i cinque monumenti della Conca, raccoglie sedici reliquie delle quattro ere perdute e sceglie tra la pazienza della scienza e la scorciatoia del combustibile.
 
-## Pilastri
-1. **La matematica e' il verbo**: misuri, calcoli, agisci.
-2. **Pulito costa fatica, sporco costa al mondo**: il bypass a combustione e' immediato ma la valle peggiora visibilmente.
-3. **Il mondo mostra che sta guarendo**: palette da cenere/ruggine a verde/azzurro.
-4. **Il velo si assottiglia**: UI fase 1 -> 2 -> 3 = Ada inizia a "vedere il codice".
+## Pilastri di Design
+1. **La matematica e' il mestiere della cura**: si osserva con la Lente Empirica (`[F]`), si legge la legge fisica reale, si calibra lo strumento (`[E]`).
+2. **Pulito costa pazienza, sporco costa alla terra**: ogni impianto offre il compromesso immediato della Fornace di Bypass (`[B]`), ma il mondo ne porta subito le cicatrici visive ed etiche.
+3. **Un mondo vasto che guarisce visibilmente**: 6 distretti distinti nell'Overworld (`36x50` tile) e 3 strutture interne side-scrolling con gravita', ciascuno con architettura, flora, luci e palette dedicate che si trasformano dal grigio-cenere alla pietra viva, al turchese e al verde giada.
+4. **Percezione stratificata e memoria viva**: la Lente evolve in 3 fasi diegetiche (*Sguardo Empirico* -> *Rilievo Metrico* -> *Trama Geodetica*), mentre il **Diario di Campo** permette di rileggere in qualsiasi momento l'intera **Cronologia dei Dialoghi (`[H]`)** e il **Codex delle 16 Reliquie (`[J]`)**.
+5. **Campagna Completa come cuore dell'esperienza**: superata la vecchia struttura da breve dimostrazione, il gioco offre di default la campagna integrale in 7 capitoli, 5 leggi fisiche autentiche + Astrolabio Centrale, 4 personaggi incontrabili nel mondo e 3 finali modellati sia dalle scelte ecologiche sia dalla ricostruzione storica.
 
-## Unione dei due concept (cartella `Documents/`, archivio)
-- Concept A (simulazione/meta, "Goat Simulator" dei bug): diventa il *twist* della storia (GAIA, la Valle e' una simulazione) e la progressione UI a 3 fasi.
-- Concept B (ecologia post-apocalittica, Unical): diventa l'ambientazione e il loop (impianti puliti vs fossili, reclutamento NPC con prove matematiche).
+## Architettura del Mondo
+- **Overworld (`36x50` tile, 6 distretti)**: *Terrazze dell'Alba* (SO), *Quartiere dei Canali & Ponte degli Archi* (Centro-Ovest), *Altopiano dei Venti* (NO), *Giardini Sospesi* (Centro-Est), *Caldera delle Fumarole* (NE), *Santuario dell'Armonia* (SE).
+- **3 Strutture Interne Side-Scrolling**: *Cisterne Ipogee* (Stevino + Lorenzo Altieri), *Torre del Pendolo* (Galileo), *Camera Geotermica* (Carnot).
+- **Cast**: Elena Valli (protagonista), Clara Sereni (ingegnera dei canali), Lorenzo Altieri (archivista), Miriam Ferro (botanica), Matteo Verrini (Sovrintendente della Compagnia della Pece) e l'**Eco di Meridia** (memoria epigrafica nei cristalli armonici).
+- **Collezionabili**: 16 reliquie divise in 4 Ere Storiche (*Alba delle Ombre*, *Secolo delle Acque e del Suono*, *Inverno di Pece*, *Sigillo dell'Armonia*) e 5 forme materiali (`Stele`, `Astrolabe`, `Prism`, `Cylinder`, `FossilSeed`).
 
-## Ambito dello slice verticale
-Prologo -> Atto I "La Luce" (campo solare, Lia, Ponte Bucci) -> Atto II "L'Acqua" (Diga, turbina) -> Atto III "Il Codice" (purificatore) -> Epilogo (finale pulito o grigio). Gli obiettivi si calcolano dallo stato, non dall'ordine.
+## Direzione Tecnica e Vincoli
+- **Core puro C++20 (`src/core/`)**: simulazione fisica, tilemap multi-distretto, strutture, collezionabili e direzione narrativa totalmente indipendenti dalla grafica (`raylib.h` confinato in `src/app/`).
+- **Grafica procedurale 2.5D**: estetica antico-scientifica in pietra calcarea, basalto, bronzo ossidato, vetro-giada e acqua riflettente, con minimappa diegetica, particelle per bioma e diagrammi fisici dal vivo nei pannelli di calibrazione.
+- **Testi ASCII-safe (`32..126`)**: compatibilita' garantita su tutti i font con word-wrap automatico in Dialogue Box, Cronologia `[H]` e Codex `[J]`.
+- **Co-op locale**: predisposto per 1-4 esploratori sullo stesso schermo.
 
-## Cosa NON facciamo ora
-- Multiplayer di rete (resta predisposto il locale 1-4).
-- Asset esterni: la grafica e' procedurale (codice raylib), sostituibile in futuro con gli sprite dell'amico artista.
-- Audio.
+## Fuori Ambito Attuale
+- Multiplayer in rete.
+- Asset sprite esterni pre-renderizzati (tutta la resa resta procedurale in Raylib).
+- Motore audio completo.
