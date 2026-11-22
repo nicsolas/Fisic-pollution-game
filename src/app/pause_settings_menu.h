@@ -12,6 +12,7 @@ enum class ParticleQuality : int {
 
 struct GraphicsSettings {
     bool fullscreen = false;
+    int monitor_index = -1;   // -1 = auto-rileva il monitor principale (risoluzione maggiore)
     int resolution_index = 1; // 0: 1024x576, 1: 1280x720, 2: 1600x900, 3: 1920x1080
     int fps_index = 0;        // 0: 60 FPS, 1: 120 FPS, 2: 144 FPS, 3: Illimitato
     ParticleQuality particle_quality = ParticleQuality::High;
@@ -21,7 +22,9 @@ struct GraphicsSettings {
     bool demo_mode = false;        // false = Campagna Completa (Atti I-V); true = Demo Originale (Atti I-III)
 };
 
+void InitDefaultMonitor(GraphicsSettings& settings);
 void ApplyGraphicsSettingsToRuntime(const GraphicsSettings& settings);
+void ApplySelectedMonitor(GraphicsSettings& settings);
 void ApplySafeWindowResolution(GraphicsSettings& settings);
 void ToggleAppFullscreen(GraphicsSettings& settings);
 

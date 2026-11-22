@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <memory>
+#include <string>
 #include <string_view>
 
 #include "app/game_state_manager.h"
@@ -65,6 +67,37 @@ constexpr std::array<FpsOption, 4> kFpsOptions = {{
     return std::string_view(ctx.state_manager.CurrentState()->Name()) == "TitleState";
 }
 
+[[nodiscard]] int SafeMonitorIndex(int monitor_index) noexcept {
+    if (!IsWindowReady()) {
+        return 0;
+    }
+    const int count = GetMonitorCount();
+    if (count <= 0) {
+        return 0;
+    }
+    if (monitor_index < 0) {
+        return std::clamp(GetCurrentMonitor(), 0, count - 1);
+    }
+    return std::clamp(monitor_index, 0, count - 1);
+}
+
+[[nodiscard]] std::string FormatMonitorLabel(int monitor_index) {
+    if (!IsWindowReady()) {
+        return "< Monitor 1/1 >";
+    }
+    const int count = std::max(1, GetMonitorCount());
+    const int idx = SafeMonitorIndex(monitor_index);
+    const int mw = GetMonitorWidth(idx);
+    const int mh = GetMonitorHeight(idx);
+    const char* raw_name = GetMonitorName(idx);
+    std::string name = (raw_name != nullptr && raw_name[0] != '\0') ? std::string(raw_name) : std::string("Display");
+    if (name.size() > 18) {
+        name = name.substr(0, 15) + "...";
+    }
+    return std::string("< Monitor ") + std::to_string(idx + 1) + "/" + std::to_string(count) +
+           ": " + name + " (" + std::to_string(mw) + "x" + std::to_string(mh) + ") >";
+}
+
 void AdjustSettingValue(AppContext& ctx, GraphicsSettings& settings, int row, int dir) {
     if (dir == 0) {
         return;
@@ -74,39 +107,46 @@ void AdjustSettingValue(AppContext& ctx, GraphicsSettings& settings, int row, in
             ToggleAppFullscreen(settings);
             break;
         }
-        case 1: { // Risoluzione finestra
+        case 1: { // Selezione Monitor / Schermo
+            const int count = IsWindowReady() ? std::max(1, GetMonitorCount()) : 1;
+            const int cur = SafeMonitorIndex(settings.monitor_index);
+            settings.monitor_index = (cur + dir + count) % count;
+            ApplySelectedMonitor(settings);
+            break;
+        }
+        case 2: { // Risoluzione finestra
             const int n = static_cast<int>(kResolutions.size());
             settings.resolution_index = (settings.resolution_index + dir + n) % n;
             ApplySafeWindowResolution(settings);
             break;
         }
-        case 2: { // Limite FPS
+        case 3: { // Limite FPS
             const int n = static_cast<int>(kFpsOptions.size());
             settings.fps_index = (settings.fps_index + dir + n) % n;
             ApplyGraphicsSettingsToRuntime(settings);
             break;
         }
-        case 3: { // Qualita' particelle
+        case 4: { // Qualita' particelle
             int q = static_cast<int>(settings.particle_quality);
             q = (q + dir + 3) % 3;
             settings.particle_quality = static_cast<ParticleQuality>(q);
             ApplyGraphicsSettingsToRuntime(settings);
             break;
         }
-        case 4: { // Font Interfaccia
+        case 5: { // Font Interfaccia
             settings.clean_ttf_font = !settings.clean_ttf_font;
             ApplyGraphicsSettingsToRuntime(settings);
             break;
         }
-        case 5: { // Contatore FPS
+        case 6: { // Contatore FPS
             settings.show_fps = !settings.show_fps;
             break;
         }
-        case 6: { // Dettaglio Tutorial / Dialoghi
+        case 7: { // Dettaglio Tutorial / Dialoghi
             settings.compact_tutorial = !settings.compact_tutorial;
             break;
         }
-        case 7: { // Modalita' Storia: Campagna Completa (Atti I-V) vs Demo (Atti I-III)
+        case 8: { // Modalita' Storia: Campagna Completa (Atti I-V) vs Demo (Atti I-III)
             settings.demo_mode = !settings.demo_mode;
             ctx.world.demo_mode = settings.demo_mode;
             break;
@@ -117,6 +157,30 @@ void AdjustSettingValue(AppContext& ctx, GraphicsSettings& settings, int row, in
 }
 
 } // namespace
+
+void InitDefaultMonitor(GraphicsSettings& settings) {
+    if (!IsWindowReady()) {
+        settings.monitor_index = 0;
+        return;
+    }
+    const int count = GetMonitorCount();
+    if (count <= 0) {
+        settings.monitor_index = 0;
+        return;
+    }
+    // Su Wayland GetCurrentMonitor() ritorna spesso sempre 0 (anche se il monitor 0 e' lo schermo secondario).
+    // Selezioniamo di default il monitor con la risoluzione (area) maggiore, lasciando poi libera scelta nel menu!
+    int best = std::clamp(GetCurrentMonitor(), 0, count - 1);
+    long long best_area = static_cast<long long>(GetMonitorWidth(best)) * GetMonitorHeight(best);
+    for (int i = 0; i < count; ++i) {
+        const long long area = static_cast<long long>(GetMonitorWidth(i)) * GetMonitorHeight(i);
+        if (area > best_area) {
+            best_area = area;
+            best = i;
+        }
+    }
+    settings.monitor_index = best;
+}
 
 void ApplyGraphicsSettingsToRuntime(const GraphicsSettings& settings) {
     SetUiFontCleanMode(settings.clean_ttf_font);
@@ -139,6 +203,27 @@ void ApplyGraphicsSettingsToRuntime(const GraphicsSettings& settings) {
     }
 }
 
+void ApplySelectedMonitor(GraphicsSettings& settings) {
+    if (!IsWindowReady()) {
+        return;
+    }
+    const int mon = SafeMonitorIndex(settings.monitor_index);
+    settings.monitor_index = mon;
+
+    if (IsWindowFullscreen()) {
+        // In modalita' Fullscreen, SetWindowMonitor() chiama glfwSetWindowMonitor() sul wl_output/monitor
+        // selezionato alla sua risoluzione nativa, senza mai chiamare glfwSetWindowPos() (zero errori Wayland!).
+        SetWindowMonitor(mon);
+    } else {
+        // Su X11/Windows possiamo centrare subito la finestra sul monitor scelto;
+        // su Wayland evitiamo glfwSetWindowPos() (non supportato) e il monitor verra' usato al prossimo Fullscreen.
+        const bool is_wayland = (std::getenv("WAYLAND_DISPLAY") != nullptr);
+        if (!is_wayland) {
+            SetWindowMonitor(mon);
+        }
+    }
+}
+
 void ApplySafeWindowResolution(GraphicsSettings& settings) {
     if (!IsWindowReady()) {
         return;
@@ -147,21 +232,18 @@ void ApplySafeWindowResolution(GraphicsSettings& settings) {
     const int idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
     const auto& res = kResolutions[static_cast<std::size_t>(idx)];
 
-    const int mon = GetCurrentMonitor();
+    const int mon = SafeMonitorIndex(settings.monitor_index);
+    settings.monitor_index = mon;
     const int mon_w = GetMonitorWidth(mon);
     const int mon_h = GetMonitorHeight(mon);
 
-    // Se la risoluzione scelta eccede o uguaglia il monitor fisico (es. 1920x1080 su un monitor 1280x1024),
-    // passare una finestra decorata piu' grande dello schermo corrompe il framebuffer.
-    // Passiamo quindi a vero Fullscreen tramite ToggleFullscreen() (che su Wayland usa il protocollo
-    // xdg_toplevel_set_fullscreen senza chiamare glfwSetWindowPos, evitando l'errore 65548!).
+    // Se la risoluzione scelta eccede o uguaglia il monitor selezionato, passiamo a Fullscreen sul monitor scelto.
     if (mon_w > 0 && mon_h > 0 && (res.width >= mon_w || res.height >= mon_h - 32)) {
         if (!IsWindowFullscreen()) {
-            if ( mon_w > 0 && mon_h > 0 ) {
-                SetWindowSize(mon_w, mon_h);
-            }
+            SetWindowSize(mon_w, mon_h);
             ToggleFullscreen();
         }
+        SetWindowMonitor(mon);
         settings.fullscreen = true;
         return;
     }
@@ -183,19 +265,20 @@ void ToggleAppFullscreen(GraphicsSettings& settings) {
         return;
     }
 
-    const int mon = GetCurrentMonitor();
+    const int mon = SafeMonitorIndex(settings.monitor_index);
+    settings.monitor_index = mon;
     const int mon_w = GetMonitorWidth(mon);
     const int mon_h = GetMonitorHeight(mon);
 
     if (settings.fullscreen) {
         if (!IsWindowFullscreen()) {
-            // Imposta prima la risoluzione nativa del monitor cosi' glfwSetWindowMonitor
-            // entra a schermo intero su Wayland/X11 senza cambiare video mode e senza chiamare glfwSetWindowPos!
             if (mon_w > 0 && mon_h > 0) {
                 SetWindowSize(mon_w, mon_h);
             }
             ToggleFullscreen();
         }
+        // Sposta immediatamente il fullscreen esattamente sul monitor scelto dall'utente!
+        SetWindowMonitor(mon);
     } else {
         if (IsWindowFullscreen()) {
             ToggleFullscreen();
@@ -245,10 +328,10 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
     // Gestione tasto ESC (e tasto O sulla schermata del titolo per aprire direttamente le impostazioni)
     if (IsKeyPressed(KEY_ESCAPE)) {
         if (!is_open_) {
-            // Se il modal di calibrazione di una macchina e' aperto, ESC chiude prima il modal
             if (ctx.world.calibration_modal.is_open) {
                 ctx.world.calibration_modal.Cancel();
                 ctx.world.calibrating_purifier = false;
+                ctx.world.calibrating_thermal = false;
                 return false;
             }
             if (on_title) {
@@ -259,7 +342,6 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
             return true;
         }
 
-        // Se siamo nel sottomenu impostazioni, ESC torna al menu di pausa (o chiude se aperto dal titolo)
         if (in_settings_) {
             if (opened_from_title_) {
                 Close();
@@ -310,7 +392,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
         for (int i = 0; i < kPauseItemCount; ++i) {
             const Rectangle btn_rect{
                 static_cast<float>(bx + 36),
-                static_cast<float>(by + 84 + i * 52),
+                static_cast<float>(by + 74 + i * 52),
                 static_cast<float>(box_w - 72),
                 42.0f
             };
@@ -356,8 +438,9 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
                 break;
         }
     } else {
-        // --- SOTTOMENU IMPOSTAZIONI GRAFICHE (8 Opzioni + Pulsante Indietro) ---
-        constexpr int kSettingsRowCount = 9; // 0..7 opzioni, 8 = Indietro
+        // --- SOTTOMENU IMPOSTAZIONI GRAFICHE (9 Opzioni + Pulsante Indietro) ---
+        constexpr int kOptionCount = 9;
+        constexpr int kSettingsRowCount = kOptionCount + 1; // 0..8 opzioni, 9 = Indietro
         if (up_pressed) {
             settings_cursor_ = (settings_cursor_ - 1 + kSettingsRowCount) % kSettingsRowCount;
         }
@@ -365,7 +448,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
             settings_cursor_ = (settings_cursor_ + 1) % kSettingsRowCount;
         }
 
-        if (settings_cursor_ < 8) {
+        if (settings_cursor_ < kOptionCount) {
             if (left_pressed) {
                 AdjustSettingValue(ctx, settings, settings_cursor_, -1);
             } else if (right_pressed || confirm_pressed) {
@@ -380,17 +463,17 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
             return true;
         }
 
-        const int box_w = 760;
-        const int box_h = 540;
+        const int box_w = 780;
+        const int box_h = 560;
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
-        for (int i = 0; i < 8; ++i) {
+        for (int i = 0; i < kOptionCount; ++i) {
             const Rectangle row_rect{
                 static_cast<float>(bx + 28),
-                static_cast<float>(by + 62 + i * 47),
+                static_cast<float>(by + 58 + i * 46),
                 static_cast<float>(box_w - 56),
-                40.0f
+                38.0f
             };
             if (CheckCollisionPointRec(mouse, row_rect)) {
                 if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
@@ -405,13 +488,13 @@ bool PauseSettingsMenu::UpdateAndHandleInput(AppContext& ctx, GraphicsSettings& 
 
         const Rectangle back_rect{
             static_cast<float>(bx + 28),
-            static_cast<float>(by + box_h - 56),
+            static_cast<float>(by + box_h - 54),
             240.0f,
-            38.0f
+            36.0f
         };
         if (CheckCollisionPointRec(mouse, back_rect)) {
             if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
-                settings_cursor_ = 8;
+                settings_cursor_ = kOptionCount;
             }
             if (mouse_clicked) {
                 if (opened_from_title_) {
@@ -500,22 +583,25 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
         DrawTextShadow(hint, bx + (box_w - hw) / 2, by + box_h - 28, 13, Color{145, 185, 205, 220});
     } else {
         // --- DISEGNO SOTTOMENU IMPOSTAZIONI GRAFICHE ---
-        const int box_w = 760;
-        const int box_h = 540;
+        constexpr int kOptionCount = 9;
+        const int box_w = 780;
+        const int box_h = 560;
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
         DrawPanelWithHeader(
             Rectangle{static_cast<float>(bx), static_cast<float>(by), static_cast<float>(box_w), static_cast<float>(box_h)},
             44,
-            "IMPOSTAZIONI GRAFICHE & INTERFACCIA",
+            "IMPOSTAZIONI GRAFICHE & SCHERMO",
             pal::kAccentClean);
 
         const int res_idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
         const int fps_idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
+        const std::string monitor_label = FormatMonitorLabel(settings.monitor_index);
 
-        const std::array<const char*, 8> row_titles = {
+        const std::array<const char*, kOptionCount> row_titles = {
             "Modalita' Schermo [F11]",
+            "Schermo / Monitor",
             "Risoluzione Finestra",
             "Frequenza Fotogrammi (FPS)",
             "Particelle & Effetti Atmosferici",
@@ -525,8 +611,9 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             "Modalita' Storia"
         };
 
-        const std::array<const char*, 8> row_values = {
-            settings.fullscreen ? "< Schermo Intero (Borderless) >" : "< Finestra Ridimensionabile >",
+        const std::array<const char*, kOptionCount> row_values = {
+            settings.fullscreen ? "< Schermo Intero (Fullscreen) >" : "< Finestra Ridimensionabile >",
+            monitor_label.c_str(),
             kResolutions[static_cast<std::size_t>(res_idx)].label,
             kFpsOptions[static_cast<std::size_t>(fps_idx)].label,
             ParticleQualityLabel(settings.particle_quality),
@@ -536,13 +623,13 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             ctx.world.demo_mode ? "< Demo Classica (Atti I-III) >" : "< Campagna Completa (Atti I-V) >"
         };
 
-        for (int i = 0; i < 8; ++i) {
+        for (int i = 0; i < kOptionCount; ++i) {
             const bool selected = (settings_cursor_ == i);
             const Rectangle row_rect{
                 static_cast<float>(bx + 28),
-                static_cast<float>(by + 62 + i * 47),
+                static_cast<float>(by + 58 + i * 46),
                 static_cast<float>(box_w - 56),
-                40.0f
+                38.0f
             };
 
             DrawRectangleRec(row_rect, selected ? Color{22, 54, 72, 245} : Color{14, 24, 34, 225});
@@ -554,36 +641,36 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             DrawTextShadow(
                 row_titles[static_cast<std::size_t>(i)],
                 static_cast<int>(row_rect.x) + 16,
-                static_cast<int>(row_rect.y) + 10,
-                16,
+                static_cast<int>(row_rect.y) + 9,
+                15,
                 selected ? RAYWHITE : Color{190, 215, 230, 240});
 
             const char* val_text = row_values[static_cast<std::size_t>(i)];
-            const int vw = MeasureUiText(val_text, 16);
+            const int vw = MeasureUiText(val_text, 15);
             DrawTextShadow(
                 val_text,
-                static_cast<int>(row_rect.x + row_rect.width) - vw - 18,
-                static_cast<int>(row_rect.y) + 10,
-                16,
+                static_cast<int>(row_rect.x + row_rect.width) - vw - 16,
+                static_cast<int>(row_rect.y) + 9,
+                15,
                 selected ? Color{130, 255, 215, 255} : Color{240, 210, 120, 240});
         }
 
         // Pulsante Indietro / Chiudi
-        const bool back_selected = (settings_cursor_ == 8);
+        const bool back_selected = (settings_cursor_ == kOptionCount);
         const Rectangle back_rect{
             static_cast<float>(bx + 28),
-            static_cast<float>(by + box_h - 56),
+            static_cast<float>(by + box_h - 54),
             240.0f,
-            38.0f
+            36.0f
         };
         DrawRectangleRec(back_rect, back_selected ? Color{28, 72, 92, 245} : Color{18, 32, 46, 235});
         DrawRectangleLinesEx(back_rect, back_selected ? 2.0f : 1.3f, back_selected ? pal::kAccentClean : SKYBLUE);
         const char* back_label = IsTitleStateActive(ctx) ? "[ESC] Torna al Titolo" : "[ESC] Torna alla Pausa";
-        DrawTextShadow(back_label, static_cast<int>(back_rect.x) + 22, static_cast<int>(back_rect.y) + 10, 16, RAYWHITE);
+        DrawTextShadow(back_label, static_cast<int>(back_rect.x) + 22, static_cast<int>(back_rect.y) + 9, 15, RAYWHITE);
 
         const char* hint = "Cambia valori con [A/D], [Frecce Sinistra/Destra], [INVIO] o Click del Mouse";
         const int hw = MeasureUiText(hint, 13);
-        DrawTextShadow(hint, bx + box_w - hw - 28, by + box_h - 48, 13, Color{155, 195, 215, 225});
+        DrawTextShadow(hint, bx + box_w - hw - 28, by + box_h - 44, 13, Color{155, 195, 215, 225});
     }
 }
 

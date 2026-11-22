@@ -344,6 +344,7 @@ int RunWindowed(const WindowedOptions& opt) {
 
         eco::app::GraphicsSettings graphics_settings{};
         graphics_settings.demo_mode = opt.demo_mode;
+        eco::app::InitDefaultMonitor(graphics_settings);
         eco::app::ApplyGraphicsSettingsToRuntime(graphics_settings);
         eco::app::PauseSettingsMenu pause_menu{};
 
