@@ -230,7 +230,7 @@ void DrawStoryLayer(eco::WorldContext& world) {
 
     // Indicatore "[N] Avanti" in basso a destra del box
     const char* next_hint = "[N] Avanti";
-    const int hint_w = MeasureText(next_hint, 13);
+    const int hint_w = MeasureUiText(next_hint, 13);
     DrawTextShadow(
         next_hint,
         static_cast<int>(dlg_box.x + dlg_box.width) - hint_w - 18,

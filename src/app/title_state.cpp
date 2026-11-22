@@ -146,26 +146,26 @@ void TitleState::Draw() {
     DrawPanel(title_box, Color{88, 220, 200, 230});
 
     const char* main_title = "EQUILIBRIO";
-    const int title_size = 64;
-    const int title_w = MeasureText(main_title, title_size);
-    DrawTextShadow(main_title, (w - title_w) / 2, 76, title_size, Color{135, 255, 225, 255});
+    const int title_size = 58;
+    const int title_w = MeasureUiText(main_title, title_size);
+    DrawTextShadow(main_title, (w - title_w) / 2, 74, title_size, Color{135, 255, 225, 255});
 
     const char* subtitle = "LE LEGGI DELLA VALLE";
-    const int sub_size = 24;
-    const int sub_w = MeasureText(subtitle, sub_size);
+    const int sub_size = 23;
+    const int sub_w = MeasureUiText(subtitle, sub_size);
     DrawTextShadow(subtitle, (w - sub_w) / 2, 148, sub_size, Color{240, 210, 120, 255});
 
     const char* tagline =
         "Valle del Crati, 2091 // Misura la fisica. Rifiuta lo smog. Decifra il codice di GAIA.";
     const int tag_size = 15;
-    const int tag_w = MeasureText(tagline, tag_size);
+    const int tag_w = MeasureUiText(tagline, tag_size);
     DrawTextShadow(tagline, (w - tag_w) / 2, 188, tag_size, Color{210, 230, 240, 255});
 
     // Prompt lampeggiante
     const float blink = 0.55f + 0.45f * std::sin(t * 4.2f);
     const char* prompt = "Premi [INVIO] o [E] per risvegliarti nell'Osservatorio";
-    const int prompt_size = 20;
-    const int prompt_w = MeasureText(prompt, prompt_size);
+    const int prompt_size = 19;
+    const int prompt_w = MeasureUiText(prompt, prompt_size);
     const Rectangle prompt_box{
         static_cast<float>((w - prompt_w) / 2 - 24),
         482.0f,
@@ -181,13 +181,13 @@ void TitleState::Draw() {
 
     // Crediti e controlli sintetici in basso
     const char* footer =
-        "Progetto C++20 & Raylib // Fisica Empirica & Ecologia (Unical - Valle del Crati)";
-    const int foot_w = MeasureText(footer, 14);
+        "Progetto C++20 & Raylib // Fisica Empirica & Ecologia (Unical - Valle del Crati) - v0.2.0";
+    const int foot_w = MeasureUiText(footer, 14);
     DrawTextShadow(footer, (w - foot_w) / 2, h - 54, 14, Color{155, 195, 215, 230});
 
     const char* controls =
-        "Comandi: WASD/Frecce Muovi | [F] Scanner | [E] Interagisci | [V] Fase UI | [N] Dialogo";
-    const int ctrl_w = MeasureText(controls, 13);
+        "Comandi: WASD Muovi | [F] Scanner | [E] Azione | [ESC] Menu & Impostazioni | [F11] Schermo Intero";
+    const int ctrl_w = MeasureUiText(controls, 13);
     DrawTextShadow(controls, (w - ctrl_w) / 2, h - 30, 13, Color{120, 165, 185, 210});
 }
 

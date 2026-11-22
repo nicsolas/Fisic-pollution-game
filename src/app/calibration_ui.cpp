@@ -589,11 +589,11 @@ void DrawSceneMachineAndOverlaysWorldSpace(const eco::WorldContext& world) {
         const int max_y = static_cast<int>(tm.WorldHeight());
         for (int gx = 0; gx <= max_x; gx += 96) {
             DrawLine(gx, 0, gx, max_y, Color{50, 255, 160, 38});
-            DrawText(TextFormat("x=%d", gx), gx + 3, 52, 10, Color{80, 255, 175, 130});
+            DrawTextShadow(TextFormat("x=%d", gx), gx + 3, 52, 10, Color{80, 255, 175, 130});
         }
         for (int gy = 0; gy <= max_y; gy += 96) {
             DrawLine(0, gy, max_x, gy, Color{50, 255, 160, 38});
-            DrawText(TextFormat("y=%d", gy), 52, gy + 3, 10, Color{80, 255, 175, 130});
+            DrawTextShadow(TextFormat("y=%d", gy), 52, gy + 3, 10, Color{80, 255, 175, 130});
         }
     }
 
@@ -677,7 +677,7 @@ void DrawSceneMachineAndOverlaysWorldSpace(const eco::WorldContext& world) {
                 Rectangle{ap->pos.x, ap->pos.y, ap->size.x, ap->size.y},
                 2.0f,
                 Color{60, 255, 140, 255});
-            DrawText(
+            DrawTextShadow(
                 TextFormat("AABB(%.0f,%.0f)", ap->pos.x, ap->pos.y),
                 static_cast<int>(ap->pos.x - 18.0f),
                 static_cast<int>(ap->pos.y - 24.0f),
@@ -694,12 +694,12 @@ void DrawSceneMachineAndOverlaysWorldSpace(const eco::WorldContext& world) {
             DrawArrow2D(start, tip, 2.5f, MAGENTA);
             if (world.current_mode == eco::GameMode::Structure && !ap->isGrounded) {
                 DrawArrow2D(start, {c.x, c.y + 34.0f}, 2.0f, ORANGE);
-                DrawText("g", static_cast<int>(c.x + 6.0f), static_cast<int>(c.y + 24.0f), 12, ORANGE);
+                DrawTextShadow("g", static_cast<int>(c.x + 6.0f), static_cast<int>(c.y + 24.0f), 12, ORANGE);
             }
             if (ap->player_id == 0) {
                 const float dist = active_m.DistanceToPlayer(*ap);
                 DrawLineEx(start, {active_m.pos.x, active_m.pos.y}, 1.2f, Color{90, 220, 255, 110});
-                DrawText(
+                DrawTextShadow(
                     TextFormat("d=%.0fpx", dist),
                     static_cast<int>((c.x + active_m.pos.x) * 0.5f),
                     static_cast<int>((c.y + active_m.pos.y) * 0.5f),
@@ -739,7 +739,7 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world) {
     DrawTextShadow(phase_title, 16, 29, 13, phase_col);
 
     // Indicatori Smog Atmosferico & Energia Pulita al centro della barra superiore
-    const int smog_x = 395;
+    const int smog_x = 385;
     const Color smog_col = world.ecosystem.pollution_level > 35.0f ? pal::kAccentDirty : pal::kAccentClean;
     DrawTextShadow(
         TextFormat("SMOG: %.0f%%", world.ecosystem.pollution_level),
@@ -748,12 +748,12 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world) {
         13,
         smog_col);
     DrawProgressBar(
-        Rectangle{static_cast<float>(smog_x), 26.0f, 175.0f, 14.0f},
+        Rectangle{static_cast<float>(smog_x), 26.0f, 165.0f, 14.0f},
         world.ecosystem.PollutionRatio(),
         smog_col,
         Color{90, 135, 168, 210});
 
-    const int en_x = 595;
+    const int en_x = 572;
     DrawTextShadow(
         TextFormat("ENERGIA PULITA: %.0f MW", world.ecosystem.clean_energy),
         en_x,
@@ -761,16 +761,16 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world) {
         13,
         pal::kAccentClean);
     DrawProgressBar(
-        Rectangle{static_cast<float>(en_x), 26.0f, 175.0f, 14.0f},
+        Rectangle{static_cast<float>(en_x), 26.0f, 165.0f, 14.0f},
         eco::Clamp(world.ecosystem.clean_energy / 100.0f, 0.0f, 1.0f),
         pal::kAccentClean,
         Color{90, 135, 168, 210});
 
     // Tasti rapidi sintetici a destra nella barra superiore
     DrawTextShadow(
-        "[WASD] Muovi  [F] Scan  [E] Azione  [V] Fase UI  [N] Dialogo",
-        815,
-        19,
+        "[WASD] Muovi  [F] Scan  [E] Azione  [V] Fase UI  [N] Dialogo  [ESC] Menu",
+        762,
+        18,
         13,
         LIGHTGRAY);
 

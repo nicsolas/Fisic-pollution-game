@@ -123,7 +123,7 @@ void IntroState::Draw() {
     const char* footer_prompt = all_revealed
                                     ? "Premi [INVIO] / [E] / [N] per iniziare l'esplorazione"
                                     : "Premi [INVIO] / [N] per completare il testo | [X] Salta";
-    const int pw = MeasureText(footer_prompt, 16);
+    const int pw = MeasureUiText(footer_prompt, 16);
     const float pulse = 0.6f + 0.4f * std::sin(elapsed_ * 4.5f);
     DrawTextShadow(
         footer_prompt,

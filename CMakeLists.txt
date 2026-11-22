@@ -131,6 +131,7 @@ add_executable(eco_proto
     src/app/title_state.cpp
     src/app/intro_state.cpp
     src/app/story_ui.cpp
+    src/app/pause_settings_menu.cpp
     src/app/render/ui_style.cpp
     src/app/render/procedural_art.cpp
     src/app/render/particles.cpp

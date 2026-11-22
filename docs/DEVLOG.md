@@ -43,3 +43,20 @@
   - `05_diga.png` (StructureState Diga del Crati con parallasse, cascate, passerelle a traliccio e turbina)
 - Completata la revisione incrociata sul board tra `narratore` (verifica di tutti i rami di `ChapterFor`/`ObjectiveFor` incluso anti-softlock su bypass solare e esplorazione non lineare) e `ingegnere` (verifica geometrica zero-overlap tra Top-Bar, Objective Panel, Telemetria, Dialogue Box e Modal di Calibrazione).
 - Terminati i worker dello swarm e rimosse le cartelle temporanee `build-narratore`, `build-ingegnere`, `build-artista`.
+
+## Coordinatore — v0.2.0 (Git Versioning, Font TTF, Menu Pausa ESC, Impostazioni Grafiche e Schermo Intero)
+- Inizializzato repository Git (`git init -b main`), creato `.gitignore` e taggata la prima versione completa come **`v0.1.0`**.
+- Integrato il font ad alta leggibilita' **Noto Sans SemiBold TTF** (`assets/fonts/ui_font.ttf`) in `src/app/render/ui_style.*` con filtro bilineare (`InitUiFont`, `MeasureUiText`, `DrawTextShadow`), eliminando l'effetto pixelato confusionario del font bitmap di default (che resta selezionabile nelle impostazioni come opzione retro).
+- Risolto il problema dello **Schermo Intero** e del ridimensionamento finestra in `src/app/main.cpp`:
+  - Abilitato `FLAG_WINDOW_RESIZABLE` e `ToggleBorderlessWindowed()` (scorciatoia rapida **`F11`** o **`Alt+Invio`**, oppure dal menu Impostazioni).
+  - Introdotto rendering su canvas virtuale `1280x720` con scaling letterbox 16:9 automatico e rimappatura precisa del mouse (`SetMouseOffset` / `SetMouseScale`), cosi' tutti i pulsanti e lo slider funzionano al pixel anche a schermo intero.
+- Disabilitata l'uscita immediata con `ESC` (`SetExitKey(KEY_NULL)`): ora **`ESC` apre/chiude il Menu di Pausa** (`src/app/pause_settings_menu.h/.cpp`) con 5 voci (*Riprendi Esplorazione*, *Impostazioni Grafiche & Schermo*, *Ricomincia Partita*, *Torna al Titolo*, *Esci dal Gioco*).
+- Creato il **Menu Impostazioni Grafiche & Interfaccia** (controllabile sia con tastiera `W/S/A/D/Frecce/Invio` sia con **Click del Mouse**) con 7 opzioni in tempo reale:
+  1. Modalita' Schermo (`Finestra Ridimensionabile` <-> `Schermo Intero Borderless`)
+  2. Risoluzione Finestra (`1280x720 HD`, `1600x900 HD+`, `1920x1080 Full HD`)
+  3. Frequenza Fotogrammi (`60 FPS`, `120 FPS`, `144 FPS`, `Illimitato`)
+  4. Qualita' Particelle & Atmosfera (`Alta 100%`, `Media 50%`, `Disattivata`)
+  5. Stile Font Interfaccia (`Noto Sans HD Nitido` <-> `Pixel Bitmap Retro`)
+  6. Contatore FPS a Schermo (`Attivo` <-> `Disattivato`)
+  7. Ritmo Dialoghi & Tutorial (`Completo` <-> `Sintetico / Rapido`)
+- Generati gli screenshot `06_menu_pausa.png` e `07_menu_impostazioni.png` e creato il tag Git **`v0.2.0`**.

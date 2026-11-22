@@ -1,19 +1,22 @@
 #include <raylib.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
-#include <string>
 #include <iostream>
 #include <memory>
+#include <string>
 #include <string_view>
 
 #include "app/game_state_manager.h"
 #include "app/intro_state.h"
 #include "app/overworld_state.h"
+#include "app/pause_settings_menu.h"
+#include "app/raylib_input.h"
+#include "app/render/ui_style.h"
 #include "app/structure_state.h"
 #include "app/title_state.h"
-#include "app/raylib_input.h"
 #include "core/ecosystem.h"
 #include "core/input_types.h"
 #include "core/math_types.h"
@@ -303,15 +306,24 @@ int RunHeadlessE2E() {
 struct WindowedOptions {
     int smoke_frames = -1;
     std::string screenshot_file{};
-    std::string scene = "title";   // title | overworld | structure
+    std::string scene = "title";   // title | intro | overworld | structure
     float pollution = -1.0f;       // <0: valore di default
+    bool open_pause = false;
+    bool open_settings = false;
 };
 
 int RunWindowed(const WindowedOptions& opt) {
     const int smoke_frames = opt.smoke_frames;
-    SetConfigFlags(FLAG_MSAA_4X_HINT);
+    SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(eco::kWindowWidth, eco::kWindowHeight, "EQUILIBRIO - Le Leggi della Valle");
+    SetWindowMinSize(640, 360);
+    // Disabilita l'uscita automatica con ESC: ora ESC apre il Menu di Pausa / Impostazioni!
+    SetExitKey(KEY_NULL);
     SetTargetFPS(eco::kTargetFps);
+
+    eco::app::InitUiFont();
+    RenderTexture2D canvas = LoadRenderTexture(eco::kWindowWidth, eco::kWindowHeight);
+    SetTextureFilter(canvas.texture, TEXTURE_FILTER_BILINEAR);
 
     // Inner scope ensures GameStateManager runs OnExit() and destroys active states
     // BEFORE CloseWindow() tears down the Raylib/OpenGL context.
@@ -328,6 +340,10 @@ int RunWindowed(const WindowedOptions& opt) {
             false
         };
 
+        eco::app::GraphicsSettings graphics_settings{};
+        eco::app::ApplyGraphicsSettingsToRuntime(graphics_settings);
+        eco::app::PauseSettingsMenu pause_menu{};
+
         world.EnsureInitialized();
         if (opt.pollution >= 0.0f) {
             world.ecosystem.pollution_level = eco::Clamp(opt.pollution, eco::kMinEcoValue, eco::kMaxEcoValue);
@@ -343,24 +359,71 @@ int RunWindowed(const WindowedOptions& opt) {
         }
         state_manager.ApplyPendingTransition();
 
+        if (opt.open_settings) {
+            pause_menu.OpenSettingsDirect();
+        } else if (opt.open_pause) {
+            pause_menu.OpenPause();
+        }
+
         eco::FixedTimestepStepper stepper;
         eco::AllPlayersInput pending_input{};
         int frame_count = 0;
 
         while (!WindowShouldClose() && !ctx.quit_requested &&
                (smoke_frames < 0 || frame_count < smoke_frames)) {
-            const eco::AllPlayersInput sampled = eco::app::PollRaylibInput();
-            eco::LatchFrameInput(pending_input, sampled);
+            // Calcola letterbox 16:9 e rimappa automaticamente la posizione del mouse
+            // dalle coordinate reali della finestra/schermo intero allo spazio virtuale 1280x720.
+            const int screen_w = std::max(1, GetScreenWidth());
+            const int screen_h = std::max(1, GetScreenHeight());
+            const float scale = std::min(
+                static_cast<float>(screen_w) / static_cast<float>(eco::kWindowWidth),
+                static_cast<float>(screen_h) / static_cast<float>(eco::kWindowHeight));
+            const float dest_w = static_cast<float>(eco::kWindowWidth) * scale;
+            const float dest_h = static_cast<float>(eco::kWindowHeight) * scale;
+            const float dest_x = (static_cast<float>(screen_w) - dest_w) * 0.5f;
+            const float dest_y = (static_cast<float>(screen_h) - dest_h) * 0.5f;
 
-            const int steps = stepper.Accumulate(GetFrameTime());
-            for (int s = 0; s < steps; ++s) {
-                ctx_input = pending_input;
-                state_manager.Update(stepper.fixed_dt);
-                eco::ConsumePressedEdges(pending_input);
+            if (scale > 1e-4f) {
+                SetMouseOffset(static_cast<int>(-dest_x), static_cast<int>(-dest_y));
+                SetMouseScale(1.0f / scale, 1.0f / scale);
             }
 
-            BeginDrawing();
+            const bool paused = pause_menu.UpdateAndHandleInput(ctx, graphics_settings);
+            state_manager.ApplyPendingTransition();
+
+            if (!paused) {
+                const eco::AllPlayersInput sampled = eco::app::PollRaylibInput();
+                eco::LatchFrameInput(pending_input, sampled);
+
+                const int steps = stepper.Accumulate(GetFrameTime());
+                for (int s = 0; s < steps; ++s) {
+                    ctx_input = pending_input;
+                    state_manager.Update(stepper.fixed_dt);
+                    eco::ConsumePressedEdges(pending_input);
+                }
+            } else {
+                // Evita accumulo di dt durante la pausa
+                (void)GetFrameTime();
+                pending_input = {};
+            }
+
+            // Disegna la scena + overlay menu sulla canvas virtuale 1280x720
+            BeginTextureMode(canvas);
             state_manager.Draw();
+            pause_menu.DrawOverlay(ctx, graphics_settings);
+            EndTextureMode();
+
+            // Presenta la canvas scalata in letterbox sulla finestra (o schermo intero)
+            BeginDrawing();
+            ClearBackground(Color{6, 10, 16, 255});
+            const Rectangle src_rec{
+                0.0f,
+                0.0f,
+                static_cast<float>(canvas.texture.width),
+                -static_cast<float>(canvas.texture.height)
+            };
+            const Rectangle dst_rec{dest_x, dest_y, dest_w, dest_h};
+            DrawTexturePro(canvas.texture, src_rec, dst_rec, Vector2{0.0f, 0.0f}, 0.0f, WHITE);
             EndDrawing();
 
             ++frame_count;
@@ -371,6 +434,8 @@ int RunWindowed(const WindowedOptions& opt) {
         }
     }
 
+    UnloadRenderTexture(canvas);
+    eco::app::ShutdownUiFont();
     CloseWindow();
     return 0;
 }
@@ -423,6 +488,10 @@ int main(int argc, char** argv) {
             }
         } else if (arg == "--pollution" && i + 1 < argc) {
             opt.pollution = std::strtof(argv[++i], nullptr);
+        } else if (arg == "--open-pause") {
+            opt.open_pause = true;
+        } else if (arg == "--open-settings") {
+            opt.open_settings = true;
         } else {
             std::cerr << "Unknown argument: " << arg << "\n";
             std::cerr << "Usage: eco_proto [--headless-e2e | --smoke-frames N [--screenshot FILE]] [--skip-title] [--scene title|overworld|structure] [--pollution N]\n";

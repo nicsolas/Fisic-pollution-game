@@ -15,6 +15,10 @@ Ambientato nel **2091** nell'ex campus universitario della **Valle del Crati** (
 |---|---|---|
 | ![Titolo](docs/screenshots/01_titolo.png) | ![Intro](docs/screenshots/02_intro.png) | ![Diga](docs/screenshots/05_diga.png) |
 
+| Menu di Pausa `[ESC]` (`06_menu_pausa.png`) | Menu Impostazioni Grafiche (`07_menu_impostazioni.png`) |
+|---|---|
+| ![Menu Pausa](docs/screenshots/06_menu_pausa.png) | ![Menu Impostazioni](docs/screenshots/07_menu_impostazioni.png) |
+
 ---
 
 ## Compilazione, Esecuzione e Test
@@ -56,6 +60,22 @@ cd build && ctest --output-on-failure
 | `V` | Cambia **Fase UI** (Fase 1 Realismo -> Fase 2 Telemetria -> Fase 3 Matrice) |
 | `N` | **Avanza Dialogo** / Completa riga a macchina da scrivere |
 | `TAB` | Cambio rapido scena Valle <-> Diga |
+| `ESC` | **Menu di Pausa & Impostazioni Grafiche** (non chiude il gioco!) |
+| `F11` / `Alt+INVIO` | Attiva/Disattiva **Schermo Intero (Borderless)** in qualsiasi momento |
+
+---
+
+## Versioning Git e Push su GitHub
+
+Il repository Git locale contiene i tag delle versioni:
+- **`v0.1.0`** — Prima versione completa (Storia + Grafica Procedurale 2.5D).
+- **`v0.2.0`** — Font TTF ad alta leggibilita' (`Noto Sans SemiBold`), Schermo Intero (`F11`) con letterbox 16:9, Menu di Pausa (`ESC`) e Menu Impostazioni Grafiche.
+
+Per caricare tutto su un nuovo repository **GitHub**:
+```bash
+git remote add origin https://github.com/<tuo-username>/<nome-repo>.git
+git push -u origin main --tags
+```
 
 ---
 

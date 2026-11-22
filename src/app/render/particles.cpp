@@ -9,6 +9,8 @@ namespace eco::app {
 
 namespace {
 
+float g_particle_quality_scale = 1.0f;
+
 [[nodiscard]] constexpr std::uint32_t HashU32(std::uint32_t x) noexcept {
     x ^= x >> 16;
     x *= 0x7feb352du;
@@ -25,11 +27,28 @@ namespace {
 
 } // namespace
 
+void SetParticleQualityScale(float scale) noexcept {
+    if (scale < 0.0f) {
+        g_particle_quality_scale = 0.0f;
+    } else if (scale > 1.0f) {
+        g_particle_quality_scale = 1.0f;
+    } else {
+        g_particle_quality_scale = scale;
+    }
+}
+
+float GetParticleQualityScale() noexcept {
+    return g_particle_quality_scale;
+}
+
 void DrawWorldAtmosphericParticles(
     eco::GameMode mode,
     float sim_time,
     const eco::EcoSystem& ecosystem,
     eco::Vec2 camera_target) {
+    if (g_particle_quality_scale <= 0.01f) {
+        return;
+    }
     const float poll = ecosystem.PollutionRatio();
     const float health = 1.0f - poll;
     const float min_x = camera_target.x - static_cast<float>(eco::kWindowWidth) * 0.6f;
@@ -39,7 +58,7 @@ void DrawWorldAtmosphericParticles(
 
     if (mode == eco::GameMode::Overworld) {
         // 1. Lucciole e polline bio-luminescente quando la Valle guarisce
-        const int firefly_count = static_cast<int>(health * 42.0f);
+        const int firefly_count = static_cast<int>(health * 42.0f * g_particle_quality_scale);
         for (int i = 0; i < firefly_count; ++i) {
             const float rx = HashFloat01(i, 101);
             const float ry = HashFloat01(i, 202);
@@ -58,7 +77,7 @@ void DrawWorldAtmosphericParticles(
 
         // 2. Petali / foglie portate dalla brezza quando l'aria e' pulita
         if (health > 0.45f) {
-            const int leaf_count = static_cast<int>((health - 0.45f) * 28.0f);
+            const int leaf_count = static_cast<int>((health - 0.45f) * 28.0f * g_particle_quality_scale);
             for (int i = 0; i < leaf_count; ++i) {
                 const float rx = HashFloat01(i, 505);
                 const float ry = HashFloat01(i, 606);
@@ -69,8 +88,8 @@ void DrawWorldAtmosphericParticles(
         }
     } else {
         // StructureState (Diga del Crati): vapore e goccioline nebulizzate vicino al bacino
-        constexpr int kMistCount = 34;
-        for (int i = 0; i < kMistCount; ++i) {
+        const int mist_count = static_cast<int>(34.0f * g_particle_quality_scale);
+        for (int i = 0; i < mist_count; ++i) {
             const float rx = HashFloat01(i, 707);
             const float ry = HashFloat01(i, 808);
             const float wx = 120.0f + rx * 1100.0f + std::sin(sim_time * 1.7f + static_cast<float>(i)) * 14.0f;
@@ -118,7 +137,7 @@ void DrawScreenSpaceAtmosphere(
         const Color smog_col = pal::LerpColor(Color{58, 64, 58, smog_a}, Color{76, 62, 48, smog_a}, poll);
         DrawRectangle(0, 0, sw, sh, smog_col);
 
-        const int ash_count = static_cast<int>(poll * 54.0f);
+        const int ash_count = static_cast<int>(poll * 54.0f * g_particle_quality_scale);
         for (int i = 0; i < ash_count; ++i) {
             const float sx = HashFloat01(i, 909) * static_cast<float>(sw);
             const float sy = HashFloat01(i, 1010) * static_cast<float>(sh);

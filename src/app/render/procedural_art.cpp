@@ -101,7 +101,7 @@ void DrawProceduralTree(float x, float y, float scale, float sim_time, const eco
 void DrawDiegeticSignpost(float x, float y, const char* label, Color accent) {
     DrawEllipse(static_cast<int>(x), static_cast<int>(y + 12.0f), 10.0f, 3.5f, Color{0, 0, 0, 100});
     DrawRectangle(static_cast<int>(x - 2.0f), static_cast<int>(y - 6.0f), 4, 18, Color{70, 56, 44, 255});
-    const int tw = MeasureText(label, 11);
+    const int tw = MeasureUiText(label, 11);
     const int bw = tw + 12;
     const int bx = static_cast<int>(x) - bw / 2;
     const int by = static_cast<int>(y - 22.0f);
