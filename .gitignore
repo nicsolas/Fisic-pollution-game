@@ -1,0 +1,17 @@
+# Build directories
+build/
+build-*/
+tests/e2e/.build_*/
+
+# Compiled binaries and objects
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.exe
+
+# Editor / OS temporary files
+.DS_Store
+*~

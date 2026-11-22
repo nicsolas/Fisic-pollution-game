@@ -1,0 +1,8 @@
+#pragma once
+
+namespace eco::e2e {
+
+inline constexpr const char* kDefaultProjectRoot = "@ECO_PROJECT_ROOT@";
+inline constexpr const char* kDefaultGameBuildDir = "@ECO_GAME_BUILD_DIR@";
+
+} // namespace eco::e2e
