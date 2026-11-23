@@ -113,19 +113,58 @@ void DrawWorldLabelTag(const char* text, float cx, float y, Color accent, Color 
     DrawTextShadow(text, bx + 7, static_cast<int>(y), 11, text_col);
 }
 
+void DrawInlineWorldPrompt(
+    GamepadAction action,
+    const char* kb_key,
+    const char* text,
+    int cx,
+    int py,
+    int min_w,
+    Color accent) {
+    const ActionIconInfo info = GetActionIconInfo(action);
+    if (!info.use_controller) {
+        const char* full = TextFormat("[%s] %s", kb_key, text);
+        const int pw = std::max(min_w, MeasureUiText(full, 12) + 24);
+        const int px = cx - pw / 2;
+        DrawPanel(Rectangle{static_cast<float>(px), static_cast<float>(py), static_cast<float>(pw), 26.0f}, accent);
+        DrawTextShadow(full, px + 12, py + 6, 12, accent);
+        return;
+    }
+    const int icon_w = MeasureControllerButtonIconWidth(static_cast<int>(info.type), static_cast<int>(info.button), 9.0f);
+    const int text_w = MeasureUiText(text, 12);
+    const int pw = std::max(min_w, icon_w + 8 + text_w + 22);
+    const int px = cx - pw / 2;
+    DrawPanel(Rectangle{static_cast<float>(px), static_cast<float>(py), static_cast<float>(pw), 26.0f}, accent);
+    DrawControllerButtonIcon(
+        static_cast<int>(info.type),
+        static_cast<int>(info.button),
+        Vector2{static_cast<float>(px + 10) + static_cast<float>(icon_w) * 0.5f, static_cast<float>(py + 13)},
+        9.0f);
+    DrawTextShadow(text, px + 10 + icon_w + 7, py + 6, 12, accent);
+}
+
 void DrawMonumentPrompt(const eco::Machine& m, const eco::WorldContext& world, float y_offset) {
     if (!m.prompt_visible || world.calibration_modal.is_open) {
         return;
     }
-    const char* text = m.unlocked
-                           ? TextFormat("[E] Calibra %s", eco::MachineName(m.type))
-                           : TextFormat("Sigillato: attiva prima i 5 monumenti (%d/5)", ActivatedCoreMonumentsCount(world));
     const Color accent = m.unlocked ? pal::kAmberGlow : Color{210, 145, 78, 240};
-    const int pw = std::max(240, MeasureUiText(text, 12) + 24);
-    const int px = static_cast<int>(m.pos.x) - pw / 2;
     const int py = static_cast<int>(m.pos.y + y_offset);
-    DrawPanel(Rectangle{static_cast<float>(px), static_cast<float>(py), static_cast<float>(pw), 26.0f}, accent);
-    DrawTextShadow(text, px + 12, py + 6, 12, accent);
+    if (m.unlocked) {
+        DrawInlineWorldPrompt(
+            GamepadAction::Interact,
+            "E",
+            TextFormat("Calibra %s", eco::MachineName(m.type)),
+            static_cast<int>(m.pos.x),
+            py,
+            240,
+            accent);
+    } else {
+        const char* text = TextFormat("Sigillato: attiva prima i 5 monumenti (%d/5)", ActivatedCoreMonumentsCount(world));
+        const int pw = std::max(240, MeasureUiText(text, 12) + 24);
+        const int px = static_cast<int>(m.pos.x) - pw / 2;
+        DrawPanel(Rectangle{static_cast<float>(px), static_cast<float>(py), static_cast<float>(pw), 26.0f}, accent);
+        DrawTextShadow(text, px + 12, py + 6, 12, accent);
+    }
 }
 
 void DrawHarmonicConduit(
@@ -707,12 +746,15 @@ void DrawWorldNpcCharacter(const eco::WorldNpc& npc, const eco::WorldContext& wo
     DrawWorldLabelTag(title_lbl, nx, ny - 52.0f, accent, accent);
 
     if (npc.prompt_visible && !world.calibration_modal.is_open) {
-        const char* prompt = TextFormat("[E] Parla con %s (%s)", title_lbl, eco::NpcRoleTitle(npc.id));
-        const int pw = std::max(250, MeasureUiText(prompt, 12) + 24);
-        const int px = static_cast<int>(nx) - pw / 2;
         const int py = (world.current_mode == eco::GameMode::Structure) ? static_cast<int>(ny) - 78 : static_cast<int>(ny) + 24;
-        DrawPanel(Rectangle{static_cast<float>(px), static_cast<float>(py), static_cast<float>(pw), 26.0f}, accent);
-        DrawTextShadow(prompt, px + 12, py + 6, 12, accent);
+        DrawInlineWorldPrompt(
+            GamepadAction::Interact,
+            "E",
+            TextFormat("Parla con %s (%s)", title_lbl, eco::NpcRoleTitle(npc.id)),
+            static_cast<int>(nx),
+            py,
+            250,
+            accent);
     }
 }
 
@@ -807,12 +849,14 @@ void DrawCollectiblesInScene(const eco::WorldContext& world) {
         // Prompt diegetico quando il giocatore si avvicina
         if (item.prompt_visible && !world.calibration_modal.is_open) {
             const eco::CollectibleMeta& meta = eco::CollectibleMetadata(item.id);
-            const char* prompt = TextFormat("[E] Raccogli %s - %s", meta.code.c_str(), meta.title.c_str());
-            const int pw = std::max(210, MeasureUiText(prompt, 12) + 22);
-            const int px = static_cast<int>(item.pos.x) - pw / 2;
-            const int py = static_cast<int>(item.pos.y) - 48;
-            DrawPanel(Rectangle{static_cast<float>(px), static_cast<float>(py), static_cast<float>(pw), 25.0f}, era_col);
-            DrawTextShadow(prompt, px + 11, py + 5, 12, era_col);
+            DrawInlineWorldPrompt(
+                GamepadAction::Interact,
+                "E",
+                TextFormat("Raccogli %s - %s", meta.code.c_str(), meta.title.c_str()),
+                static_cast<int>(item.pos.x),
+                static_cast<int>(item.pos.y) - 48,
+                210,
+                era_col);
         }
     }
 }
@@ -1545,20 +1589,20 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
         11,
         pal::kJadeGlow);
 
-    // Badge comandi compatti a destra (nessuna sovrapposizione)
+    // Badge comandi compatti a destra (nessuna sovrapposizione; icone controller se attivo)
     int bx_hint = 768;
-    auto draw_hint = [&](const char* key, const char* lbl, Color col) {
-        DrawKeyBadge(key, bx_hint, 17, col);
-        bx_hint += MeasureKeyBadge(key) + 5;
+    auto draw_hint = [&](GamepadAction act, const char* key, const char* lbl, Color col) {
+        DrawActionPromptBadge(static_cast<int>(act), key, bx_hint, 17, col);
+        bx_hint += MeasureActionPromptBadge(static_cast<int>(act), key) + 5;
         DrawTextShadow(lbl, bx_hint, 19, 12, pal::kParchmentText);
         bx_hint += MeasureUiText(lbl, 12) + 12;
     };
-    draw_hint("F", "Lente", pal::kJadeGlow);
-    draw_hint("E", "Azione", pal::kAmberGlow);
-    draw_hint("H", "Diario", pal::kUiBorderCyan);
-    draw_hint("J", "Codex", pal::kBronzeBright);
-    draw_hint("V", "Vista", pal::kJade);
-    draw_hint("ESC", "Menu", LIGHTGRAY);
+    draw_hint(GamepadAction::Scan, "F", "Lente", pal::kJadeGlow);
+    draw_hint(GamepadAction::Interact, "E", "Azione", pal::kAmberGlow);
+    draw_hint(GamepadAction::Journal, "H", "Diario", pal::kUiBorderCyan);
+    draw_hint(GamepadAction::Sprint, "SHIFT", "Corri", pal::kBronzeBright);
+    draw_hint(GamepadAction::HudPhase, "V", "Vista", pal::kJade);
+    draw_hint(GamepadAction::Pause, "ESC", "Menu", LIGHTGRAY);
 
     // 2. Pannello Lente Empirica & Rilievo Metrico (alto-destra x=846, y=62, w=418)
     if (ov.show_raw_numbers || world.last_scan.active) {
@@ -1568,23 +1612,31 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
         const float ph = ov.show_raw_numbers ? 84.0f : 56.0f;
         DrawPanel(Rectangle{px, py, pw, ph}, pal::kUiBorderCyan);
 
+        const ControllerPrompts hud_prompts = GetActiveControllerPrompts();
+        const char* scan_lbl = hud_prompts.controller_active ? hud_prompts.scan : "[F]";
+        const char* vista_lbl =
+            hud_prompts.controller_active
+                ? ControllerButtonLabel(hud_prompts.type, GetActionIconInfo(GamepadAction::HudPhase).button)
+                : "[V]";
+
         if (world.last_scan.active) {
             DrawTextShadow(
                 world.last_scan.has_target
                     ? TextFormat(
-                          "LENTE [F]: %s = %.2f %s (d=%.0f)",
+                          "LENTE %s: %s = %.2f %s (d=%.0f)",
+                          scan_lbl,
                           eco::MachineName(world.last_scan.target_type),
                           world.last_scan.measured_target_value,
                           eco::MachineUnit(world.last_scan.target_type),
                           world.last_scan.measured_distance)
-                    : "LENTE [F]: Nessun monumento nel raggio (avvicinati)",
+                    : TextFormat("LENTE %s: Nessun monumento nel raggio (avvicinati)", scan_lbl),
                 static_cast<int>(px) + 12,
                 static_cast<int>(py) + 10,
                 12,
                 pal::kAmberGlow);
         } else {
             DrawTextShadow(
-                "LENTE [F]: Avvicinati a un monumento per misurarlo",
+                TextFormat("LENTE %s: Avvicinati a un monumento per misurarlo", scan_lbl),
                 static_cast<int>(px) + 12,
                 static_cast<int>(py) + 10,
                 12,
@@ -1618,7 +1670,7 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
                 pal::kJadeGlow);
         } else {
             DrawTextShadow(
-                "Calibra un monumento senza pece per sbloccare il Rilievo [V]",
+                TextFormat("Calibra un monumento senza pece per sbloccare il Rilievo %s", vista_lbl),
                 static_cast<int>(px) + 12,
                 static_cast<int>(py) + 32,
                 12,
@@ -1663,6 +1715,7 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             (world.last_scan.has_target &&
              world.last_scan.target_type == machine.type);
 
+        const ControllerPrompts prompts = GetActiveControllerPrompts();
         if (target_revealed) {
             DrawTextShadow(
                 TextFormat(
@@ -1675,7 +1728,9 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
                 pal::kAccentClean);
         } else {
             DrawTextShadow(
-                "Sguardo Empirico: osserva il monumento o usa la Lente [F] per leggere il target!",
+                prompts.controller_active
+                    ? TextFormat("Sguardo Empirico: osserva il monumento o usa la Lente %s per leggere il target!", prompts.scan)
+                    : "Sguardo Empirico: osserva il monumento o usa la Lente [F] per leggere il target!",
                 bx + 24,
                 by + 76,
                 13,
@@ -1703,7 +1758,9 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
 
         DrawTextShadow(
             TextFormat(
-                "Parametro [A/D, Frecce o Mouse]: %.2f %s   (Intervallo %.0f..%.0f)",
+                prompts.controller_active
+                    ? "Parametro [Levetta / D-Pad / LB-RB]: %.2f %s   (Intervallo %.0f..%.0f)"
+                    : "Parametro [A/D, Frecce o Mouse]: %.2f %s   (Intervallo %.0f..%.0f)",
                 world.calibration_modal.slider_value,
                 eco::MachineUnit(machine.type),
                 min_param,
@@ -1758,7 +1815,6 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
         const Rectangle btn_bypass{static_cast<float>(bx + 24), static_cast<float>(by + 306), 720.0f, 38.0f};
         const Rectangle btn_cancel{static_cast<float>(bx + 24), static_cast<float>(by + 356), 248.0f, 34.0f};
 
-        const ControllerPrompts prompts = GetActiveControllerPrompts();
         const bool hover_confirm = allow_mouse_input && CheckCollisionPointRec(mouse, btn_confirm);
         const bool hover_bypass = allow_mouse_input && machine.allow_bypass && CheckCollisionPointRec(mouse, btn_bypass);
         const bool hover_cancel = allow_mouse_input && CheckCollisionPointRec(mouse, btn_cancel);
@@ -1772,26 +1828,54 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             btn_confirm,
             hover_confirm ? 2.6f : 2.0f,
             world.calibration_modal.can_confirm_clean ? pal::kAccentClean : GRAY);
-        DrawTextShadow(
-            prompts.controller_active
-                ? TextFormat("%s / CLICK CONFERMA CALIBRAZIONE PULITA (+Energia Armonica, -Foschia)", prompts.confirm)
-                : "[INVIO / C / CLICK] CONFERMA CALIBRAZIONE PULITA (+Energia Armonica, -Foschia)",
-            bx + 36,
-            by + 269,
-            15,
-            world.calibration_modal.can_confirm_clean ? RAYWHITE : GRAY);
+        if (prompts.controller_active) {
+            const ActionIconInfo ic = GetActionIconInfo(GamepadAction::Confirm);
+            const int iw = MeasureControllerButtonIconWidth(static_cast<int>(ic.type), static_cast<int>(ic.button), 10.0f);
+            DrawControllerButtonIcon(
+                static_cast<int>(ic.type),
+                static_cast<int>(ic.button),
+                Vector2{static_cast<float>(bx + 36) + static_cast<float>(iw) * 0.5f, btn_confirm.y + btn_confirm.height * 0.5f},
+                10.0f);
+            DrawTextShadow(
+                "CONFERMA CALIBRAZIONE PULITA (+Energia Armonica, -Foschia)",
+                bx + 44 + iw,
+                by + 269,
+                15,
+                world.calibration_modal.can_confirm_clean ? RAYWHITE : GRAY);
+        } else {
+            DrawTextShadow(
+                "[INVIO / C / CLICK] CONFERMA CALIBRAZIONE PULITA (+Energia Armonica, -Foschia)",
+                bx + 36,
+                by + 269,
+                15,
+                world.calibration_modal.can_confirm_clean ? RAYWHITE : GRAY);
+        }
 
         if (machine.allow_bypass) {
             DrawRectangleRec(btn_bypass, hover_bypass ? Color{144, 62, 36, 255} : Color{116, 48, 28, 255});
             DrawRectangleLinesEx(btn_bypass, hover_bypass ? 2.2f : 1.5f, pal::kAccentDirty);
-            DrawTextShadow(
-                prompts.controller_active
-                    ? TextFormat("%s / CLICK %s (+Foschia di Pece!)", prompts.bypass, eco::kCombustionBypassLabel)
-                    : TextFormat("[B / CLICK] %s (+Foschia di Pece!)", eco::kCombustionBypassLabel),
-                bx + 36,
-                by + 317,
-                15,
-                pal::kParchmentText);
+            if (prompts.controller_active) {
+                const ActionIconInfo ic = GetActionIconInfo(GamepadAction::Bypass);
+                const int iw = MeasureControllerButtonIconWidth(static_cast<int>(ic.type), static_cast<int>(ic.button), 10.0f);
+                DrawControllerButtonIcon(
+                    static_cast<int>(ic.type),
+                    static_cast<int>(ic.button),
+                    Vector2{static_cast<float>(bx + 36) + static_cast<float>(iw) * 0.5f, btn_bypass.y + btn_bypass.height * 0.5f},
+                    10.0f);
+                DrawTextShadow(
+                    TextFormat("%s (+Foschia di Pece!)", eco::kCombustionBypassLabel),
+                    bx + 44 + iw,
+                    by + 317,
+                    15,
+                    pal::kParchmentText);
+            } else {
+                DrawTextShadow(
+                    TextFormat("[B / CLICK] %s (+Foschia di Pece!)", eco::kCombustionBypassLabel),
+                    bx + 36,
+                    by + 317,
+                    15,
+                    pal::kParchmentText);
+            }
         } else {
             DrawRectangleRec(btn_bypass, Color{24, 30, 38, 225});
             DrawRectangleLinesEx(btn_bypass, 1.2f, Color{96, 108, 120, 180});
@@ -1805,14 +1889,18 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
 
         DrawRectangleRec(btn_cancel, hover_cancel ? Color{54, 72, 94, 255} : Color{36, 48, 64, 255});
         DrawRectangleLinesEx(btn_cancel, hover_cancel ? 2.0f : 1.4f, pal::kBronze);
-        DrawTextShadow(
-            prompts.controller_active
-                ? TextFormat("%s / CLICK Annulla", prompts.cancel)
-                : "[X / BACKSPACE / CLICK] Annulla",
-            bx + 36,
-            by + 365,
-            14,
-            pal::kParchmentText);
+        if (prompts.controller_active) {
+            const ActionIconInfo ic = GetActionIconInfo(GamepadAction::Cancel);
+            const int iw = MeasureControllerButtonIconWidth(static_cast<int>(ic.type), static_cast<int>(ic.button), 9.5f);
+            DrawControllerButtonIcon(
+                static_cast<int>(ic.type),
+                static_cast<int>(ic.button),
+                Vector2{static_cast<float>(bx + 36) + static_cast<float>(iw) * 0.5f, btn_cancel.y + btn_cancel.height * 0.5f},
+                9.5f);
+            DrawTextShadow("Annulla", bx + 44 + iw, by + 365, 14, pal::kParchmentText);
+        } else {
+            DrawTextShadow("[X / BACKSPACE / CLICK] Annulla", bx + 36, by + 365, 14, pal::kParchmentText);
+        }
 
         if (allow_mouse_input && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             if (CheckCollisionPointRec(mouse, btn_confirm)) {

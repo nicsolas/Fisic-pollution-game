@@ -481,6 +481,18 @@ bool PollAnyPressedControllerButton(GamepadButtonCode& out_btn) noexcept {
     return false;
 }
 
+ActionIconInfo GetActionIconInfo(GamepadAction action) noexcept {
+    EnsureCtrlSettingsInit();
+    ActionIconInfo info{};
+    const int primary_gp = FindPrimaryGamepad();
+    if (primary_gp >= 0 && g_last_input_was_controller) {
+        info.use_controller = true;
+        info.type = ResolveEffectiveType(primary_gp);
+        info.button = BindingFor(info.type, action);
+    }
+    return info;
+}
+
 ControllerPrompts GetActiveControllerPrompts() noexcept {
     EnsureCtrlSettingsInit();
     ControllerPrompts p{};

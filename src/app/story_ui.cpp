@@ -504,19 +504,28 @@ void DrawStoryLayer(eco::WorldContext& world) {
             pal::kJadeGlow);
     }
 
-    // Suggerimenti compatti in basso a destra: [H] Cronologia (N) | [N] Avanti
+    // Suggerimenti compatti in basso a destra con icone controller adattive
     const int queued = story.QueuedLineCount();
-    const char* right_hint =
-        (queued > 1)
-            ? TextFormat("[H] Cronologia (%d)   |   [N] Avanti (+%d)", static_cast<int>(story.History().size()), queued - 1)
-            : TextFormat("[H] Cronologia (%d)   |   [N] Avanti", static_cast<int>(story.History().size()));
-    const int hint_w = MeasureUiText(right_hint, 12);
-    DrawTextShadow(
-        right_hint,
-        static_cast<int>(dlg_box.x + dlg_box.width) - hint_w - 18,
-        static_cast<int>(dlg_box.y + dlg_box.height) - 20,
-        12,
-        Color{174, 206, 218, 220});
+    const char* hist_txt = TextFormat("Cronologia (%d)", static_cast<int>(story.History().size()));
+    const char* next_txt = (queued > 1) ? TextFormat("Avanti (+%d)", queued - 1) : "Avanti";
+    const int b_hist_w = MeasureActionPromptBadge(static_cast<int>(GamepadAction::Journal), "H");
+    const int b_next_w = MeasureActionPromptBadge(static_cast<int>(GamepadAction::Bypass), "N");
+    const int t_hist_w = MeasureUiText(hist_txt, 12);
+    const int t_next_w = MeasureUiText(next_txt, 12);
+    const int sep_w = MeasureUiText("  |  ", 12);
+    const int total_w = b_hist_w + 5 + t_hist_w + sep_w + b_next_w + 5 + t_next_w;
+
+    int hx = static_cast<int>(dlg_box.x + dlg_box.width) - total_w - 18;
+    const int hy = static_cast<int>(dlg_box.y + dlg_box.height) - 22;
+    DrawActionPromptBadge(static_cast<int>(GamepadAction::Journal), "H", hx, hy - 2, pal::kUiBorderCyan);
+    hx += b_hist_w + 5;
+    DrawTextShadow(hist_txt, hx, hy, 12, Color{174, 206, 218, 220});
+    hx += t_hist_w;
+    DrawTextShadow("  |  ", hx, hy, 12, Color{120, 150, 164, 200});
+    hx += sep_w;
+    DrawActionPromptBadge(static_cast<int>(GamepadAction::Bypass), "N", hx, hy - 2, pal::kJadeGlow);
+    hx += b_next_w + 5;
+    DrawTextShadow(next_txt, hx, hy, 12, Color{174, 206, 218, 220});
 }
 
 // =============================================================================

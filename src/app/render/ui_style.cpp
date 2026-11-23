@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 
+#include "app/raylib_input.h"
 #include "app/render/palette.h"
 
 namespace eco::app {
@@ -818,6 +819,62 @@ void DrawBannerToast(
     }
 }
 
+[[nodiscard]] const char* ControllerPillLabel(int controller_type, int button_code) noexcept {
+    const bool is_ps = (controller_type == 2);
+    const bool is_switch = (controller_type == 3);
+    if (is_ps) {
+        switch (button_code) {
+            case 4: return "L1";
+            case 5: return "R1";
+            case 6: return "L2";
+            case 7: return "R2";
+            case 8: return "L3";
+            case 9: return "R3";
+            case 10: return "OPT";
+            case 11: return "SHR";
+            default: return "?";
+        }
+    }
+    if (is_switch) {
+        switch (button_code) {
+            case 4: return "L";
+            case 5: return "R";
+            case 6: return "ZL";
+            case 7: return "ZR";
+            case 8: return "LS";
+            case 9: return "RS";
+            case 10: return "+";
+            case 11: return "-";
+            default: return "?";
+        }
+    }
+    switch (button_code) {
+        case 4: return "LB";
+        case 5: return "RB";
+        case 6: return "LT";
+        case 7: return "RT";
+        case 8: return "LS";
+        case 9: return "RS";
+        case 10: return "STR";
+        case 11: return "VIW";
+        default: return "?";
+    }
+}
+
+int MeasureControllerButtonIconWidth(
+    int controller_type,
+    int button_code,
+    float radius) noexcept {
+    const float r = std::max(8.0f, radius);
+    if (button_code >= 0 && button_code <= 3) {
+        return static_cast<int>(std::ceil(r * 2.0f)) + 2;
+    }
+    const char* pill_text = ControllerPillLabel(controller_type, button_code);
+    const int tw = MeasureUiText(pill_text, 11);
+    const float pw = std::max(r * 2.2f, static_cast<float>(tw + 14));
+    return static_cast<int>(std::ceil(pw)) + 2;
+}
+
 void DrawControllerButtonIcon(
     int controller_type,
     int button_code,
@@ -889,45 +946,7 @@ void DrawControllerButtonIcon(
     }
 
     // Dorsali / Grilletti / Stick / Start-Options-+ / View-Share--
-    const char* pill_text = "?";
-    if (is_ps) {
-        switch (button_code) {
-            case 4: pill_text = "L1"; break;
-            case 5: pill_text = "R1"; break;
-            case 6: pill_text = "L2"; break;
-            case 7: pill_text = "R2"; break;
-            case 8: pill_text = "L3"; break;
-            case 9: pill_text = "R3"; break;
-            case 10: pill_text = "OPT"; break;
-            case 11: pill_text = "SHR"; break;
-            default: break;
-        }
-    } else if (is_switch) {
-        switch (button_code) {
-            case 4: pill_text = "L"; break;
-            case 5: pill_text = "R"; break;
-            case 6: pill_text = "ZL"; break;
-            case 7: pill_text = "ZR"; break;
-            case 8: pill_text = "LS"; break;
-            case 9: pill_text = "RS"; break;
-            case 10: pill_text = "+"; break;
-            case 11: pill_text = "-"; break;
-            default: break;
-        }
-    } else {
-        switch (button_code) {
-            case 4: pill_text = "LB"; break;
-            case 5: pill_text = "RB"; break;
-            case 6: pill_text = "LT"; break;
-            case 7: pill_text = "RT"; break;
-            case 8: pill_text = "LS"; break;
-            case 9: pill_text = "RS"; break;
-            case 10: pill_text = "STR"; break;
-            case 11: pill_text = "VIW"; break;
-            default: break;
-        }
-    }
-
+    const char* pill_text = ControllerPillLabel(controller_type, button_code);
     const int tw = MeasureUiText(pill_text, 11);
     const float pw = std::max(r * 2.2f, static_cast<float>(tw + 14));
     const float ph = r * 1.65f;
@@ -940,6 +959,39 @@ void DrawControllerButtonIcon(
         static_cast<int>(center.y) - 6,
         11,
         pal::kJadeGlow);
+}
+
+int MeasureActionPromptBadge(int gamepad_action, const char* keyboard_label) noexcept {
+    const ActionIconInfo info = GetActionIconInfo(static_cast<GamepadAction>(gamepad_action));
+    if (info.use_controller) {
+        return MeasureControllerButtonIconWidth(
+            static_cast<int>(info.type),
+            static_cast<int>(info.button),
+            9.5f);
+    }
+    return MeasureKeyBadge(keyboard_label);
+}
+
+void DrawActionPromptBadge(
+    int gamepad_action,
+    const char* keyboard_label,
+    int x,
+    int y,
+    Color accent) {
+    const ActionIconInfo info = GetActionIconInfo(static_cast<GamepadAction>(gamepad_action));
+    if (info.use_controller) {
+        const int w = MeasureControllerButtonIconWidth(
+            static_cast<int>(info.type),
+            static_cast<int>(info.button),
+            9.5f);
+        DrawControllerButtonIcon(
+            static_cast<int>(info.type),
+            static_cast<int>(info.button),
+            Vector2{static_cast<float>(x) + static_cast<float>(w) * 0.5f, static_cast<float>(y) + 8.5f},
+            9.5f);
+        return;
+    }
+    DrawKeyBadge(keyboard_label, x, y, accent);
 }
 
 } // namespace eco::app

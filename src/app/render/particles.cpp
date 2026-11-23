@@ -1160,12 +1160,12 @@ void DrawZoneInterludeOverlay(
     // 5. Hint discreto per saltare in basso a destra
     if (skip_hint != nullptr && skip_hint[0] != '\0') {
         const char* key_lbl = "SPAZIO";
-        const int badge_w = MeasureKeyBadge(key_lbl);
+        const int badge_w = MeasureActionPromptBadge(4, key_lbl); // 4 = GamepadAction::Confirm
         const int hint_w = MeasureUiText(skip_hint, 13);
         const int total_w = badge_w + 8 + hint_w;
         const int hx = sw - 46 - total_w;
         const int hy = sh - 44;
-        DrawKeyBadge(key_lbl, hx, hy, ScaleAlpha(accent, fade));
+        DrawActionPromptBadge(4, key_lbl, hx, hy, ScaleAlpha(accent, fade));
         DrawTextShadow(skip_hint, hx + badge_w + 8, hy + 2, 13, ScaleAlpha(Color{198, 214, 228, 220}, fade));
     }
 }

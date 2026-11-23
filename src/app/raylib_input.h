@@ -113,6 +113,15 @@ void ApplyControllerSettings(const ControllerSettingsRuntime& cfg) noexcept;
 // Rileva se un pulsante del controller e' stato appena premuto (per il remapping interattivo).
 [[nodiscard]] bool PollAnyPressedControllerButton(GamepadButtonCode& out_btn) noexcept;
 
+struct ActionIconInfo {
+    bool use_controller = false;
+    ControllerType type = ControllerType::None;
+    GamepadButtonCode button = GamepadButtonCode::FaceDown;
+};
+
+// Restituisce se mostrare l'icona del controller e quale pulsante e' associato all'azione.
+[[nodiscard]] ActionIconInfo GetActionIconInfo(GamepadAction action) noexcept;
+
 // Restituisce i prompt adattivi correnti (aggiornati automaticamente in base all'ultimo input).
 [[nodiscard]] ControllerPrompts GetActiveControllerPrompts() noexcept;
 

@@ -2788,18 +2788,15 @@ void DrawStructureProceduralBackdropAndMap(
         DrawRectangleLines(badge_x, badge_y, badge_w, 18, sw.active ? pal::kJadeGlow : pal::kBronze);
         DrawTextShadow(sym, static_cast<int>(sx) - sym_w / 2, badge_y + 2, 14, sw.active ? pal::kJadeGlow : pal::kParchmentText);
 
-        // Anello di interazione pulsante e prompt [E] quando il giocatore e' vicino
+        // Anello di interazione pulsante e prompt [E] (o icona controller) quando il giocatore e' vicino
         if (player_near) {
             const float ring_r = 22.0f + 5.0f * std::sin(sim_time * 6.0f);
             DrawRing({sx, floor_y - 20.0f}, ring_r - 2.0f, ring_r, 0.0f, 360.0f, 24,
                      pal::WithAlpha(sw.active ? pal::kJadeGlow : pal::kAmberGlow, 200));
-            const char* prompt = "[E]";
-            const int pw = MeasureText(prompt, 12);
-            const int px = static_cast<int>(sx) - pw / 2;
-            const int py = badge_y - 18;
-            DrawRectangle(px - 5, py - 2, pw + 10, 16, Color{16, 20, 26, 225});
-            DrawRectangleLines(px - 5, py - 2, pw + 10, 16, pal::kAmberGlow);
-            DrawTextShadow(prompt, px, py, 12, pal::kAmberGlow);
+            const int bw = MeasureActionPromptBadge(1, "E"); // 1 = GamepadAction::Interact
+            const int px = static_cast<int>(sx) - bw / 2;
+            const int py = badge_y - 22;
+            DrawActionPromptBadge(1, "E", px, py, pal::kAmberGlow);
         }
     }
 

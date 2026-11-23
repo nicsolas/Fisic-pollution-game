@@ -86,10 +86,23 @@ void DrawBannerToast(
     float alpha);
 
 // Disegna il simbolo vettoriale del pulsante per Xbox (1), PlayStation (2) o Nintendo Switch (3).
+[[nodiscard]] int MeasureControllerButtonIconWidth(
+    int controller_type,
+    int button_code,
+    float radius) noexcept;
 void DrawControllerButtonIcon(
     int controller_type,
     int button_code,
     Vector2 center,
     float radius);
+
+// Badge adattivo per i comandi su schermo: mostra l'icona del controller se attivo, altrimenti il tasto tastiera.
+[[nodiscard]] int MeasureActionPromptBadge(int gamepad_action, const char* keyboard_label) noexcept;
+void DrawActionPromptBadge(
+    int gamepad_action,
+    const char* keyboard_label,
+    int x,
+    int y,
+    Color accent);
 
 } // namespace eco::app
