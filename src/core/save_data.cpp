@@ -201,6 +201,38 @@ bool SaveWorldToFile(
     }
     out << "story_fired=" << fired_bits << "\n";
 
+    // Stato delle 6 meccaniche top-down di zona
+    out << "mech_solar_gate=" << (world.zone_mechanics.solar_gate_open ? 1 : 0) << "\n";
+    {
+        std::string mirror_dirs;
+        for (const auto& m : world.zone_mechanics.solar_mirrors) {
+            mirror_dirs.push_back(static_cast<char>('0' + ((m.dir_index % 4 + 4) % 4)));
+        }
+        out << "mech_mirrors=" << mirror_dirs << "\n";
+    }
+    {
+        std::string sluice_bits;
+        for (const auto& l : world.zone_mechanics.sluice_levers) {
+            sluice_bits.push_back(l.pulled ? '1' : '0');
+        }
+        out << "mech_sluices=" << sluice_bits << "\n";
+    }
+    out << "mech_jade_bridge=" << (world.zone_mechanics.jade_bridge_unlocked ? 1 : 0) << "\n";
+    {
+        std::string valve_bits;
+        for (const auto& v : world.zone_mechanics.relief_valves) {
+            valve_bits.push_back(v.open ? '1' : '0');
+        }
+        out << "mech_valves=" << valve_bits << "\n";
+    }
+    {
+        std::string seal_bits;
+        for (const auto& s : world.zone_mechanics.sanctuary_seals) {
+            seal_bits.push_back(s.attuned ? '1' : '0');
+        }
+        out << "mech_seals=" << seal_bits << "\n";
+    }
+
     // Cronologia Dialoghi
     for (const DialogueHistoryEntry& entry : world.story.History()) {
         out << "hist="
@@ -341,6 +373,12 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
     std::array<bool, 4> npc_recruited{};
     std::string relics_mask{};
     std::string story_fired_mask{};
+    bool mech_solar_gate = false;
+    std::string mech_mirrors{};
+    std::string mech_sluices{};
+    bool mech_jade_bridge = false;
+    std::string mech_valves{};
+    std::string mech_seals{};
     std::vector<DialogueHistoryEntry> history{};
 
     std::string line;
@@ -391,6 +429,18 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
             relics_mask = val;
         } else if (key == "story_fired") {
             story_fired_mask = val;
+        } else if (key == "mech_solar_gate") {
+            mech_solar_gate = (ParseIntSafe(val, 0) != 0);
+        } else if (key == "mech_mirrors") {
+            mech_mirrors = val;
+        } else if (key == "mech_sluices") {
+            mech_sluices = val;
+        } else if (key == "mech_jade_bridge") {
+            mech_jade_bridge = (ParseIntSafe(val, 0) != 0);
+        } else if (key == "mech_valves") {
+            mech_valves = val;
+        } else if (key == "mech_seals") {
+            mech_seals = val;
         } else if (key.rfind("machine_", 0) == 0) {
             const int idx = ParseIntSafe(key.substr(8), -1);
             if (idx >= 0 && idx < 6) {
@@ -473,14 +523,65 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
     }
     world.collectibles.ClearRecentBanner();
 
+    // Ripristina stato delle 6 meccaniche top-down di zona
+    world.zone_mechanics.solar_gate_open = mech_solar_gate;
+    for (std::size_t i = 0; i < mech_mirrors.size() && i < world.zone_mechanics.solar_mirrors.size(); ++i) {
+        if (mech_mirrors[i] >= '0' && mech_mirrors[i] <= '3') {
+            world.zone_mechanics.solar_mirrors[i].dir_index = static_cast<int>(mech_mirrors[i] - '0');
+        }
+    }
+    for (std::size_t i = 0; i < mech_sluices.size() && i < world.zone_mechanics.sluice_levers.size(); ++i) {
+        const bool pulled = (mech_sluices[i] == '1');
+        world.zone_mechanics.sluice_levers[i].pulled = pulled;
+        const int grp = world.zone_mechanics.sluice_levers[i].sluice_group;
+        for (auto& cur : world.zone_mechanics.water_currents) {
+            if (cur.sluice_group == grp) {
+                cur.active = !pulled;
+            }
+        }
+    }
+    world.zone_mechanics.jade_bridge_unlocked = mech_jade_bridge;
+    world.zone_mechanics.jade_bridge_progress = mech_jade_bridge ? 1.0f : 0.0f;
+    if (mech_jade_bridge) {
+        world.zone_mechanics.resonance_next_order =
+            static_cast<int>(world.zone_mechanics.resonance_pads.size());
+        for (auto& pad : world.zone_mechanics.resonance_pads) {
+            pad.activated = true;
+        }
+    }
+    for (std::size_t i = 0; i < mech_valves.size() && i < world.zone_mechanics.relief_valves.size(); ++i) {
+        const bool open = (mech_valves[i] == '1');
+        world.zone_mechanics.relief_valves[i].open = open;
+        if (open) {
+            const int grp = world.zone_mechanics.relief_valves[i].valve_group;
+            for (auto& g : world.zone_mechanics.geysers) {
+                if (g.valve_group == grp) {
+                    g.phase = GeyserPhase::Calmed;
+                    g.intensity = 0.0f;
+                }
+            }
+        }
+    }
+    for (std::size_t i = 0; i < mech_seals.size() && i < world.zone_mechanics.sanctuary_seals.size(); ++i) {
+        const bool attuned = (mech_seals[i] == '1');
+        world.zone_mechanics.sanctuary_seals[i].attuned = attuned;
+        world.zone_mechanics.sanctuary_seals[i].glow = attuned ? 1.0f : 0.0f;
+    }
+
     world.current_mode = saved_mode;
     world.current_zone = saved_zone;
     world.active_structure = saved_structure;
     if (saved_mode == GameMode::Structure) {
+        world.overworld.UnloadZoneMemory();
         world.structure.SelectStructure(saved_structure);
         world.structure.OnEnter(world.players, architect_recruited);
     } else {
+        world.structure.UnloadMemory();
+        world.overworld.LoadZone(saved_zone);
         world.overworld.OnEnter(world.players, false, architect_recruited);
+        if (saved_zone == ZoneId::DawnTerraces) {
+            world.zone_mechanics.RecomputeSolarBeams(world.overworld.tilemap);
+        }
     }
 
     if (has_p0_x && has_p0_y) {
@@ -492,14 +593,16 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
                 p0->size,
                 (saved_mode == GameMode::Structure) ? world.structure.spawn_point
                                                     : world.overworld.SafeSpawnInZone(saved_zone, architect_recruited),
-                architect_recruited);
+                architect_recruited,
+                world.zone_mechanics.solar_gate_open,
+                world.zone_mechanics.jade_bridge_unlocked);
             p0->pos = safe_pos;
             p0->y_velocity = 0.0f;
             if (saved_mode == GameMode::Structure) {
                 world.structure.camera_target = p0->Center();
             } else {
                 world.overworld.camera_target = p0->Center();
-                world.current_zone = world.overworld.DistrictAt(p0->Center());
+                world.current_zone = world.overworld.active_zone;
             }
         }
     }

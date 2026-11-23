@@ -3,12 +3,14 @@
 #include <raylib.h>
 
 #include <algorithm>
-#include <cmath>
-#include <cstdint>
 #include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "app/render/palette.h"
+#include "app/render/particles.h"
 #include "app/render/ui_style.h"
 
 namespace eco::app {
@@ -20,17 +22,54 @@ namespace {
 }
 
 [[nodiscard]] bool IsWaterLike(eco::TileId id) noexcept {
-    return id == eco::TileId::Water || id == eco::TileId::HiddenBridge;
+    return id == eco::TileId::Water ||
+           id == eco::TileId::HiddenBridge ||
+           id == eco::TileId::ShallowChannel ||
+           id == eco::TileId::JadeBridge;
 }
 
 [[nodiscard]] bool IsPavedLike(eco::TileId id) noexcept {
     return id == eco::TileId::PavedPath ||
            id == eco::TileId::SanctuaryFloor ||
-           id == eco::TileId::HiddenBridge;
+           id == eco::TileId::HiddenBridge ||
+           id == eco::TileId::ZoneGateway ||
+           id == eco::TileId::SolarGate;
 }
 
 [[nodiscard]] bool IsTileSolidForProp(eco::TileId id) noexcept {
     return id != eco::TileId::Walkable && id != eco::TileId::GardenFloor;
+}
+
+[[nodiscard]] eco::Vec2 MirrorDirVector(int dir_index) noexcept {
+    switch (dir_index & 3) {
+        case 0: return {1.0f, 0.0f};   // Est
+        case 1: return {0.0f, 1.0f};   // Sud
+        case 2: return {-1.0f, 0.0f};  // Ovest
+        default: return {0.0f, -1.0f}; // Nord
+    }
+}
+
+[[nodiscard]] float NearestActivePlayerDistance(const eco::WorldContext& world, eco::Vec2 pos) noexcept {
+    float best = 1e9f;
+    for (const eco::Player* p : world.players.ActivePlayers()) {
+        if (p != nullptr && p->active) {
+            best = std::min(best, p->Center().DistanceTo(pos));
+        }
+    }
+    return best;
+}
+
+[[nodiscard]] const eco::ZoneGateway* FindZoneGatewayAtTile(
+    const eco::OverworldSim& overworld,
+    int row,
+    int col) noexcept {
+    for (const auto& gw : overworld.active_gateways) {
+        if (row >= gw.tile_min.row && row <= gw.tile_max.row &&
+            col >= gw.tile_min.col && col <= gw.tile_max.col) {
+            return &gw;
+        }
+    }
+    return nullptr;
 }
 
 [[nodiscard]] eco::StructureId PortalStructureAtTile(
@@ -43,7 +82,7 @@ namespace {
             return p.target_structure;
         }
     }
-    const eco::ZoneId zone = overworld.DistrictAtTile(row, col);
+    const eco::ZoneId zone = overworld.active_zone;
     if (zone == eco::ZoneId::WindPlateau) {
         return eco::StructureId::PendulumTower;
     }
@@ -57,17 +96,14 @@ namespace {
 // Stele Diegetica Scolpita (pietra + cornice bronzo, stile Conca di Meridia)
 // =============================================================================
 void DrawMeridianStele(float x, float y, const char* label, Color accent, float health) {
-    // Ombra morbida alla base
     DrawEllipse(static_cast<int>(x + 3.0f), static_cast<int>(y + 13.0f), 14.0f, 4.5f, Color{0, 0, 0, 105});
 
-    // Basamento in pietra scolpita e fusto
     const Color stone_base = pal::LerpColor(Color{74, 68, 62, 255}, Color{138, 134, 122, 255}, health);
     const Color stone_hi = pal::ShiftBrightness(stone_base, 26);
     DrawRectangle(static_cast<int>(x - 7.0f), static_cast<int>(y + 6.0f), 14, 7, stone_base);
     DrawRectangle(static_cast<int>(x - 4.0f), static_cast<int>(y - 7.0f), 8, 15, stone_base);
     DrawLine(static_cast<int>(x - 4.0f), static_cast<int>(y - 7.0f), static_cast<int>(x - 4.0f), static_cast<int>(y + 7.0f), stone_hi);
 
-    // Targa superiore in ardesia scura e filetto in bronzo/accento
     const int tw = MeasureUiText(label, 11);
     const int bw = tw + 18;
     const int bx = static_cast<int>(x) - bw / 2;
@@ -77,7 +113,6 @@ void DrawMeridianStele(float x, float y, const char* label, Color accent, float 
     DrawRectangleLines(bx, by, bw, 19, pal::WithAlpha(pal::kBronze, 220));
     DrawRectangleLines(bx + 2, by + 2, bw - 4, 15, pal::WithAlpha(accent, 190));
 
-    // Piccoli chiodi in bronzo ai lati
     DrawCircle(bx + 5, by + 9, 1.5f, accent);
     DrawCircle(bx + bw - 5, by + 9, 1.5f, accent);
     DrawTextShadow(label, bx + 9, by + 4, 11, pal::kParchmentText);
@@ -97,7 +132,6 @@ void DrawSolarSundialMosaic(eco::Vec2 center, float poll, float sim_time) {
     DrawRing({center.x, center.y}, 64.0f, 67.0f, 0.0f, 360.0f, 32, bronze_inlay);
     DrawRing({center.x, center.y}, 36.0f, 38.0f, 0.0f, 360.0f, 24, bronze_inlay);
 
-    // 12 raggi solari incisi nella pavimentazione
     for (int i = 0; i < 12; ++i) {
         const float ang = static_cast<float>(i) * (eco::kPi / 6.0f);
         const float r0 = (i % 3 == 0) ? 38.0f : 67.0f;
@@ -132,7 +166,6 @@ void DrawHarmonicWaveMosaic(eco::Vec2 center, float poll, float sim_time) {
         DrawRing({center.x, center.y}, base_r + ripple, base_r + 2.5f + ripple, 0.0f, 360.0f, 36, jade_inlay);
     }
 
-    // 8 petali armonici incisi in pietra e giada
     for (int i = 0; i < 8; ++i) {
         const float ang = static_cast<float>(i) * (eco::kPi / 4.0f);
         const float cx = center.x + std::cos(ang) * 78.0f;
@@ -166,25 +199,29 @@ void DrawWindRoseMosaic(eco::Vec2 center, float poll, float sim_time) {
     }
 }
 
-void DrawSanctuaryGrandMosaic(eco::Vec2 center, float poll, float sim_time, int relics_found) {
+void DrawSanctuaryGrandMosaic(eco::Vec2 center, float poll, float sim_time, int relics_found, bool all_seals_attuned) {
     const float health = 1.0f - poll;
     const Color marble = pal::WorldColor(Color{116, 108, 98, 185}, Color{216, 210, 192, 225}, poll);
     const Color bronze = pal::WorldColor(Color{128, 104, 70, 195}, Color{226, 188, 104, 245}, poll);
     const Color jade = pal::WorldColor(Color{92, 102, 86, 175}, Color{72, 232, 194, 245}, poll);
 
-    // Grande disco pavimentale in travertino avorio
-    DrawCircleV({center.x, center.y}, 136.0f, pal::WithAlpha(marble, 88));
-    DrawRing({center.x, center.y}, 130.0f, 136.0f, 0.0f, 360.0f, 48, bronze);
-    DrawRing({center.x, center.y}, 102.0f, 106.0f, 0.0f, 360.0f, 44, jade);
-    DrawRing({center.x, center.y}, 72.0f, 75.0f, 0.0f, 360.0f, 36, bronze);
+    DrawCircleV({center.x, center.y}, 148.0f, pal::WithAlpha(marble, 88));
+    DrawRing({center.x, center.y}, 142.0f, 148.0f, 0.0f, 360.0f, 48, bronze);
+    DrawRing({center.x, center.y}, 110.0f, 114.0f, 0.0f, 360.0f, 44, jade);
+    DrawRing({center.x, center.y}, 76.0f, 79.0f, 0.0f, 360.0f, 36, bronze);
     DrawRing({center.x, center.y}, 42.0f, 44.5f, 0.0f, 360.0f, 28, jade);
 
-    // 16 tacche astronomiche sul cerchio esterno
+    if (all_seals_attuned) {
+        const float sweep = sim_time * 24.0f;
+        DrawRing({center.x, center.y}, 114.0f, 119.0f, sweep, sweep + 120.0f, 24, pal::WithAlpha(pal::kJadeGlow, 175));
+        DrawRing({center.x, center.y}, 114.0f, 119.0f, sweep + 180.0f, sweep + 300.0f, 24, pal::WithAlpha(pal::kAmberGlow, 165));
+    }
+
     for (int i = 0; i < 16; ++i) {
         const float ang = static_cast<float>(i) * (eco::kPi / 8.0f);
         const bool cardinal = (i % 4 == 0);
-        const float r0 = cardinal ? 44.0f : 106.0f;
-        const float r1 = cardinal ? 136.0f : 130.0f;
+        const float r0 = cardinal ? 44.0f : 114.0f;
+        const float r1 = cardinal ? 148.0f : 142.0f;
         DrawLineEx(
             {center.x + std::cos(ang) * r0, center.y + std::sin(ang) * r0},
             {center.x + std::cos(ang) * r1, center.y + std::sin(ang) * r1},
@@ -192,12 +229,11 @@ void DrawSanctuaryGrandMosaic(eco::Vec2 center, float poll, float sim_time, int 
             cardinal ? bronze : pal::WithAlpha(bronze, 180));
     }
 
-    // 4 medaglioni delle Ere (si accendono man mano che le reliquie vengono raccolte)
     const int lit_eras = std::clamp(relics_found / 4, 0, 4);
     for (int era = 0; era < 4; ++era) {
         const float ang = static_cast<float>(era) * (eco::kPi * 0.5f) + (eco::kPi * 0.25f);
-        const Vector2 mp{center.x + std::cos(ang) * 88.0f, center.y + std::sin(ang) * 88.0f};
-        const bool lit = (era < lit_eras) || (health > 0.75f);
+        const Vector2 mp{center.x + std::cos(ang) * 94.0f, center.y + std::sin(ang) * 94.0f};
+        const bool lit = (era < lit_eras) || (health > 0.75f) || all_seals_attuned;
         DrawCircleV(mp, 12.0f, pal::WithAlpha(pal::kBasaltDark, 185));
         DrawCircleLines(static_cast<int>(mp.x), static_cast<int>(mp.y), 12.0f, bronze);
         if (lit) {
@@ -211,7 +247,7 @@ void DrawSanctuaryGrandMosaic(eco::Vec2 center, float poll, float sim_time, int 
 }
 
 // =============================================================================
-// Flora Diversificata & Micro-Props Architettonici
+// Flora Diversificata, Micro-Props & Affreschi Ambientali
 // =============================================================================
 void DrawBioCrystalNode(float x, float y, float sim_time, float poll, Color accent) {
     const float health = 1.0f - poll;
@@ -219,7 +255,6 @@ void DrawBioCrystalNode(float x, float y, float sim_time, float poll, Color acce
     const Color crystal_col = pal::WorldColor(Color{136, 86, 62, 225}, accent, poll);
 
     DrawEllipse(static_cast<int>(x + 2.0f), static_cast<int>(y + 11.0f), 14.0f, 5.5f, Color{0, 0, 0, 105});
-    // Basamento esagonale in pietra
     DrawPoly({x, y + 8.0f}, 6, 9.0f, 30.0f, pal::WorldColor(Color{72, 66, 60, 255}, Color{138, 142, 134, 255}, poll));
     DrawLineEx({x, y + 8.0f}, {x, y - 9.0f}, 3.5f, stem_col);
     DrawLineEx({x - 5.0f, y + 6.0f}, {x - 10.0f, y - 2.0f}, 2.4f, stem_col);
@@ -246,7 +281,6 @@ void DrawOliveTree(
     const float health = 1.0f - poll;
     const float sway = std::sin(sim_time * 1.4f + static_cast<float>(seed) * 1.9f) * (1.0f + 1.8f * health);
 
-    // Ombra portata SE
     DrawEllipse(
         static_cast<int>(x + 7.0f * scale),
         static_cast<int>(y + 12.0f * scale),
@@ -254,7 +288,6 @@ void DrawOliveTree(
         8.5f * scale,
         Color{0, 0, 0, 108});
 
-    // Tronco nodoso d'ulivo con radici
     const Color trunk_dark = pal::WorldColor(Color{48, 40, 36, 255}, Color{72, 54, 40, 255}, poll);
     const Color trunk_hi = pal::WorldColor(Color{74, 62, 52, 255}, Color{114, 88, 64, 255}, poll);
     DrawLineEx({x - 3.0f * scale, y + 11.0f * scale}, {x - 1.0f * scale + sway * 0.25f, y - 11.0f * scale}, 5.5f * scale, trunk_dark);
@@ -263,7 +296,6 @@ void DrawOliveTree(
     DrawLineEx({x, y - 5.0f * scale}, {x - 13.0f * scale + sway * 0.45f, y - 15.0f * scale}, 3.2f * scale, trunk_dark);
     DrawLineEx({x, y - 6.0f * scale}, {x + 13.0f * scale + sway * 0.45f, y - 16.0f * scale}, 3.2f * scale, trunk_dark);
 
-    // Chioma larga e argentata-verde stratificata
     const float r = (12.0f + 6.5f * health) * scale;
     const Color c_mid = pal::WorldColor(dp.canopy_sick, dp.canopy_healthy, poll);
     const Color c_hi = pal::WorldColor(dp.canopy_hi_sick, dp.canopy_hi_healthy, poll);
@@ -292,10 +324,12 @@ void DrawWindCypress(
     float sim_time,
     float poll,
     const pal::DistrictPalette& dp,
-    int seed) {
+    int seed,
+    float wind_gust_bias = 0.0f) {
     const float health = 1.0f - poll;
-    // Cipresso slanciato inclinato dal vento
-    const float wind = 3.2f + std::sin(sim_time * 2.5f + static_cast<float>(seed) * 1.3f) * (2.2f + 2.0f * health);
+    const float wind = 3.2f + wind_gust_bias * 7.5f +
+                       std::sin(sim_time * (2.5f + wind_gust_bias * 3.0f) + static_cast<float>(seed) * 1.3f) *
+                           (2.2f + 2.0f * health);
 
     DrawEllipse(
         static_cast<int>(x + 8.0f * scale),
@@ -311,7 +345,6 @@ void DrawWindCypress(
     const Color c_hi = pal::WorldColor(dp.canopy_hi_sick, dp.canopy_hi_healthy, poll);
     const Color c_sh = pal::ShiftBrightness(c_mid, -22);
 
-    // 4 piani conici sovrapposti che si flettono verso la punta
     for (int tier = 0; tier < 4; ++tier) {
         const float tf = static_cast<float>(tier) / 3.0f;
         const float ty = y - (8.0f + tf * 28.0f) * scale;
@@ -341,7 +374,6 @@ void DrawFloweringGardenTree(
         8.0f * scale,
         Color{0, 0, 0, 110});
 
-    // Fusto snello con aiuola in pietra alla base
     DrawRing({x, y + 9.0f * scale}, 7.0f * scale, 10.5f * scale, 0.0f, 360.0f, 16,
              pal::WorldColor(Color{92, 84, 74, 210}, Color{168, 166, 152, 230}, poll));
     const Color trunk = pal::WorldColor(Color{58, 46, 38, 255}, Color{94, 66, 46, 255}, poll);
@@ -361,7 +393,6 @@ void DrawFloweringGardenTree(
     DrawCircleV(c, r * 0.94f, c_mid);
     DrawCircleV({c.x - 4.0f * scale, c.y - 4.5f * scale}, r * 0.62f, c_hi);
 
-    // Fioritura abbondante nei Giardini Sospesi al calare dell'inquinamento
     if (health > 0.30f) {
         const unsigned char alpha = static_cast<unsigned char>(std::clamp((health - 0.30f) * 350.0f, 0.0f, 245.0f));
         const Color b1 = pal::WithAlpha(dp.blossom_a, alpha);
@@ -379,7 +410,6 @@ void DrawBasaltThermalVent(float x, float y, float scale, float sim_time, float 
     const float health = 1.0f - poll;
     DrawEllipse(static_cast<int>(x + 3.0f), static_cast<int>(y + 9.0f), 16.0f * scale, 6.5f * scale, Color{0, 0, 0, 115});
 
-    // Grappolo di colonne esagonali di basalto
     const Color basalt_dark = pal::WorldColor(Color{50, 42, 40, 255}, Color{62, 68, 78, 255}, poll);
     const Color basalt_top = pal::WorldColor(Color{76, 64, 60, 255}, Color{98, 108, 120, 255}, poll);
     const Color glow = pal::WorldColor(Color{216, 76, 36, 200}, Color{88, 204, 196, 175}, poll);
@@ -389,7 +419,6 @@ void DrawBasaltThermalVent(float x, float y, float scale, float sim_time, float 
     DrawPoly({x, y - 2.0f * scale}, 6, 9.5f * scale, 30.0f, basalt_top);
     DrawPolyLines({x, y - 2.0f * scale}, 6, 9.5f * scale, 30.0f, pal::ShiftBrightness(basalt_top, 24));
 
-    // Bocca termale centrale + filo di vapore che sale dolcemente
     DrawCircleV({x, y - 2.0f * scale}, 4.2f * scale, pal::WithAlpha(glow, 185));
     for (int i = 0; i < 3; ++i) {
         const float phase = std::fmod(sim_time * 0.7f + static_cast<float>(seed) * 0.37f + static_cast<float>(i) * 0.33f, 1.0f);
@@ -428,7 +457,6 @@ void DrawBrokenColumnDrum(float x, float y, float poll, const pal::DistrictPalet
     DrawEllipse(static_cast<int>(x), static_cast<int>(y + 7.0f), 9.0f, 4.0f, front);
     DrawEllipse(static_cast<int>(x), static_cast<int>(y - 5.0f), 9.0f, 4.2f, top);
     DrawEllipseLines(static_cast<int>(x), static_cast<int>(y - 5.0f), 9.0f, 4.2f, edge);
-    // Scanalature verticali classiche
     DrawLine(static_cast<int>(x - 5.0f), static_cast<int>(y - 3.0f), static_cast<int>(x - 5.0f), static_cast<int>(y + 7.0f), pal::ShiftBrightness(front, 20));
     DrawLine(static_cast<int>(x), static_cast<int>(y - 1.0f), static_cast<int>(x), static_cast<int>(y + 9.0f), pal::ShiftBrightness(front, 20));
     DrawLine(static_cast<int>(x + 5.0f), static_cast<int>(y - 3.0f), static_cast<int>(x + 5.0f), static_cast<int>(y + 7.0f), pal::ShiftBrightness(front, 20));
@@ -446,27 +474,18 @@ void DrawMeridianStatue(
     const Color stone_dark = pal::WorldColor(dp.wall_front_sick, dp.wall_front_healthy, poll);
     const Color stone_hi = pal::WorldColor(dp.wall_edge_sick, dp.wall_edge_healthy, poll);
 
-    // Ombra portata SE
     DrawEllipse(static_cast<int>(x + 6.0f), static_cast<int>(y + 13.0f), 15.0f, 6.0f, Color{0, 0, 0, 108});
-    // Plinto a due gradini
     DrawRectangle(static_cast<int>(x - 12.0f), static_cast<int>(y + 6.0f), 24, 7, stone_dark);
     DrawRectangle(static_cast<int>(x - 10.0f), static_cast<int>(y + 1.0f), 20, 6, stone);
     DrawLine(static_cast<int>(x - 10.0f), static_cast<int>(y + 1.0f), static_cast<int>(x + 10.0f), static_cast<int>(y + 1.0f), stone_hi);
 
-    // Figura stilizzata drappeggiata dei Meridiani
-    DrawTriangle(
-        {x - 7.0f, y + 1.0f},
-        {x + 7.0f, y + 1.0f},
-        {x, y - 20.0f},
-        stone);
+    DrawTriangle({x - 7.0f, y + 1.0f}, {x + 7.0f, y + 1.0f}, {x, y - 20.0f}, stone);
     DrawTriangleLines({x - 7.0f, y + 1.0f}, {x + 7.0f, y + 1.0f}, {x, y - 20.0f}, stone_dark);
     DrawLineEx({x - 2.0f, y + 1.0f}, {x - 1.0f, y - 15.0f}, 1.6f, stone_hi);
-    // Testa e spalle
     DrawCircleV({x, y - 22.0f}, 4.5f, stone);
     DrawCircleV({x - 1.0f, y - 23.0f}, 2.2f, stone_hi);
 
     if (hydro_variant) {
-        // Anfora con filo d'acqua turchese che scende dolcemente
         DrawEllipse(static_cast<int>(x + 7.0f), static_cast<int>(y - 13.0f), 4.0f, 3.0f, pal::kBronze);
         const Color water = pal::WorldColor(dp.water_sick, dp.foam_healthy, poll);
         const float shimmer = std::sin(sim_time * 5.0f + x * 0.1f) * 1.4f;
@@ -475,7 +494,6 @@ void DrawMeridianStatue(
             DrawEllipse(static_cast<int>(x + 10.0f), static_cast<int>(y + 8.0f), 5.0f, 2.2f, pal::WithAlpha(water, 145));
         }
     } else {
-        // Sfera armillare in bronzo sollevata sopra la statua
         const float pulse = 0.65f + 0.35f * std::sin(sim_time * 2.5f + x * 0.06f);
         const Vector2 orb{x, y - 31.0f};
         DrawCircleLines(static_cast<int>(orb.x), static_cast<int>(orb.y), 6.2f, pal::kBronzeBright);
@@ -526,18 +544,11 @@ void DrawSundialObelisk(
     const Color stone_dark = pal::WorldColor(dp.wall_front_sick, dp.wall_front_healthy, poll);
     const Color stone_hi = pal::WorldColor(dp.wall_edge_sick, dp.wall_edge_healthy, poll);
 
-    // Ombra lunga da gnomone verso sud-est
-    DrawTriangle(
-        {x - 4.0f, y + 8.0f},
-        {x + 5.0f, y + 8.0f},
-        {x + 24.0f, y + 18.0f},
-        Color{0, 0, 0, 82});
+    DrawTriangle({x - 4.0f, y + 8.0f}, {x + 5.0f, y + 8.0f}, {x + 24.0f, y + 18.0f}, Color{0, 0, 0, 82});
     DrawRectangle(static_cast<int>(x - 7.0f), static_cast<int>(y + 4.0f), 14, 6, stone_dark);
-    // Fusto rastremato
     DrawTriangle({x - 5.0f, y + 4.0f}, {x + 5.0f, y + 4.0f}, {x, y - 28.0f}, stone);
     DrawTriangle({x, y + 4.0f}, {x + 5.0f, y + 4.0f}, {x, y - 28.0f}, stone_dark);
     DrawLineEx({x - 4.5f, y + 3.0f}, {x, y - 27.0f}, 1.5f, stone_hi);
-    // Punta piramidale in bronzo lucido
     DrawTriangle({x - 2.6f, y - 20.0f}, {x + 2.6f, y - 20.0f}, {x, y - 29.0f}, pal::kBronzeBright);
     if (health > 0.40f) {
         const float glint = 0.55f + 0.45f * std::sin(sim_time * 3.2f + x * 0.05f);
@@ -545,39 +556,518 @@ void DrawSundialObelisk(
     }
 }
 
+// Nuovi Affreschi Ambientali dedicati ai landmark narrativi delle 6 zone
+void DrawAcousticJadeBasin(float x, float y, float poll, float sim_time, const pal::DistrictPalette& dp) {
+    const float health = 1.0f - poll;
+    const Color rim = pal::WorldColor(dp.wall_top_sick, dp.wall_top_healthy, poll);
+    const Color water = pal::WorldColor(dp.water_sick, dp.water_healthy, poll);
+    const float ripple = std::fmod(sim_time * 0.65f, 1.0f);
+
+    DrawEllipse(static_cast<int>(x + 4.0f), static_cast<int>(y + 8.0f), 26.0f, 12.0f, Color{0, 0, 0, 95});
+    DrawPoly({x, y}, 8, 22.0f, 22.5f, rim);
+    DrawPolyLines({x, y}, 8, 22.0f, 22.5f, pal::kBronze);
+    DrawPoly({x, y}, 8, 16.5f, 22.5f, water);
+    DrawRing({x, y}, 4.0f + ripple * 11.0f, 5.4f + ripple * 11.0f, 0.0f, 360.0f, 24,
+             pal::WithAlpha(pal::kJadeGlow, static_cast<unsigned char>((1.0f - ripple) * (110.0f + 120.0f * health))));
+    DrawCircleV({x, y}, 3.2f, pal::kJadeGlow);
+}
+
+void DrawGeothermalBrazier(float x, float y, float poll, float sim_time) {
+    const float pulse = 0.72f + 0.28f * std::sin(sim_time * 4.5f + x * 0.04f);
+    const Color flame = pal::WorldColor(pal::kFumaroleErupt, pal::kAmberGlow, poll);
+
+    DrawEllipse(static_cast<int>(x + 4.0f), static_cast<int>(y + 10.0f), 16.0f, 6.5f, Color{0, 0, 0, 115});
+    DrawPoly({x, y + 2.0f}, 6, 13.0f, 30.0f, pal::kBasaltDark);
+    DrawPolyLines({x, y + 2.0f}, 6, 13.0f, 30.0f, pal::kValveCopper);
+    DrawCircleV({x, y - 2.0f}, 18.0f * pulse, pal::WithAlpha(flame, static_cast<unsigned char>(55.0f * pulse)));
+    DrawCircleV({x, y - 2.0f}, 7.5f, pal::WithAlpha(flame, 225));
+    DrawCircleV({x, y - 4.0f}, 4.0f * pulse, pal::kSolarBeamCore);
+}
+
+void DrawCarvedBasReliefPlaque(float x, float y, float poll, const pal::DistrictPalette& dp, const char* caption) {
+    const Color stone = pal::WorldColor(dp.wall_top_sick, dp.wall_top_healthy, poll);
+    const Color dark = pal::WorldColor(dp.wall_front_sick, dp.wall_front_healthy, poll);
+    const Color inlay = pal::WorldColor(dp.inlay_sick, dp.inlay_healthy, poll);
+
+    DrawRectangle(static_cast<int>(x - 16.0f), static_cast<int>(y + 6.0f), 34, 8, Color{0, 0, 0, 90});
+    DrawRectangle(static_cast<int>(x - 16.0f), static_cast<int>(y - 14.0f), 32, 22, dark);
+    DrawRectangle(static_cast<int>(x - 14.0f), static_cast<int>(y - 12.0f), 28, 18, stone);
+    DrawRectangleLines(static_cast<int>(x - 14.0f), static_cast<int>(y - 12.0f), 28, 18, pal::kBronze);
+    DrawLineEx({x - 9.0f, y - 6.0f}, {x + 9.0f, y - 6.0f}, 1.6f, inlay);
+    DrawLineEx({x - 7.0f, y - 1.0f}, {x + 7.0f, y - 1.0f}, 1.4f, pal::WithAlpha(inlay, 190));
+    DrawCircleV({x, y - 10.0f}, 2.2f, dp.ambient_accent);
+
+    if (caption != nullptr && caption[0] != '\0') {
+        DrawMeridianStele(x, y - 18.0f, caption, dp.ambient_accent, 1.0f - poll);
+    }
+}
+
 // =============================================================================
-// Verifica distanza di sicurezza per evitare sovrapposizione prop <-> gameplay
+// Rendering delle 6 Meccaniche Top-Down (Passata a Terra + Passata Elevata)
 // =============================================================================
-[[nodiscard]] bool IsPropPositionSafe(const eco::WorldContext& world, eco::Vec2 pos) noexcept {
-    if (pos.DistanceTo(world.overworld.spawn_point) < 80.0f) {
-        return false;
-    }
-    for (const auto& m : world.machines) {
-        if (m.location == eco::LocationId::Overworld && pos.DistanceTo(m.pos) < 108.0f) {
-            return false;
+void DrawZoneMechanicsGround(const eco::WorldContext& world, eco::Vec2 cam, float half_w, float half_h) {
+    const eco::ZoneId zone = world.overworld.active_zone;
+    const eco::ZoneMechanicState& zm = world.zone_mechanics;
+    const float sim_time = world.sim_time;
+    const float poll = world.ecosystem.PollutionRatio();
+    const float health = 1.0f - poll;
+    const auto& env_cfg = GetEnvironmentEffectsConfig();
+    const float weather_scale = env_cfg.atmosphere_enabled ? env_cfg.zone_weather_intensity : 0.35f;
+
+    if (zone == eco::ZoneId::DawnTerraces) {
+        // Piastre fotosensibili (Terrazze dell'Alba)
+        for (const auto& plate : zm.solar_plates) {
+            if (std::fabs(plate.pos.x - cam.x) > half_w || std::fabs(plate.pos.y - cam.y) > half_h) {
+                continue;
+            }
+            const Color base = plate.lit ? pal::kSolarPlateLit : pal::kSolarPlateIdle;
+            const float pulse = 0.72f + 0.28f * std::sin(sim_time * 4.0f + static_cast<float>(plate.id));
+
+            DrawPoly({plate.pos.x, plate.pos.y}, 8, plate.radius + 3.0f, 22.5f, pal::kBronzeDark);
+            DrawPoly({plate.pos.x, plate.pos.y}, 8, plate.radius - 1.0f, 22.5f, base);
+            DrawPolyLines({plate.pos.x, plate.pos.y}, 8, plate.radius + 3.0f, 22.5f, pal::kBronzeBright);
+
+            // Anello di carica fotosensibile [0..1]
+            if (plate.charge > 0.01f) {
+                DrawRing({plate.pos.x, plate.pos.y}, plate.radius - 6.0f, plate.radius - 1.5f,
+                         -90.0f, -90.0f + 360.0f * std::clamp(plate.charge, 0.0f, 1.0f), 28,
+                         pal::kSolarBeamCore);
+            }
+            // Glifo solare centrale
+            for (int r = 0; r < 8; ++r) {
+                const float ang = static_cast<float>(r) * (eco::kPi * 0.25f) + (plate.lit ? sim_time * 0.7f : 0.0f);
+                DrawLineEx(
+                    {plate.pos.x + std::cos(ang) * 6.0f, plate.pos.y + std::sin(ang) * 6.0f},
+                    {plate.pos.x + std::cos(ang) * (plate.radius * 0.58f), plate.pos.y + std::sin(ang) * (plate.radius * 0.58f)},
+                    1.8f,
+                    plate.lit ? pal::kSolarBeamCore : pal::kBronze);
+            }
+            if (plate.lit) {
+                DrawCircleV({plate.pos.x, plate.pos.y}, plate.radius * 1.45f * pulse,
+                            pal::WithAlpha(pal::kSolarBeamGlow, static_cast<unsigned char>(85.0f * pulse)));
+                DrawCircleV({plate.pos.x, plate.pos.y}, 7.0f, pal::kSolarBeamCore);
+            } else {
+                DrawCircleV({plate.pos.x, plate.pos.y}, 5.5f, pal::kBronzeDark);
+            }
+        }
+    } else if (zone == eco::ZoneId::CanalQuarter) {
+        // Correnti d'acqua direzionali animate (Quartiere dei Canali)
+        for (const auto& cur : zm.water_currents) {
+            const float cx = cur.bounds.x + cur.bounds.width * 0.5f;
+            const float cy = cur.bounds.y + cur.bounds.height * 0.5f;
+            if (std::fabs(cx - cam.x) > half_w + cur.bounds.width ||
+                std::fabs(cy - cam.y) > half_h + cur.bounds.height) {
+                continue;
+            }
+            const eco::Vec2 dir = cur.flow_dir.Normalized();
+            if (dir.LengthSquared() < 0.01f) {
+                continue;
+            }
+            const eco::Vec2 perp{-dir.y, dir.x};
+            const Color arrow_col = cur.active
+                                        ? pal::WithAlpha(pal::kCurrentArrow, static_cast<unsigned char>(150.0f + 70.0f * health))
+                                        : pal::WithAlpha(pal::kCurrentFoam, 68);
+            const float speed = cur.active ? 54.0f : 10.0f;
+            const int cols = std::max(1, static_cast<int>(cur.bounds.width / 44.0f));
+            const int rows = std::max(1, static_cast<int>(cur.bounds.height / 44.0f));
+            const float span = std::max(cur.bounds.width, cur.bounds.height);
+
+            for (int r = 0; r < rows; ++r) {
+                for (int c = 0; c < cols; ++c) {
+                    const float base_x = cur.bounds.x + (static_cast<float>(c) + 0.5f) * (cur.bounds.width / static_cast<float>(cols));
+                    const float base_y = cur.bounds.y + (static_cast<float>(r) + 0.5f) * (cur.bounds.height / static_cast<float>(rows));
+                    const float shift = std::fmod(sim_time * speed + static_cast<float>((r + c) * 19), 38.0f) - 19.0f;
+                    const float ax = std::clamp(base_x + dir.x * shift, cur.bounds.x + 8.0f, cur.bounds.Right() - 8.0f);
+                    const float ay = std::clamp(base_y + dir.y * shift, cur.bounds.y + 8.0f, cur.bounds.Bottom() - 8.0f);
+
+                    // Freccia a chevron idraulico super leggibile
+                    const Vector2 tip{ax + dir.x * 9.0f, ay + dir.y * 9.0f};
+                    const Vector2 wing_l{ax - dir.x * 5.0f + perp.x * 7.5f, ay - dir.y * 5.0f + perp.y * 7.5f};
+                    const Vector2 wing_r{ax - dir.x * 5.0f - perp.x * 7.5f, ay - dir.y * 5.0f - perp.y * 7.5f};
+                    DrawLineEx(wing_l, tip, cur.active ? 2.4f : 1.4f, arrow_col);
+                    DrawLineEx(wing_r, tip, cur.active ? 2.4f : 1.4f, arrow_col);
+                    if (cur.active && span > 64.0f) {
+                        DrawLineEx({ax - dir.x * 12.0f, ay - dir.y * 12.0f}, {ax + dir.x * 3.0f, ay + dir.y * 3.0f},
+                                   1.6f, pal::WithAlpha(pal::kCurrentFoam, 115));
+                    }
+                }
+            }
+        }
+    } else if (zone == eco::ZoneId::WindPlateau) {
+        // Zone d'ombra frangivento sottovento dietro ciascun monolite (Altopiano dei Venti)
+        const bool show_shelter = zm.wind.telegraphing || zm.wind.gust_active || zm.wind.gust_intensity > 0.08f;
+        const eco::Vec2 wdir = zm.wind.wind_dir.Normalized();
+        const eco::Vec2 wperp{-wdir.y, wdir.x};
+        const float shelter_alpha = show_shelter ? (0.45f + 0.55f * std::max(zm.wind.gust_intensity, zm.wind.telegraphing ? 0.55f : 0.0f)) : 0.18f;
+
+        for (const auto& wb : zm.windbreaks) {
+            if (std::fabs(wb.center.x - cam.x) > half_w + wb.shelter_distance ||
+                std::fabs(wb.center.y - cam.y) > half_h + wb.shelter_distance) {
+                continue;
+            }
+            const float half_span = std::max(wb.bounds.width, wb.bounds.height) * 0.55f;
+            const Vector2 p0{wb.center.x + wperp.x * half_span, wb.center.y + wperp.y * half_span};
+            const Vector2 p1{wb.center.x - wperp.x * half_span, wb.center.y - wperp.y * half_span};
+            const Vector2 p2{wb.center.x + wdir.x * wb.shelter_distance - wperp.x * (half_span * 0.72f),
+                             wb.center.y + wdir.y * wb.shelter_distance - wperp.y * (half_span * 0.72f)};
+            const Vector2 p3{wb.center.x + wdir.x * wb.shelter_distance + wperp.x * (half_span * 0.72f),
+                             wb.center.y + wdir.y * wb.shelter_distance + wperp.y * (half_span * 0.72f)};
+
+            const Color fill = pal::WithAlpha(pal::kWindbreakShelter, static_cast<unsigned char>(58.0f * shelter_alpha));
+            const Color rim = pal::WithAlpha(pal::kJadeGlow, static_cast<unsigned char>(135.0f * shelter_alpha));
+            DrawTriangle(p0, p1, p2, fill);
+            DrawTriangle(p0, p2, p3, fill);
+            DrawLineEx(p0, p3, 1.8f, rim);
+            DrawLineEx(p1, p2, 1.8f, rim);
+            DrawLineEx(p3, p2, 1.6f, pal::WithAlpha(rim, static_cast<unsigned char>(100.0f * shelter_alpha)));
+        }
+    } else if (zone == eco::ZoneId::HangingGardens) {
+        // Piastre di risonanza armonica (Giardini Sospesi)
+        for (const auto& pad : zm.resonance_pads) {
+            if (std::fabs(pad.pos.x - cam.x) > half_w || std::fabs(pad.pos.y - cam.y) > half_h) {
+                continue;
+            }
+            const Color note_col = pal::ResonanceOrderColor(pad.sequence_order);
+            const bool is_next = !zm.jade_bridge_unlocked && !pad.activated && (pad.sequence_order == zm.resonance_next_order);
+            const float pulse = 0.5f + 0.5f * std::sin(sim_time * 3.8f + static_cast<float>(pad.sequence_order));
+
+            DrawCircleV({pad.pos.x, pad.pos.y}, pad.radius + 3.0f, pal::kBasaltDark);
+            DrawCircleV({pad.pos.x, pad.pos.y}, pad.radius, pad.activated ? pal::LerpColor(pal::kResonancePadIdle, note_col, 0.55f) : pal::kResonancePadIdle);
+            DrawRing({pad.pos.x, pad.pos.y}, pad.radius - 3.5f, pad.radius + 1.0f, 0.0f, 360.0f, 28,
+                     pad.activated ? note_col : pal::kBronze);
+            DrawRing({pad.pos.x, pad.pos.y}, pad.radius * 0.45f, pad.radius * 0.54f, 0.0f, 360.0f, 24,
+                     pal::WithAlpha(note_col, pad.activated ? 235 : 135));
+
+            // Pallini numerati 1..4 per comunicare chiaramente l'ordine della sequenza
+            const int dots = pad.sequence_order + 1;
+            const float spacing = 8.0f;
+            const float start_x = pad.pos.x - static_cast<float>(dots - 1) * spacing * 0.5f;
+            for (int d = 0; d < dots; ++d) {
+                DrawCircleV({start_x + static_cast<float>(d) * spacing, pad.pos.y},
+                            3.0f,
+                            pad.activated ? pal::kStoneIvory : note_col);
+            }
+
+            // Suggerimento discreto sulla prossima piastra della sequenza
+            if (is_next) {
+                DrawRing({pad.pos.x, pad.pos.y}, pad.radius + 3.0f + pulse * 6.0f, pad.radius + 5.5f + pulse * 6.0f,
+                         0.0f, 360.0f, 28, pal::WithAlpha(note_col, static_cast<unsigned char>(165.0f * (1.0f - pulse * 0.5f))));
+            }
+            // Onda acustica espansiva al passaggio del player
+            if (pad.pulse_timer > 0.01f) {
+                const float wave_t = std::clamp(1.0f - pad.pulse_timer / 0.85f, 0.0f, 1.0f);
+                const float wr = pad.radius + wave_t * 48.0f;
+                DrawRing({pad.pos.x, pad.pos.y}, wr, wr + 3.0f, 0.0f, 360.0f, 32,
+                         pal::WithAlpha(note_col, static_cast<unsigned char>((1.0f - wave_t) * 220.0f)));
+            }
+        }
+    } else if (zone == eco::ZoneId::FumaroleCaldera) {
+        // Bocche fumarole con telegraphing termico super leggibile (Caldera delle Fumarole)
+        for (const auto& g : zm.geysers) {
+            if (std::fabs(g.pos.x - cam.x) > half_w + g.radius || std::fabs(g.pos.y - cam.y) > half_h + g.radius) {
+                continue;
+            }
+            // Cratere esagonale in basalto
+            DrawPoly({g.pos.x, g.pos.y}, 6, 22.0f, 30.0f, pal::kBasaltDark);
+            DrawPoly({g.pos.x, g.pos.y}, 6, 17.0f, 30.0f, pal::kFumaroleDormant);
+            DrawPolyLines({g.pos.x, g.pos.y}, 6, 22.0f, 30.0f, pal::kValveCopper);
+
+            if (g.phase == eco::GeyserPhase::Calmed) {
+                DrawCircleV({g.pos.x, g.pos.y}, 11.0f, pal::WithAlpha(pal::kFumaroleCalmed, 165));
+                DrawRing({g.pos.x, g.pos.y}, 14.0f, 17.0f, 0.0f, 360.0f, 24, pal::WithAlpha(pal::kJadeGlow, 150));
+            } else if (g.phase == eco::GeyserPhase::Telegraphing) {
+                const float warn = std::clamp(g.intensity, 0.15f, 1.0f);
+                const float jitter = std::sin(sim_time * 28.0f + static_cast<float>(g.id) * 2.0f) * 2.5f;
+                const float inner_r = g.radius * warn;
+                DrawCircleV({g.pos.x, g.pos.y}, g.radius, pal::WithAlpha(pal::kFumaroleTelegraph, static_cast<unsigned char>(36.0f + 44.0f * warn)));
+                DrawRing({g.pos.x, g.pos.y}, g.radius - 2.5f, g.radius + 1.0f, 0.0f, 360.0f, 32,
+                         pal::WithAlpha(pal::kFumaroleTelegraph, static_cast<unsigned char>(170.0f + 70.0f * warn)));
+                DrawRing({g.pos.x + jitter * 0.4f, g.pos.y}, std::max(6.0f, inner_r - 3.0f), inner_r, 0.0f, 360.0f, 28,
+                         pal::WithAlpha(pal::kFumaroleErupt, 210));
+                DrawCircleV({g.pos.x, g.pos.y}, 10.0f + warn * 4.0f, pal::kFumaroleTelegraph);
+            } else if (g.phase == eco::GeyserPhase::Erupting) {
+                const float erupt = std::clamp(g.intensity, 0.4f, 1.0f);
+                DrawCircleV({g.pos.x, g.pos.y}, g.radius * (0.95f + 0.08f * std::sin(sim_time * 18.0f)),
+                            pal::WithAlpha(pal::kFumaroleErupt, static_cast<unsigned char>(95.0f * erupt * (0.5f + 0.5f * weather_scale))));
+                DrawRing({g.pos.x, g.pos.y}, g.radius - 3.0f, g.radius + 2.0f, 0.0f, 360.0f, 32, pal::kFumaroleErupt);
+                DrawCircleV({g.pos.x, g.pos.y}, 13.0f, pal::kSolarBeamCore);
+            } else {
+                // Dormant: brace quieta
+                const float ember = 0.5f + 0.5f * std::sin(sim_time * 2.0f + static_cast<float>(g.id));
+                DrawCircleV({g.pos.x, g.pos.y}, 7.0f, pal::WithAlpha(pal::kFumaroleErupt, static_cast<unsigned char>(75.0f + 45.0f * ember)));
+            }
+        }
+    } else if (zone == eco::ZoneId::HarmonySanctuary) {
+        // 5 Sigilli Armonici radiali + linee geodetiche verso l'Astrolabio Centrale
+        const eco::Machine& astro = world.GetMachine(eco::MachineType::CentralAstrolabe);
+        for (std::size_t i = 0; i < zm.sanctuary_seals.size(); ++i) {
+            const auto& seal = zm.sanctuary_seals[i];
+            if (std::fabs(seal.pos.x - cam.x) > half_w + 80.0f || std::fabs(seal.pos.y - cam.y) > half_h + 80.0f) {
+                continue;
+            }
+            const Color col = pal::SanctuarySealColor(static_cast<int>(i));
+            const float g = std::clamp(seal.glow, 0.0f, 1.0f);
+            const float pulse = 0.7f + 0.3f * std::sin(sim_time * 3.0f + static_cast<float>(i));
+
+            // Linea armonica che collega il sigillo all'Astrolabio Centrale
+            DrawLineEx(
+                {seal.pos.x, seal.pos.y},
+                {astro.pos.x, astro.pos.y},
+                seal.attuned ? 4.2f : 1.6f,
+                pal::WithAlpha(col, static_cast<unsigned char>(seal.attuned ? (140.0f + 95.0f * pulse) : 52.0f)));
+            if (seal.attuned) {
+                DrawLineEx({seal.pos.x, seal.pos.y}, {astro.pos.x, astro.pos.y}, 1.8f, pal::WithAlpha(pal::kStoneIvory, 210));
+            }
+
+            // Medaglione del sigillo
+            DrawCircleV({seal.pos.x, seal.pos.y}, seal.radius, pal::WithAlpha(pal::kBasaltDark, 195));
+            DrawRing({seal.pos.x, seal.pos.y}, seal.radius - 4.0f, seal.radius, 0.0f, 360.0f, 32,
+                     seal.attuned ? col : pal::kBronze);
+            DrawPolyLines({seal.pos.x, seal.pos.y}, 6, seal.radius * 0.65f, sim_time * (seal.attuned ? 22.0f : 5.0f),
+                          pal::WithAlpha(col, static_cast<unsigned char>(115.0f + 135.0f * g)));
+            if (seal.attuned) {
+                DrawCircleV({seal.pos.x, seal.pos.y}, seal.radius * 1.15f * pulse,
+                            pal::WithAlpha(col, static_cast<unsigned char>(62.0f * pulse)));
+                DrawCircleV({seal.pos.x, seal.pos.y}, 8.5f, pal::kStoneIvory);
+            } else {
+                DrawCircleV({seal.pos.x, seal.pos.y}, 5.5f, pal::WithAlpha(col, 145));
+            }
         }
     }
-    for (const auto& npc : world.npcs) {
-        if (npc.location == eco::LocationId::Overworld && pos.DistanceTo(npc.pos) < 82.0f) {
-            return false;
+}
+
+void DrawZoneMechanicsElevated(const eco::WorldContext& world, eco::Vec2 cam, float half_w, float half_h) {
+    const eco::ZoneId zone = world.overworld.active_zone;
+    const eco::ZoneMechanicState& zm = world.zone_mechanics;
+    const float sim_time = world.sim_time;
+    const float poll = world.ecosystem.PollutionRatio();
+    const auto& env_cfg = GetEnvironmentEffectsConfig();
+    const float sun_scale = env_cfg.atmosphere_enabled ? std::clamp(env_cfg.sun_rays_intensity, 0.25f, 1.25f) : 0.45f;
+    const float weather_scale = env_cfg.atmosphere_enabled ? std::clamp(env_cfg.zone_weather_intensity, 0.2f, 1.25f) : 0.35f;
+
+    if (zone == eco::ZoneId::DawnTerraces) {
+        // 1. Emettitore Eliostatico Solare
+        const eco::Vec2 ep = zm.solar_emitter_pos;
+        if (std::fabs(ep.x - cam.x) <= half_w && std::fabs(ep.y - cam.y) <= half_h) {
+            const float pulse = 0.78f + 0.22f * std::sin(sim_time * 3.5f);
+            DrawEllipse(static_cast<int>(ep.x + 3.0f), static_cast<int>(ep.y + 12.0f), 19.0f, 8.0f, Color{0, 0, 0, 110});
+            DrawPoly({ep.x, ep.y}, 8, 17.0f, 22.5f, pal::kBronzeDark);
+            DrawPoly({ep.x, ep.y}, 8, 13.0f, 22.5f, pal::kBronze);
+            DrawCircleV({ep.x, ep.y}, 15.0f * pulse, pal::WithAlpha(pal::kSolarBeamGlow, static_cast<unsigned char>(110.0f * sun_scale)));
+            DrawCircleV({ep.x, ep.y}, 6.5f, pal::kSolarBeamCore);
+        }
+
+        // 2. Fasci Solari luminosi (multi-strato + particelle di luce che scorrono lungo il raggio)
+        for (const auto& seg : zm.solar_beams) {
+            if (!seg.active) {
+                continue;
+            }
+            const Vector2 a{seg.start.x, seg.start.y};
+            const Vector2 b{seg.end.x, seg.end.y};
+            DrawLineEx(a, b, 14.0f, pal::WithAlpha(pal::kSolarBeamGlow, static_cast<unsigned char>(48.0f * sun_scale)));
+            DrawLineEx(a, b, 6.5f, pal::WithAlpha(pal::kAmberGlow, static_cast<unsigned char>(165.0f * sun_scale)));
+            DrawLineEx(a, b, 2.8f, pal::kSolarBeamCore);
+
+            const eco::Vec2 delta = seg.end - seg.start;
+            const float len = delta.Length();
+            if (len > 24.0f) {
+                const int motes = std::clamp(static_cast<int>(len / 68.0f), 1, 8);
+                for (int m = 0; m < motes; ++m) {
+                    const float t = std::fmod(sim_time * 0.65f + static_cast<float>(m) / static_cast<float>(motes), 1.0f);
+                    const Vector2 mp{seg.start.x + delta.x * t, seg.start.y + delta.y * t};
+                    DrawCircleV(mp, 3.6f, pal::WithAlpha(pal::kSolarBeamCore, 230));
+                }
+            }
+            DrawCircleV(b, 7.5f, pal::WithAlpha(pal::kSolarBeamGlow, static_cast<unsigned char>(135.0f * sun_scale)));
+        }
+
+        // 3. Specchi Solari orientabili [E]
+        for (const auto& m : zm.solar_mirrors) {
+            if (std::fabs(m.pos.x - cam.x) > half_w || std::fabs(m.pos.y - cam.y) > half_h) {
+                continue;
+            }
+            const eco::Vec2 dir = MirrorDirVector(m.dir_index);
+            const eco::Vec2 perp{-dir.y, dir.x};
+            const bool near_player = NearestActivePlayerDistance(world, m.pos) <= m.interact_radius;
+
+            DrawEllipse(static_cast<int>(m.pos.x + 3.0f), static_cast<int>(m.pos.y + 11.0f), 16.0f, 6.5f, Color{0, 0, 0, 108});
+            DrawPoly({m.pos.x, m.pos.y}, 8, 15.0f, 22.5f, pal::kBronzeDark);
+            DrawPoly({m.pos.x, m.pos.y}, 8, 11.5f, 22.5f, pal::kBronze);
+
+            // Lama dello specchio orientata + freccia direzione raggio riflesso
+            const Vector2 blade_a{m.pos.x + perp.x * 13.0f - dir.x * 4.0f, m.pos.y + perp.y * 13.0f - dir.y * 4.0f};
+            const Vector2 blade_b{m.pos.x - perp.x * 13.0f - dir.x * 4.0f, m.pos.y - perp.y * 13.0f - dir.y * 4.0f};
+            DrawLineEx(blade_a, blade_b, 5.5f, pal::kBronzeBright);
+            DrawLineEx(blade_a, blade_b, 2.8f, pal::kMirrorSilver);
+
+            // Punta emissiva nella direzione attiva del raggio
+            const Vector2 nozzle{m.pos.x + dir.x * 14.0f, m.pos.y + dir.y * 14.0f};
+            DrawLineEx({m.pos.x, m.pos.y}, nozzle, 3.0f, pal::kSolarBeamCore);
+            DrawCircleV(nozzle, 3.6f, pal::kAmberGlow);
+
+            if (near_player && m.rotatable) {
+                const float pulse = 0.65f + 0.35f * std::sin(sim_time * 6.0f);
+                DrawRing({m.pos.x, m.pos.y}, 21.0f, 23.5f, 0.0f, 360.0f, 24,
+                         pal::WithAlpha(pal::kSolarBeamCore, static_cast<unsigned char>(195.0f * pulse)));
+            }
+        }
+    } else if (zone == eco::ZoneId::CanalQuarter) {
+        // Leve / Chiuse Idrauliche [E]
+        for (const auto& lev : zm.sluice_levers) {
+            if (std::fabs(lev.pos.x - cam.x) > half_w || std::fabs(lev.pos.y - cam.y) > half_h) {
+                continue;
+            }
+            const bool near_player = NearestActivePlayerDistance(world, lev.pos) <= lev.interact_radius;
+            const Color state_col = lev.pulled ? pal::kSluiceOpen : pal::kSluiceClosed;
+
+            DrawEllipse(static_cast<int>(lev.pos.x + 3.0f), static_cast<int>(lev.pos.y + 10.0f), 16.0f, 6.5f, Color{0, 0, 0, 108});
+            DrawRectangle(static_cast<int>(lev.pos.x - 13.0f), static_cast<int>(lev.pos.y - 6.0f), 26, 16, pal::kBasaltMid);
+            DrawRectangleLines(static_cast<int>(lev.pos.x - 13.0f), static_cast<int>(lev.pos.y - 6.0f), 26, 16, pal::kBronze);
+
+            // Braccio della leva inclinato a sinistra o destra
+            const float tilt = lev.pulled ? 12.0f : -12.0f;
+            DrawLineEx({lev.pos.x, lev.pos.y}, {lev.pos.x + tilt, lev.pos.y - 20.0f}, 4.0f, pal::kBronzeBright);
+            DrawCircleV({lev.pos.x + tilt, lev.pos.y - 21.0f}, 5.5f, state_col);
+            DrawCircleV({lev.pos.x + tilt, lev.pos.y - 21.0f}, 2.4f, pal::kStoneIvory);
+            DrawCircleV({lev.pos.x, lev.pos.y + 3.0f}, 3.5f, state_col);
+
+            if (near_player) {
+                const float pulse = 0.65f + 0.35f * std::sin(sim_time * 6.0f);
+                DrawRing({lev.pos.x, lev.pos.y}, 21.0f, 23.5f, 0.0f, 360.0f, 24,
+                         pal::WithAlpha(state_col, static_cast<unsigned char>(205.0f * pulse)));
+            }
+        }
+    } else if (zone == eco::ZoneId::WindPlateau) {
+        // 1. Monoliti Frangivento 2.5D scolpiti a spirale
+        const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
+        const Color m_top = pal::WorldColor(dp.wall_top_sick, pal::kWindMonolithStone, poll);
+        const Color m_front = pal::WorldColor(dp.wall_front_sick, dp.wall_front_healthy, poll);
+        const Color m_edge = pal::WorldColor(dp.wall_edge_sick, dp.wall_edge_healthy, poll);
+
+        for (const auto& wb : zm.windbreaks) {
+            if (std::fabs(wb.center.x - cam.x) > half_w + 64.0f || std::fabs(wb.center.y - cam.y) > half_h + 64.0f) {
+                continue;
+            }
+            const int x = static_cast<int>(wb.bounds.x);
+            const int y = static_cast<int>(wb.bounds.y);
+            const int w = static_cast<int>(wb.bounds.width);
+            const int h = static_cast<int>(wb.bounds.height);
+
+            // Ombra portata
+            DrawRectangle(x + 6, y + 10, w, h, Color{0, 0, 0, 95});
+            // Corpo 2.5D elevato sopra il terreno
+            DrawRectangle(x, y - 14, w, h, m_top);
+            DrawRectangle(x, y + h - 14, w, 14, m_front);
+            DrawRectangleLines(x, y - 14, w, h + 14, m_edge);
+            // Fregio a spirale del vento in bronzo
+            DrawRing({wb.center.x, wb.center.y - 10.0f}, 7.0f, 10.0f, 0.0f, 300.0f, 18, pal::kBronzeBright);
+            DrawCircleV({wb.center.x, wb.center.y - 10.0f}, 3.2f, pal::kWindStreak);
+        }
+
+        // 2. Linee di raffica / telegraphing del vento nel viewport
+        if (zm.wind.telegraphing || zm.wind.gust_active || zm.wind.gust_intensity > 0.08f) {
+            const eco::Vec2 wdir = zm.wind.wind_dir.Normalized();
+            const float inten = zm.wind.gust_active ? std::clamp(zm.wind.gust_intensity, 0.3f, 1.0f) : 0.45f;
+            const Color streak_col = zm.wind.gust_active
+                                         ? pal::WithAlpha(pal::kWindStreak, static_cast<unsigned char>(150.0f * inten * weather_scale))
+                                         : pal::WithAlpha(pal::kWindTelegraph, static_cast<unsigned char>(120.0f * weather_scale));
+            const int streak_count = zm.wind.gust_active ? 18 : 9;
+            const float speed = zm.wind.gust_active ? 460.0f : 190.0f;
+
+            for (int i = 0; i < streak_count; ++i) {
+                const float seed_x = Hash2Float01(i, 11, 701) * (half_w * 2.0f) - half_w;
+                const float seed_y = Hash2Float01(i, 29, 709) * (half_h * 2.0f) - half_h;
+                const float travel = std::fmod(sim_time * speed + static_cast<float>(i) * 97.0f, half_w * 2.0f);
+                const float sx = cam.x + std::fmod(seed_x + wdir.x * travel + half_w * 3.0f, half_w * 2.0f) - half_w;
+                const float sy = cam.y + std::fmod(seed_y + wdir.y * travel + half_h * 3.0f, half_h * 2.0f) - half_h;
+                const float len = zm.wind.gust_active ? (48.0f + 46.0f * inten) : 34.0f;
+                DrawLineEx({sx, sy}, {sx + wdir.x * len, sy + wdir.y * len}, zm.wind.gust_active ? 2.4f : 1.6f, streak_col);
+            }
+        }
+    } else if (zone == eco::ZoneId::HangingGardens) {
+        // Scintille/note armoniche verticali sopra le piastre attive
+        for (const auto& pad : zm.resonance_pads) {
+            if (!pad.activated && pad.pulse_timer <= 0.01f) {
+                continue;
+            }
+            if (std::fabs(pad.pos.x - cam.x) > half_w || std::fabs(pad.pos.y - cam.y) > half_h) {
+                continue;
+            }
+            const Color col = pal::ResonanceOrderColor(pad.sequence_order);
+            const float lift = std::fmod(sim_time * 24.0f + static_cast<float>(pad.sequence_order * 9), 26.0f);
+            DrawEllipseLines(static_cast<int>(pad.pos.x), static_cast<int>(pad.pos.y - lift),
+                             14.0f, 6.0f, pal::WithAlpha(col, static_cast<unsigned char>((1.0f - lift / 26.0f) * 195.0f)));
+        }
+    } else if (zone == eco::ZoneId::FumaroleCaldera) {
+        // 1. Pennacchi di vapore / getti termici dei geyser
+        for (const auto& g : zm.geysers) {
+            if (std::fabs(g.pos.x - cam.x) > half_w + 64.0f || std::fabs(g.pos.y - cam.y) > half_h + 64.0f) {
+                continue;
+            }
+            if (g.phase == eco::GeyserPhase::Erupting) {
+                const float erupt = std::clamp(g.intensity, 0.4f, 1.0f);
+                for (int p = 0; p < 5; ++p) {
+                    const float phase = std::fmod(sim_time * 2.4f + static_cast<float>(p) * 0.2f + static_cast<float>(g.id) * 0.13f, 1.0f);
+                    const float py = g.pos.y - 6.0f - phase * 62.0f * erupt;
+                    const float px = g.pos.x + std::sin(sim_time * 8.0f + phase * 6.0f) * 8.0f;
+                    const float r = (10.0f + phase * 18.0f) * erupt;
+                    const unsigned char alpha = static_cast<unsigned char>((1.0f - phase) * 185.0f * weather_scale);
+                    const Color puff = pal::LerpColor(pal::kFumaroleErupt, Color{238, 224, 212, 255}, phase);
+                    DrawCircleV({px, py}, r, pal::WithAlpha(puff, alpha));
+                }
+            } else if (g.phase == eco::GeyserPhase::Telegraphing) {
+                for (int p = 0; p < 2; ++p) {
+                    const float phase = std::fmod(sim_time * 1.4f + static_cast<float>(p) * 0.5f, 1.0f);
+                    const float py = g.pos.y - 4.0f - phase * 24.0f;
+                    DrawCircleV({g.pos.x, py}, 5.0f + phase * 7.0f,
+                                pal::WithAlpha(pal::kFumaroleTelegraph, static_cast<unsigned char>((1.0f - phase) * 120.0f * weather_scale)));
+                }
+            }
+        }
+
+        // 2. Valvole di sfogo in rame ossidato [E]
+        for (const auto& v : zm.relief_valves) {
+            if (std::fabs(v.pos.x - cam.x) > half_w || std::fabs(v.pos.y - cam.y) > half_h) {
+                continue;
+            }
+            const bool near_player = NearestActivePlayerDistance(world, v.pos) <= v.interact_radius;
+            const Color state_col = v.open ? pal::kFumaroleCalmed : pal::kFumaroleTelegraph;
+
+            DrawEllipse(static_cast<int>(v.pos.x + 3.0f), static_cast<int>(v.pos.y + 10.0f), 15.0f, 6.0f, Color{0, 0, 0, 115});
+            DrawPoly({v.pos.x, v.pos.y + 2.0f}, 6, 14.0f, 30.0f, pal::kBasaltMid);
+            DrawRing({v.pos.x, v.pos.y - 6.0f}, 9.0f, 13.0f, 0.0f, 360.0f, 20, pal::kValveCopper);
+            const float spin = v.open ? (sim_time * 1.6f) : 0.4f;
+            for (int sp = 0; sp < 4; ++sp) {
+                const float ang = spin + static_cast<float>(sp) * (eco::kPi * 0.5f);
+                DrawLineEx({v.pos.x, v.pos.y - 6.0f},
+                           {v.pos.x + std::cos(ang) * 11.0f, v.pos.y - 6.0f + std::sin(ang) * 11.0f},
+                           2.4f, pal::kBronzeBright);
+            }
+            DrawCircleV({v.pos.x, v.pos.y - 6.0f}, 4.5f, state_col);
+
+            if (near_player) {
+                const float pulse = 0.65f + 0.35f * std::sin(sim_time * 6.0f);
+                DrawRing({v.pos.x, v.pos.y}, 21.0f, 23.5f, 0.0f, 360.0f, 24,
+                         pal::WithAlpha(state_col, static_cast<unsigned char>(205.0f * pulse)));
+            }
+        }
+    } else if (zone == eco::ZoneId::HarmonySanctuary) {
+        // Cristalli/colonne di luce sopra i sigilli accordati
+        for (std::size_t i = 0; i < zm.sanctuary_seals.size(); ++i) {
+            const auto& seal = zm.sanctuary_seals[i];
+            if (!seal.attuned) {
+                continue;
+            }
+            if (std::fabs(seal.pos.x - cam.x) > half_w || std::fabs(seal.pos.y - cam.y) > half_h) {
+                continue;
+            }
+            const Color col = pal::SanctuarySealColor(static_cast<int>(i));
+            const float hover = std::sin(sim_time * 2.8f + static_cast<float>(i)) * 4.0f;
+            DrawLineEx({seal.pos.x, seal.pos.y}, {seal.pos.x, seal.pos.y - 34.0f}, 6.0f, pal::WithAlpha(col, 62));
+            DrawPoly({seal.pos.x, seal.pos.y - 18.0f + hover}, 4, 8.5f, 45.0f, col);
+            DrawPolyLines({seal.pos.x, seal.pos.y - 18.0f + hover}, 4, 8.5f, 45.0f, pal::kStoneIvory);
         }
     }
-    for (const auto& p : world.overworld.portals) {
-        if (pos.DistanceTo(p.world_center) < 112.0f || pos.DistanceTo(p.exit_spawn) < 76.0f) {
-            return false;
-        }
-    }
-    for (const auto& item : world.collectibles.Items()) {
-        if (item.location == eco::LocationId::Overworld && pos.DistanceTo(item.pos) < 66.0f) {
-            return false;
-        }
-    }
-    // Non posizionare alberi a ridosso del Ponte degli Archi
-    const float bridge_x = (static_cast<float>(eco::Tilemap::kBridgeDividerCol) + 0.5f) * eco::kTileSize;
-    if (std::fabs(pos.x - bridge_x) < 92.0f && pos.y > 14.0f * eco::kTileSize && pos.y < 20.0f * eco::kTileSize) {
-        return false;
-    }
-    return true;
 }
 
 // =============================================================================
@@ -598,7 +1088,6 @@ void DrawStructurePortalTile(
     const int pad_r = right_is_portal ? 0 : 6;
 
     if (sid == eco::StructureId::HypogeanCisterns) {
-        // Portale Idraulico: grande arco calcareo continuo + cascata turchese + chiave di volta
         const Color stone = pal::WorldColor(Color{76, 72, 68, 255}, Color{134, 152, 162, 255}, poll);
         const Color water_glow = pal::LerpColor(
             pal::WorldColor(Color{74, 96, 84, 255}, Color{42, 158, 208, 255}, poll),
@@ -611,7 +1100,6 @@ void DrawStructurePortalTile(
             DrawLineEx({static_cast<float>(rx + pad_l + 3), sy},
                        {static_cast<float>(rx + tile_px - pad_r - 3), sy}, 2.2f, water_glow);
         }
-        // Architrave superiore e cornice continua
         DrawLineEx({static_cast<float>(rx + pad_l), static_cast<float>(ry + 6)},
                    {static_cast<float>(rx + tile_px - pad_r), static_cast<float>(ry + 6)}, 2.5f, water_glow);
         DrawLineEx({static_cast<float>(rx + pad_l), static_cast<float>(ry + tile_px - 2)},
@@ -625,12 +1113,10 @@ void DrawStructurePortalTile(
                        {static_cast<float>(rx + tile_px - 5), static_cast<float>(ry + tile_px - 2)}, 2.5f, pal::kBronzeBright);
         }
         if (right_is_portal) {
-            // Chiave di volta centrale a cavallo dei due tile del portale
             DrawRectangle(rx + tile_px - 6, ry + 1, 12, 8, pal::ShiftBrightness(stone, 28));
             DrawCircle(rx + tile_px, ry + 5, 2.5f, water_glow);
         }
     } else if (sid == eco::StructureId::PendulumTower) {
-        // Portale Osservatorio: doppio arco in pietra chiara + quadrante astronomico + luce dorata
         const Color stone = pal::WorldColor(Color{84, 78, 72, 255}, Color{152, 154, 152, 255}, poll);
         const Color gold_glow = pal::LerpColor(pal::kBronze, pal::kAmberGlow, pulse * (0.4f + 0.6f * health));
         DrawRectangle(rx, ry, tile_px, tile_px, stone);
@@ -646,7 +1132,6 @@ void DrawStructurePortalTile(
                        {static_cast<float>(rx + tile_px - 5), static_cast<float>(ry + tile_px - 2)}, 2.5f, gold_glow);
         }
         if (right_is_portal) {
-            // Pendolo monumentale al centro del doppio portale
             const float cx = static_cast<float>(rx + tile_px);
             const float cy = static_cast<float>(ry + 12);
             DrawCircleLines(static_cast<int>(cx), static_cast<int>(cy), 11.0f, gold_glow);
@@ -655,7 +1140,6 @@ void DrawStructurePortalTile(
             DrawCircleV({cx + swing, static_cast<float>(ry + tile_px - 8)}, 3.6f, pal::kBronzeBright);
         }
     } else {
-        // Portale Camera Geotermica: grande arco di basalto + rame + onde di calore ascendenti
         const Color basalt = pal::WorldColor(Color{62, 50, 46, 255}, Color{78, 84, 94, 255}, poll);
         const Color thermal = pal::LerpColor(
             pal::WorldColor(Color{198, 78, 36, 255}, Color{226, 152, 72, 255}, poll),
@@ -699,7 +1183,6 @@ void DrawCisternsBackdrop(
     const Color water_fall = pal::WorldColor(sp.liquid_sick, sp.liquid_healthy, poll);
     const Color foam = pal::WorldColor(pal::kSickWaterFoam, pal::kHealthyWaterFoam, poll);
 
-    // Piano 1 (lontano): grandi volte idrauliche e arcate in pietra
     const float p_far = parallax_x * 0.55f;
     for (int i = -1; i < 10; ++i) {
         const int ax = static_cast<int>(60.0f + static_cast<float>(i) * 210.0f - p_far);
@@ -708,12 +1191,10 @@ void DrawCisternsBackdrop(
         DrawRing({static_cast<float>(ax + 124), 155.0f}, 76.0f, 88.0f, 180.0f, 360.0f, 24, pal::ShiftBrightness(arch_far, 14));
     }
 
-    // Piano 2 (medio): contrafforti scolpiti, condotte in bronzo e cascate luminose
     for (int i = -1; i < 9; ++i) {
         const int px = static_cast<int>(100.0f + static_cast<float>(i) * 240.0f - parallax_x);
         DrawRectangle(px, 48, 52, world_h - 136, arch_near);
         DrawRectangleLines(px, 48, 52, world_h - 136, pal::ShiftBrightness(arch_near, 18));
-        // Fasce in bronzo attorno ai pilastri
         DrawRectangle(px - 2, 160, 56, 6, pal::WithAlpha(pal::kBronze, 175));
         DrawRectangle(px - 2, 360, 56, 6, pal::WithAlpha(pal::kBronze, 175));
 
@@ -727,13 +1208,11 @@ void DrawCisternsBackdrop(
                 const float sx = static_cast<float>(wx + 6 + (st % 4) * 6);
                 DrawLineEx({sx, sy}, {sx, sy + 36.0f}, 2.2f, foam);
             }
-            // Nebbia/spruzzo alla base della cascata
             const float mist_r = 22.0f + 5.0f * std::sin(sim_time * 3.0f + static_cast<float>(i));
             DrawEllipse(wx + 16, world_h - 102, mist_r, 8.0f, pal::WithAlpha(foam, static_cast<unsigned char>(65.0f + 45.0f * health)));
         }
     }
 
-    // Bacino idraulico riflettente lungo il fondo
     DrawRectangle(48, world_h - 108, world_w - 96, 24, pal::WithAlpha(water_fall, 175));
     for (int x = 64; x < world_w - 96; x += 68) {
         const float dx = std::sin(sim_time * 2.4f + static_cast<float>(x) * 0.03f) * 6.0f;
@@ -755,13 +1234,11 @@ void DrawPendulumTowerBackdrop(
     const Color dial_col = pal::WorldColor(sp.accent_sick, sp.accent_healthy, poll);
     const Color beam_col = pal::WorldColor(sp.liquid_sick, sp.liquid_healthy, poll);
 
-    // Piano 1 (lontano): grandi oculi astronomici in alto + finestre ad arco centrali e fasci di luce
     const float p_far = parallax_x * 0.45f;
     for (int i = 0; i < 6; ++i) {
         const float cx = 190.0f + static_cast<float>(i) * 290.0f - p_far;
         const float cy_top = 185.0f;
         const float cy_mid = 435.0f;
-        // Fascio di luce diagonale che scende dall'alto fino al pavimento
         const unsigned char beam_a = static_cast<unsigned char>(18.0f + 26.0f * health);
         DrawTriangle(
             {cx - 38.0f, cy_top},
@@ -774,7 +1251,6 @@ void DrawPendulumTowerBackdrop(
             {cx + 55.0f, static_cast<float>(world_h - 96)},
             pal::WithAlpha(beam_col, beam_a));
 
-        // Oculo circolare superiore con raggiera in bronzo
         DrawCircleV({cx, cy_top}, 52.0f, pal::WithAlpha(beam_col, static_cast<unsigned char>(36.0f + 46.0f * health)));
         DrawRing({cx, cy_top}, 46.0f, 54.0f, 0.0f, 360.0f, 32, arch_near);
         DrawRing({cx, cy_top}, 42.0f, 45.0f, 0.0f, 360.0f, 28, pal::WithAlpha(dial_col, 150));
@@ -787,7 +1263,6 @@ void DrawPendulumTowerBackdrop(
                 pal::WithAlpha(dial_col, 125));
         }
 
-        // Grande quadrante astronomico e finestra ad arco a mezza altezza (ben visibile anche dal basso!)
         DrawCircleV({cx, cy_mid}, 34.0f, pal::WithAlpha(beam_col, static_cast<unsigned char>(24.0f + 32.0f * health)));
         DrawRectangle(static_cast<int>(cx - 34.0f), static_cast<int>(cy_mid), 68, 92,
                       pal::WithAlpha(beam_col, static_cast<unsigned char>(18.0f + 22.0f * health)));
@@ -799,18 +1274,15 @@ void DrawPendulumTowerBackdrop(
         DrawLineEx({cx - 34.0f, cy_mid + 36.0f}, {cx + 34.0f, cy_mid + 36.0f}, 1.4f, pal::WithAlpha(dial_col, 85));
     }
 
-    // Piano 2 (medio): pilastri dell'osservatorio, grandi archi graduati e contrappesi oscillanti
     for (int i = -1; i < 8; ++i) {
         const int px = static_cast<int>(85.0f + static_cast<float>(i) * 235.0f - parallax_x);
         DrawRectangle(px, 48, 36, world_h - 130, arch_far);
         DrawRectangle(px + 6, 48, 24, world_h - 130, arch_near);
         DrawLine(px + 6, 48, px + 6, world_h - 96, pal::ShiftBrightness(arch_near, 22));
 
-        // Arco goniometrico gigante inciso tra i pilastri
         const float arc_cx = static_cast<float>(px + 135);
         DrawRing({arc_cx, 110.0f}, 96.0f, 99.0f, 25.0f, 155.0f, 24, pal::WithAlpha(dial_col, 95));
 
-        // Contrappesi d'ottone appesi a catene che dondolano lentamente
         if ((i & 1) == 1) {
             const float sway = std::sin(sim_time * 1.15f + static_cast<float>(i)) * 8.0f;
             const float wy = 240.0f + static_cast<float>((i % 3) * 45);
@@ -820,7 +1292,6 @@ void DrawPendulumTowerBackdrop(
         }
     }
 
-    // Incisione metrica orizzontale morbida lungo la sala
     for (int gy = 144; gy < world_h - 120; gy += 96) {
         DrawLine(48, gy, world_w - 48, gy, pal::WithAlpha(dial_col, 32));
     }
@@ -839,7 +1310,6 @@ void DrawGeothermalBackdrop(
     const Color accent = pal::WorldColor(sp.accent_sick, sp.accent_healthy, poll);
     const Color pool_col = pal::WorldColor(sp.liquid_sick, sp.liquid_healthy, poll);
 
-    // Piano 1 (lontano): colonne di basalto esagonali della caverna vulcanica + vene luminose
     const float p_far = parallax_x * 0.5f;
     for (int i = -1; i < 24; ++i) {
         const std::uint32_t h = Hash2(i, 7, 313);
@@ -850,40 +1320,29 @@ void DrawGeothermalBackdrop(
         DrawRectangle(bx, top_y, bw, world_h - top_y - 96, col);
         DrawLine(bx, top_y, bx, world_h - 96, pal::ShiftBrightness(col, 14));
         if ((h & 1u) == 0u) {
-            // Vena geotermica verticale luminosa nella roccia basaltica
             const float pulse = 0.60f + 0.40f * std::sin(sim_time * 2.2f + static_cast<float>(i));
             const float vx = static_cast<float>(bx + bw / 2);
-            DrawLineEx(
-                {vx, static_cast<float>(top_y + 40)},
-                {vx + 8.0f, static_cast<float>(world_h - 110)},
-                4.5f,
-                pal::WithAlpha(accent, static_cast<unsigned char>(34.0f * pulse)));
-            DrawLineEx(
-                {vx, static_cast<float>(top_y + 40)},
-                {vx + 8.0f, static_cast<float>(world_h - 110)},
-                1.8f,
-                pal::WithAlpha(accent, static_cast<unsigned char>(115.0f * pulse)));
+            DrawLineEx({vx, static_cast<float>(top_y + 40)}, {vx + 8.0f, static_cast<float>(world_h - 110)},
+                       4.5f, pal::WithAlpha(accent, static_cast<unsigned char>(34.0f * pulse)));
+            DrawLineEx({vx, static_cast<float>(top_y + 40)}, {vx + 8.0f, static_cast<float>(world_h - 110)},
+                       1.8f, pal::WithAlpha(accent, static_cast<unsigned char>(115.0f * pulse)));
         }
     }
 
-    // Piano 2 (medio): grandi archi termali in rame ossidato e condotte verticali con scie di vapore morbide
     for (int i = -1; i < 8; ++i) {
         const int px = static_cast<int>(110.0f + static_cast<float>(i) * 245.0f - parallax_x);
-        // Arco termale tra i pilastri
         DrawRing({static_cast<float>(px + 145), 240.0f}, 96.0f, 108.0f, 180.0f, 360.0f, 22, pal::WithAlpha(basalt_near, 195));
         DrawRing({static_cast<float>(px + 145), 240.0f}, 94.0f, 97.0f, 180.0f, 360.0f, 22, pal::WithAlpha(pal::kBronze, 120));
 
         DrawRectangle(px, 48, 46, world_h - 134, basalt_near);
         DrawRectangle(px + 10, 48, 26, world_h - 134, pal::WorldColor(Color{96, 62, 46, 220}, Color{84, 114, 110, 220}, poll));
         DrawRectangleLines(px + 10, 48, 26, world_h - 134, pal::WithAlpha(pal::kBronze, 180));
-        // Giunti rivettati
         for (int ry = 110; ry < world_h - 140; ry += 96) {
             DrawRectangle(px + 6, ry, 34, 8, pal::kBronzeDark);
             DrawCircle(px + 12, ry + 4, 1.8f, accent);
             DrawCircle(px + 34, ry + 4, 1.8f, accent);
         }
 
-        // Scie di vapore morbide e volumetriche (ellissi tenui sovrapposte, mai bolle nette)
         const float sx = static_cast<float>(px + 135);
         for (int puff = 0; puff < 3; ++puff) {
             const float phase = std::fmod(sim_time * 0.28f + static_cast<float>(puff) * 0.33f + static_cast<float>(i) * 0.17f, 1.0f);
@@ -899,7 +1358,6 @@ void DrawGeothermalBackdrop(
         }
     }
 
-    // Bagliore termale morbido dal basso + pozza geotermica luminosa
     DrawRectangleGradientV(48, world_h - 220, world_w - 96, 120, Color{0, 0, 0, 0}, pal::WithAlpha(accent, 44));
     DrawRectangle(48, world_h - 108, world_w - 96, 24, pal::WithAlpha(pool_col, 195));
     for (int x = 70; x < world_w - 90; x += 64) {
@@ -908,10 +1366,397 @@ void DrawGeothermalBackdrop(
     }
 }
 
+// =============================================================================
+// Cache Procedurale Per-Zona (allocata SOLO per la zona attiva, liberata allo switch)
+// =============================================================================
+struct StaticProp {
+    float x = 0.0f;
+    float y = 0.0f;
+    float scale = 1.0f;
+    std::uint32_t h = 0;
+    unsigned roll = 0;
+};
+
+enum class FrescoKind : std::uint8_t {
+    SundialObelisk = 0,
+    HydroFountain = 1,
+    WindStele = 2,
+    AcousticBasin = 3,
+    ThermalBrazier = 4,
+    SanctuaryStatue = 5,
+    BasRelief = 6
+};
+
+struct ZoneFresco {
+    float x = 0.0f;
+    float y = 0.0f;
+    FrescoKind kind = FrescoKind::BasRelief;
+    const char* caption = "";
+};
+
+std::vector<StaticProp> g_prop_cache;
+std::vector<ZoneFresco> g_fresco_cache;
+eco::ZoneId g_cached_zone = eco::ZoneId::Count;
+int g_prop_cache_rows = -1;
+int g_prop_cache_cols = -1;
+
+[[nodiscard]] bool IsPropPositionSafe(const eco::WorldContext& world, eco::Vec2 pos) noexcept {
+    if (pos.DistanceTo(world.overworld.spawn_point) < 76.0f) {
+        return false;
+    }
+    bool blocked = false;
+    world.ForEachMachineInScene([&](const eco::Machine& m) {
+        if (pos.DistanceTo(m.pos) < 112.0f) {
+            blocked = true;
+        }
+    });
+    if (blocked) {
+        return false;
+    }
+    world.ForEachNpcInScene([&](const eco::WorldNpc& npc) {
+        if (pos.DistanceTo(npc.pos) < 80.0f) {
+            blocked = true;
+        }
+    });
+    if (blocked) {
+        return false;
+    }
+    for (const auto& p : world.overworld.portals) {
+        if (pos.DistanceTo(p.world_center) < 110.0f || pos.DistanceTo(p.exit_spawn) < 76.0f) {
+            return false;
+        }
+    }
+    for (const auto* item : world.CollectiblesInCurrentScene()) {
+        if (item != nullptr && pos.DistanceTo(item->pos) < 64.0f) {
+            return false;
+        }
+    }
+    for (const auto& gw : world.overworld.active_gateways) {
+        if (pos.DistanceTo(gw.world_center) < 136.0f) {
+            return false;
+        }
+    }
+
+    // Evita sovrapposizioni con le 6 meccaniche della zona attiva
+    const eco::ZoneId zone = world.overworld.active_zone;
+    const eco::ZoneMechanicState& zm = world.zone_mechanics;
+    if (zone == eco::ZoneId::DawnTerraces) {
+        if (pos.DistanceTo(zm.solar_emitter_pos) < 74.0f) {
+            return false;
+        }
+        for (const auto& m : zm.solar_mirrors) {
+            if (pos.DistanceTo(m.pos) < 74.0f) {
+                return false;
+            }
+        }
+        for (const auto& pl : zm.solar_plates) {
+            if (pos.DistanceTo(pl.pos) < pl.radius + 54.0f) {
+                return false;
+            }
+        }
+    } else if (zone == eco::ZoneId::CanalQuarter) {
+        for (const auto& lev : zm.sluice_levers) {
+            if (pos.DistanceTo(lev.pos) < 74.0f) {
+                return false;
+            }
+        }
+        for (const auto& cur : zm.water_currents) {
+            const float pad = 30.0f;
+            if (pos.x >= cur.bounds.x - pad && pos.x <= cur.bounds.Right() + pad &&
+                pos.y >= cur.bounds.y - pad && pos.y <= cur.bounds.Bottom() + pad) {
+                return false;
+            }
+        }
+    } else if (zone == eco::ZoneId::WindPlateau) {
+        for (const auto& wb : zm.windbreaks) {
+            if (pos.DistanceTo(wb.center) < 92.0f) {
+                return false;
+            }
+        }
+    } else if (zone == eco::ZoneId::HangingGardens) {
+        for (const auto& pad : zm.resonance_pads) {
+            if (pos.DistanceTo(pad.pos) < pad.radius + 58.0f) {
+                return false;
+            }
+        }
+    } else if (zone == eco::ZoneId::FumaroleCaldera) {
+        for (const auto& g : zm.geysers) {
+            if (pos.DistanceTo(g.pos) < g.radius + 56.0f) {
+                return false;
+            }
+        }
+        for (const auto& v : zm.relief_valves) {
+            if (pos.DistanceTo(v.pos) < 74.0f) {
+                return false;
+            }
+        }
+    } else if (zone == eco::ZoneId::HarmonySanctuary) {
+        for (const auto& s : zm.sanctuary_seals) {
+            if (pos.DistanceTo(s.pos) < s.radius + 60.0f) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void PopulateZoneFrescoes(const eco::WorldContext& world) {
+    const eco::Tilemap& tilemap = world.overworld.tilemap;
+    const eco::ZoneId zone = world.overworld.active_zone;
+
+    struct Candidate {
+        int row;
+        int col;
+        FrescoKind kind;
+        const char* caption;
+    };
+    std::array<Candidate, 3> candidates{};
+    switch (zone) {
+        case eco::ZoneId::DawnTerraces:
+            candidates = {{
+                {7, 8, FrescoKind::SundialObelisk, "MERIDIANA D'OTTONE"},
+                {19, 27, FrescoKind::BasRelief, "ARCHITRAVE DEL COSENO"},
+                {15, 7, FrescoKind::SundialObelisk, ""},
+            }};
+            break;
+        case eco::ZoneId::CanalQuarter:
+            candidates = {{
+                {6, 10, FrescoKind::HydroFountain, "FONTANA DELLE CHIUSE"},
+                {19, 25, FrescoKind::BasRelief, "LAPIDE DI VALERIO"},
+                {18, 8, FrescoKind::HydroFountain, ""},
+            }};
+            break;
+        case eco::ZoneId::WindPlateau:
+            candidates = {{
+                {7, 10, FrescoKind::WindStele, "STELE DEI VENTI"},
+                {19, 26, FrescoKind::BasRelief, "ROSA DI BASALTO"},
+                {18, 9, FrescoKind::SundialObelisk, ""},
+            }};
+            break;
+        case eco::ZoneId::HangingGardens:
+            candidates = {{
+                {7, 10, FrescoKind::AcousticBasin, "VASCA ARMONICA"},
+                {19, 25, FrescoKind::BasRelief, "PERGOLATO DI GIADA"},
+                {18, 8, FrescoKind::AcousticBasin, ""},
+            }};
+            break;
+        case eco::ZoneId::FumaroleCaldera:
+            candidates = {{
+                {6, 10, FrescoKind::ThermalBrazier, "BRACIERE GEOTERMICO"},
+                {19, 26, FrescoKind::BasRelief, "SIGILLO DELLO SCISMA"},
+                {18, 8, FrescoKind::ThermalBrazier, ""},
+            }};
+            break;
+        case eco::ZoneId::HarmonySanctuary:
+        default:
+            candidates = {{
+                {6, 10, FrescoKind::SanctuaryStatue, "CUSTODE DELLE ERE"},
+                {19, 25, FrescoKind::SanctuaryStatue, "ARCO DI MERIDIA"},
+                {6, 25, FrescoKind::AcousticBasin, ""},
+            }};
+            break;
+    }
+
+    for (const auto& cand : candidates) {
+        // Cerca la tile Walkable/GardenFloor sicura piu' vicina al punto candidato
+        bool placed = false;
+        for (int radius = 0; radius <= 4 && !placed; ++radius) {
+            for (int dr = -radius; dr <= radius && !placed; ++dr) {
+                for (int dc = -radius; dc <= radius && !placed; ++dc) {
+                    const int r = cand.row + dr;
+                    const int c = cand.col + dc;
+                    if (!tilemap.InBounds(r, c) || r <= 1 || r >= tilemap.Rows() - 2 || c <= 1 || c >= tilemap.Cols() - 2) {
+                        continue;
+                    }
+                    if (IsTileSolidForProp(tilemap.GetTile(r, c))) {
+                        continue;
+                    }
+                    const eco::Vec2 pos = tilemap.TileCenter(r, c);
+                    if (!IsPropPositionSafe(world, pos)) {
+                        continue;
+                    }
+                    bool too_close_fresco = false;
+                    for (const auto& existing : g_fresco_cache) {
+                        if (pos.DistanceTo({existing.x, existing.y}) < 140.0f) {
+                            too_close_fresco = true;
+                            break;
+                        }
+                    }
+                    if (too_close_fresco) {
+                        continue;
+                    }
+                    g_fresco_cache.push_back(ZoneFresco{pos.x, pos.y, cand.kind, cand.caption});
+                    placed = true;
+                }
+            }
+        }
+    }
+}
+
+void RebuildZoneCacheIfNeeded(const eco::WorldContext& world) {
+    const eco::Tilemap& tilemap = world.overworld.tilemap;
+    const eco::ZoneId active_zone = world.overworld.active_zone;
+    if (g_cached_zone == active_zone &&
+        g_prop_cache_rows == tilemap.Rows() &&
+        g_prop_cache_cols == tilemap.Cols()) {
+        return;
+    }
+
+    // Libera fisicamente la memoria dei prop/affreschi della zona precedente prima di rigenerare
+    ReleaseOverworldProceduralCache();
+
+    g_cached_zone = active_zone;
+    g_prop_cache_rows = tilemap.Rows();
+    g_prop_cache_cols = tilemap.Cols();
+
+    PopulateZoneFrescoes(world);
+
+    g_prop_cache.reserve(96);
+    for (int r = 1; r <= tilemap.Rows() - 2; ++r) {
+        for (int c = 1; c <= tilemap.Cols() - 2; ++c) {
+            if (((r * 7 + c * 11 + static_cast<int>(active_zone) * 3) % 11) != 0) {
+                continue;
+            }
+            if (IsTileSolidForProp(tilemap.GetTile(r, c))) {
+                continue;
+            }
+            int solid_neighbors = 0;
+            for (int dr = -1; dr <= 1; ++dr) {
+                for (int dc = -1; dc <= 1; ++dc) {
+                    if (dr == 0 && dc == 0) {
+                        continue;
+                    }
+                    const eco::TileId nb = tilemap.GetTile(r + dr, c + dc);
+                    if (nb == eco::TileId::StructurePortal || nb == eco::TileId::HiddenBridge ||
+                        nb == eco::TileId::ZoneGateway || nb == eco::TileId::SolarGate ||
+                        nb == eco::TileId::JadeBridge) {
+                        solid_neighbors += 9;
+                    } else if (IsWallLike(nb) || nb == eco::TileId::PavedPath || nb == eco::TileId::ShallowChannel) {
+                        ++solid_neighbors;
+                    }
+                }
+            }
+            if (solid_neighbors >= 5) {
+                continue;
+            }
+
+            const std::uint32_t h = Hash2(c, r, 409 + static_cast<int>(active_zone) * 31);
+            const eco::Vec2 center = tilemap.TileCenter(r, c);
+            const eco::Vec2 pos{
+                center.x + static_cast<float>(static_cast<int>(h % 13u) - 6),
+                center.y + static_cast<float>(static_cast<int>((h >> 4) % 13u) - 6)};
+            if (!IsPropPositionSafe(world, pos)) {
+                continue;
+            }
+            bool near_fresco = false;
+            for (const auto& f : g_fresco_cache) {
+                if (pos.DistanceTo({f.x, f.y}) < 86.0f) {
+                    near_fresco = true;
+                    break;
+                }
+            }
+            if (near_fresco) {
+                continue;
+            }
+
+            StaticProp p;
+            p.x = pos.x;
+            p.y = pos.y;
+            p.scale = 0.88f + static_cast<float>((h >> 8) % 25u) * 0.01f;
+            p.h = h;
+            p.roll = (h >> 14) % 12u;
+            g_prop_cache.push_back(p);
+        }
+    }
+    g_prop_cache.shrink_to_fit();
+    g_fresco_cache.shrink_to_fit();
+}
+
+// =============================================================================
+// Varchi Monumentali di Confine tra le 6 Zone Separate (ZoneGateway)
+// =============================================================================
+void DrawGatewayPlaque(float cx, float y, const char* text, Color accent) {
+    if (text == nullptr || text[0] == '\0') {
+        return;
+    }
+    const int tw = MeasureUiText(text, 11);
+    const int bw = tw + 16;
+    const int bx = static_cast<int>(cx) - bw / 2;
+    const int by = static_cast<int>(y);
+    DrawRectangle(bx + 2, by + 2, bw, 18, Color{0, 0, 0, 105});
+    DrawRectangle(bx, by, bw, 18, Color{16, 22, 32, 240});
+    DrawRectangleLines(bx, by, bw, 18, pal::WithAlpha(pal::kBronze, 230));
+    DrawRectangle(bx + 2, by + 2, 3, 14, accent);
+    DrawRectangle(bx + bw - 5, by + 2, 3, 14, accent);
+    DrawTextShadow(text, bx + 8, by + 3, 11, pal::kParchmentText);
+}
+
+void DrawGatewayPillar(float cx, float base_y, float height, Color stone, Color accent, float pulse) {
+    const Color dark = pal::ShiftBrightness(stone, -34);
+    const Color hi = pal::ShiftBrightness(stone, 26);
+    DrawEllipse(static_cast<int>(cx + 4.0f), static_cast<int>(base_y + 2.0f), 17.0f, 6.0f, Color{0, 0, 0, 110});
+    DrawRectangle(static_cast<int>(cx - 14.0f), static_cast<int>(base_y - 10.0f), 28, 12, dark);
+    DrawRectangle(static_cast<int>(cx - 10.0f), static_cast<int>(base_y - height), 20, static_cast<int>(height - 8.0f), stone);
+    DrawRectangle(static_cast<int>(cx + 3.0f), static_cast<int>(base_y - height), 7, static_cast<int>(height - 8.0f), dark);
+    DrawLine(static_cast<int>(cx - 10.0f), static_cast<int>(base_y - height), static_cast<int>(cx - 10.0f), static_cast<int>(base_y - 10.0f), hi);
+    DrawRectangle(static_cast<int>(cx - 12.0f), static_cast<int>(base_y - height + 10.0f), 24, 4, pal::kBronze);
+    DrawRectangle(static_cast<int>(cx - 12.0f), static_cast<int>(base_y - 20.0f), 24, 4, pal::kBronze);
+    DrawRectangle(static_cast<int>(cx - 14.0f), static_cast<int>(base_y - height - 5.0f), 28, 7, hi);
+    DrawRectangleLines(static_cast<int>(cx - 14.0f), static_cast<int>(base_y - height - 5.0f), 28, 7, pal::kBronzeDark);
+    const float ly = base_y - height - 15.0f;
+    DrawCircleV({cx, ly}, 14.0f * pulse, pal::WithAlpha(accent, 60));
+    DrawCircleV({cx, ly}, 5.8f, accent);
+    DrawCircleV({cx, ly}, 2.6f, pal::kStoneIvory);
+    DrawCircleLines(static_cast<int>(cx), static_cast<int>(ly), 5.8f, pal::kBronzeBright);
+}
+
+void DrawZoneGatewayArch(const eco::ZoneGateway& gw, const eco::WorldContext& world) {
+    const float poll = world.ecosystem.PollutionRatio();
+    const float tile = world.overworld.tilemap.TileSize();
+    const float pulse = 0.78f + 0.22f * std::sin(world.sim_time * 2.6f + gw.world_center.x * 0.01f);
+    const pal::DistrictPalette& to_pal = pal::GetDistrictPalette(gw.to_zone);
+    const bool locked = gw.requires_bridge_unlock && !world.ecosystem.architect_recruited;
+    const Color acc = locked ? pal::kAccentWarn : to_pal.ambient_accent;
+    const Color stone = pal::WorldColor(to_pal.wall_top_sick, to_pal.wall_top_healthy, poll);
+
+    const float x0 = static_cast<float>(gw.tile_min.col) * tile;
+    const float x1 = static_cast<float>(gw.tile_max.col + 1) * tile;
+    const float y0 = static_cast<float>(gw.tile_min.row) * tile;
+    const float y1 = static_cast<float>(gw.tile_max.row + 1) * tile;
+    const float mid_x = (x0 + x1) * 0.5f;
+    const float mid_y = (y0 + y1) * 0.5f;
+
+    if (gw.IsHorizontalWall()) {
+        const bool is_north_edge = (gw.tile_min.row <= 2);
+        const float h = 48.0f;
+        const float base_y = is_north_edge ? (y1 + 6.0f) : (y0 + 10.0f);
+        DrawGatewayPillar(x0 - 8.0f, base_y, h, stone, acc, pulse);
+        DrawGatewayPillar(x1 + 8.0f, base_y, h, stone, acc, pulse);
+
+        const float top = base_y - h - 4.0f;
+        DrawRectangle(static_cast<int>(x0 - 16.0f), static_cast<int>(top - 6.0f),
+                      static_cast<int>(x1 - x0 + 32.0f), 11, pal::ShiftBrightness(stone, 14));
+        DrawRectangleLines(static_cast<int>(x0 - 16.0f), static_cast<int>(top - 6.0f),
+                           static_cast<int>(x1 - x0 + 32.0f), 11, pal::kBronze);
+        DrawRectangle(static_cast<int>(x0), static_cast<int>(top - 3.0f),
+                      static_cast<int>(x1 - x0), 5, pal::WithAlpha(acc, 215));
+
+        const float plaque_y = is_north_edge ? (y1 + 14.0f) : (y0 - 30.0f);
+        DrawGatewayPlaque(mid_x, plaque_y, gw.signpost_label, acc);
+    } else {
+        const bool is_west_edge = (gw.tile_min.col <= 2);
+        const float px = is_west_edge ? (x1 + 8.0f) : (x0 - 8.0f);
+        DrawGatewayPillar(px, y0 - 4.0f, 48.0f, stone, acc, pulse);
+        DrawGatewayPillar(px, y1 + 22.0f, 48.0f, stone, acc, pulse);
+        const float plaque_x = is_west_edge ? (x1 + 66.0f) : (x0 - 66.0f);
+        DrawGatewayPlaque(plaque_x, mid_y - 9.0f, locked ? "PONTE SIGILLATO" : gw.signpost_label, acc);
+    }
+}
+
 } // namespace
 
 // =============================================================================
-// Hash Deterministico 2D
+// Hash Deterministico 2D & Gestione Cache Per-Zona
 // =============================================================================
 std::uint32_t Hash2(int x, int y, int seed) noexcept {
     std::uint32_t h = static_cast<std::uint32_t>(x) * 374761393u +
@@ -925,21 +1770,41 @@ float Hash2Float01(int x, int y, int seed) noexcept {
     return static_cast<float>(Hash2(x, y, seed) & 0x00FFFFFFu) / static_cast<float>(0x01000000u);
 }
 
+void ReleaseOverworldProceduralCache() noexcept {
+    g_prop_cache.clear();
+    g_prop_cache.shrink_to_fit();
+    g_fresco_cache.clear();
+    g_fresco_cache.shrink_to_fit();
+    g_cached_zone = eco::ZoneId::Count;
+    g_prop_cache_rows = -1;
+    g_prop_cache_cols = -1;
+}
+
+std::size_t ProceduralArtCacheBytes() noexcept {
+    return g_prop_cache.capacity() * sizeof(StaticProp) +
+           g_fresco_cache.capacity() * sizeof(ZoneFresco);
+}
+
 // =============================================================================
-// Overworld Map — La Conca di Meridia (6 Distretti, Viewport Culling, 2.5D)
+// Overworld Map — Zona Attiva Dedicata (26x36), 6 Identita' Bioma & Meccaniche
 // =============================================================================
 void DrawOverworldProceduralMap(const eco::WorldContext& world) {
     const eco::Tilemap& tilemap = world.overworld.tilemap;
+    const eco::ZoneId zone = world.overworld.active_zone;
+    const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
     const float poll = world.ecosystem.PollutionRatio();
     const float health = 1.0f - poll;
     const float sim_time = world.sim_time;
     const bool bridge_unlocked = world.ecosystem.architect_recruited;
+    const bool solar_gate_open = world.zone_mechanics.solar_gate_open;
+    const bool jade_bridge_unlocked = world.zone_mechanics.jade_bridge_unlocked;
+    const float jade_progress = std::clamp(world.zone_mechanics.jade_bridge_progress, 0.0f, 1.0f);
+    const float wind_gust = (zone == eco::ZoneId::WindPlateau) ? world.zone_mechanics.wind.gust_intensity : 0.0f;
     const int tile_px = static_cast<int>(tilemap.TileSize());
     if (tile_px <= 0 || tilemap.Rows() <= 0 || tilemap.Cols() <= 0) {
         return;
     }
 
-    // Frustum / Viewport Culling con margine di 2 tile per ombre e sovrapposizioni
     const eco::Vec2 cam = world.overworld.camera_target;
     const float half_w = static_cast<float>(eco::kWindowWidth) * 0.5f + tilemap.TileSize() * 2.5f;
     const float half_h = static_cast<float>(eco::kWindowHeight) * 0.5f + tilemap.TileSize() * 2.5f;
@@ -949,7 +1814,7 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
     const int max_row = std::min(tilemap.Rows() - 1, static_cast<int>(std::ceil((cam.y + half_h) / tilemap.TileSize())));
 
     // -------------------------------------------------------------------------
-    // PASSATA 1: Terreni, Sentieri, Piazze Intarsiate, Giardini, Acqua, Ponte, Portali
+    // PASSATA 1: Terreni, Sentieri, Piazze, Giardini, Canali, Ponti, Barriere, Varchi
     // -------------------------------------------------------------------------
     for (int r = min_row; r <= max_row; ++r) {
         const int row_cols = tilemap.RowCols(r);
@@ -959,9 +1824,7 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
             const int rx = static_cast<int>(tr.x);
             const int ry = static_cast<int>(tr.y);
             const eco::TileId id = tilemap.GetTile(r, c);
-            const eco::ZoneId zone = tilemap.DistrictAtTile(r, c);
-            const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
-            const std::uint32_t h = Hash2(c, r, 17);
+            const std::uint32_t h = Hash2(c, r, 17 + static_cast<int>(zone) * 19);
             const int tone_delta = static_cast<int>(h % 7u) - 3;
 
             if (id == eco::TileId::Walkable) {
@@ -970,20 +1833,20 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     tone_delta);
                 DrawRectangle(rx, ry, tile_px, tile_px, ground);
 
-                // Velatura organica opaca (LerpColor con alpha 255 -> zero artefatti FBO!)
                 if ((h & 3u) == 0u) {
                     const int ox = rx + 12 + static_cast<int>((h >> 4) % 24u);
                     const int oy = ry + 12 + static_cast<int>((h >> 9) % 24u);
                     const float erx = 16.0f + static_cast<float>((h >> 14) % 10u);
                     const float ery = 11.0f + static_cast<float>((h >> 18) % 8u);
-                    const Color patch = pal::ShiftBrightness(ground, ((h >> 2) & 1u) ? 5 : -5);
-                    DrawEllipse(ox, oy, erx, ery, patch);
+                    DrawEllipse(ox, oy, erx, ery, pal::ShiftBrightness(ground, ((h >> 2) & 1u) ? 5 : -5));
                 }
 
-                // Dettagli specifici per bioma
                 const Color grass_col = pal::WorldColor(dp.grass_sick, dp.grass_healthy, poll);
                 if (zone == eco::ZoneId::FumaroleCaldera) {
-                    // Crepe frastagliate nel basalto vulcanico + vene termali calde (opache)
+                    // Piastre di basalto esagonale + crepe geotermiche calde
+                    if (((r + c) & 1) == 0) {
+                        DrawPolyLines({tr.x + 24.0f, tr.y + 24.0f}, 6, 20.0f, 30.0f, pal::ShiftBrightness(ground, -10));
+                    }
                     if ((h & 3u) <= 1u) {
                         const Color crack = pal::LerpColor(ground, pal::WorldColor(dp.inlay_sick, dp.inlay_healthy, poll), 0.65f);
                         const Color fissure_dark = pal::ShiftBrightness(ground, -18);
@@ -996,23 +1859,20 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                         if ((h & 3u) == 0u) {
                             DrawLine(cx - dx1 + 1, cy - dy1, cx, cy, pal::WithAlpha(crack, 255));
                             DrawLine(cx, cy, cx + dx1 - 1, cy + dy1 + 3, pal::WithAlpha(crack, 255));
-                            DrawLine(cx, cy, cx - 2, cy + 7, pal::WithAlpha(pal::LerpColor(ground, crack, 0.7f), 255));
                         }
                     }
-                    if (health > 0.35f && ((h >> 3) & 3u) == 1u) {
-                        const int gx = rx + 12 + static_cast<int>((h >> 7) % 24u);
-                        const int gy = ry + 14 + static_cast<int>((h >> 12) % 22u);
-                        DrawCircle(gx, gy, 2.8f, pal::WithAlpha(pal::LerpColor(ground, grass_col, 0.72f), 255));
-                        DrawCircle(gx + 3, gy + 1, 2.0f, pal::WithAlpha(pal::LerpColor(ground, grass_col, 0.58f), 255));
-                    }
                 } else {
-                    // Ciuffi d'erba multipli (inclinati dal vento sull'Altopiano dei Venti!)
+                    // Striature di vento su roccia nell'Altopiano dei Venti
+                    if (zone == eco::ZoneId::WindPlateau && ((h >> 2) & 3u) == 0u) {
+                        DrawLine(rx + 6, ry + 26, rx + 38, ry + 20, pal::ShiftBrightness(ground, 10));
+                    }
+                    // Ciuffi d'erba reattivi al bioma e alle raffiche
                     if ((h & 3u) <= 2u) {
                         const int gx = rx + 8 + static_cast<int>((h >> 4) % 30u);
                         const int gy = ry + 13 + static_cast<int>((h >> 9) % 25u);
                         const int blade_h = 4 + static_cast<int>(health * 5.0f);
                         const float wind_bias = (zone == eco::ZoneId::WindPlateau)
-                                                    ? (3.2f + std::sin(sim_time * 3.5f + static_cast<float>(c) * 0.4f) * 2.0f)
+                                                    ? (-3.2f - wind_gust * 6.5f + std::sin(sim_time * 4.2f + static_cast<float>(c) * 0.4f) * 2.0f)
                                                     : (std::sin(sim_time * 1.8f + static_cast<float>(c + r)) * 1.0f);
                         DrawLineEx({static_cast<float>(gx), static_cast<float>(gy)},
                                    {static_cast<float>(gx - 2) + wind_bias, static_cast<float>(gy - blade_h)}, 1.4f, grass_col);
@@ -1021,7 +1881,6 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                         DrawLineEx({static_cast<float>(gx - 1), static_cast<float>(gy + 1)},
                                    {static_cast<float>(gx) + wind_bias * 0.8f, static_cast<float>(gy - blade_h - 1)}, 1.2f, pal::ShiftBrightness(grass_col, 14));
 
-                        // Fiori spontanei reattivi allo smog (opachi via LerpColor)
                         if (health > 0.42f && ((h >> 14) & 3u) == 0u) {
                             const Color flower_raw = ((h >> 16) & 1u) ? dp.blossom_a : dp.blossom_b;
                             const float ft = std::clamp((health - 0.42f) / 0.58f, 0.0f, 1.0f);
@@ -1029,7 +1888,6 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                             DrawCircleV({static_cast<float>(gx) + wind_bias, static_cast<float>(gy - blade_h - 1)}, 2.3f, flower);
                         }
                     }
-                    // Piccoli ciottoli naturali in pietra calcarea/basalto
                     if (((h >> 3) & 7u) == 2u) {
                         const int px = rx + 12 + static_cast<int>((h >> 11) % 24u);
                         const int py = ry + 12 + static_cast<int>((h >> 15) % 24u);
@@ -1038,13 +1896,9 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     }
                 }
             } else if (id == eco::TileId::GardenFloor) {
-                // Giardino terrazzato organico con fogliame irregolare, bordure in pietra e fioriture (alpha 255)
-                Color garden = pal::ShiftBrightness(
-                    pal::WorldColor(dp.garden_sick, dp.garden_healthy, poll),
-                    tone_delta);
+                Color garden = pal::ShiftBrightness(pal::WorldColor(dp.garden_sick, dp.garden_healthy, poll), tone_delta);
                 DrawRectangle(rx, ry, tile_px, tile_px, garden);
 
-                // Rosette di foglie e felci a posizioni deterministiche variate (opache, zero artefatti FBO!)
                 const Color leaf_dark = pal::WithAlpha(pal::ShiftBrightness(garden, -10), 255);
                 const Color leaf_hi = pal::WithAlpha(
                     pal::LerpColor(garden, pal::WorldColor(dp.grass_sick, dp.grass_healthy, poll), 0.45f), 255);
@@ -1057,7 +1911,6 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     DrawCircle(lx, ly, lr * 0.72f, leaf_hi);
                 }
 
-                // Fioriture a grappolo che sbocciano vistosamente quando la Conca guarisce
                 if (health > 0.25f) {
                     const float ft = std::clamp((health - 0.25f) / 0.75f, 0.0f, 1.0f);
                     const int count = (health > 0.65f) ? 4 : 2;
@@ -1074,7 +1927,6 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     }
                 }
 
-                // Bordo in pietra del terrazzamento solo sui lati non-GardenFloor
                 const Color curb = pal::WorldColor(dp.path_sick, dp.path_healthy, poll);
                 const Color curb_hi = pal::ShiftBrightness(curb, 20);
                 if (tilemap.GetTile(r - 1, c) != eco::TileId::GardenFloor) {
@@ -1090,13 +1942,10 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     DrawRectangle(rx + tile_px - 4, ry, 4, tile_px, pal::ShiftBrightness(curb, -18));
                 }
             } else if (id == eco::TileId::PavedPath) {
-                // Lastricato a conci sfalsati (running bond) con cordoli auto-tiled
                 const Color ground_bg = pal::WorldColor(dp.ground_sick, dp.ground_healthy, poll);
                 DrawRectangle(rx, ry, tile_px, tile_px, ground_bg);
 
-                const Color stone = pal::ShiftBrightness(
-                    pal::WorldColor(dp.path_sick, dp.path_healthy, poll),
-                    tone_delta);
+                const Color stone = pal::ShiftBrightness(pal::WorldColor(dp.path_sick, dp.path_healthy, poll), tone_delta);
                 const Color mortar = pal::ShiftBrightness(stone, -24);
                 const Color bevel = pal::ShiftBrightness(stone, 18);
 
@@ -1112,7 +1961,6 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
 
                 DrawRectangle(rx + pad_l, ry + pad_t, tile_px - pad_l - pad_r, tile_px - pad_t - pad_b, stone);
 
-                // Fughe sfalsate in due file di lastroni
                 const int mid_y = ry + tile_px / 2;
                 const int split_top = rx + 16 + static_cast<int>((h >> 4) % 14u);
                 const int split_bot = rx + 8 + static_cast<int>((h >> 9) % 28u);
@@ -1120,30 +1968,28 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                 DrawLine(split_top, ry + pad_t, split_top, mid_y, mortar);
                 DrawLine(split_bot, mid_y, split_bot, ry + tile_px - pad_b, mortar);
 
-                // Luce NW sui cordoli esposti
-                if (!pn) {
-                    DrawLine(rx + pad_l, ry + pad_t, rx + tile_px - pad_r, ry + pad_t, bevel);
-                }
-                if (!pw) {
-                    DrawLine(rx + pad_l, ry + pad_t, rx + pad_l, ry + tile_px - pad_b, bevel);
-                }
-                if (!ps) {
-                    DrawLine(rx + pad_l, ry + tile_px - pad_b, rx + tile_px - pad_r, ry + tile_px - pad_b, mortar);
-                }
-                if (!pe) {
-                    DrawLine(rx + tile_px - pad_r, ry + pad_t, rx + tile_px - pad_r, ry + tile_px - pad_b, mortar);
+                // Dettaglio lastricato specifico per zona
+                if (zone == eco::ZoneId::DawnTerraces && ((r + c) % 3 == 0)) {
+                    DrawLine(rx + pad_l + 4, ry + tile_px / 2, rx + tile_px - pad_r - 4, ry + tile_px / 2,
+                             pal::WithAlpha(pal::kBronzeBright, 115));
+                } else if (zone == eco::ZoneId::CanalQuarter && ((h & 3u) == 0u)) {
+                    DrawCircle(rx + 10, ry + 10, 1.8f, pal::kBronze);
+                } else if (zone == eco::ZoneId::FumaroleCaldera && ((r + c) & 1) == 0) {
+                    DrawLine(rx + pad_l + 6, ry + pad_t + 6, rx + tile_px - pad_r - 6, ry + tile_px - pad_b - 6,
+                             pal::WithAlpha(pal::kValveCopper, 85));
                 }
 
-                // Filo di muschio tra le pietre quando l'ecosistema migliora
-                if (health > 0.40f && (h & 3u) == 0u) {
+                if (!pn) DrawLine(rx + pad_l, ry + pad_t, rx + tile_px - pad_r, ry + pad_t, bevel);
+                if (!pw) DrawLine(rx + pad_l, ry + pad_t, rx + pad_l, ry + tile_px - pad_b, bevel);
+                if (!ps) DrawLine(rx + pad_l, ry + tile_px - pad_b, rx + tile_px - pad_r, ry + tile_px - pad_b, mortar);
+                if (!pe) DrawLine(rx + tile_px - pad_r, ry + pad_t, rx + tile_px - pad_r, ry + tile_px - pad_b, mortar);
+
+                if (health > 0.40f && (h & 3u) == 0u && zone != eco::ZoneId::FumaroleCaldera) {
                     const Color moss = pal::WorldColor(dp.grass_sick, dp.grass_healthy, poll);
                     DrawCircle(split_top, mid_y, 2.2f * health, pal::WithAlpha(moss, 200));
                 }
             } else if (id == eco::TileId::SanctuaryFloor) {
-                // Pavimentazione monumentale intarsiata in marmo/travertino, bronzo e giada
-                const Color slab = pal::ShiftBrightness(
-                    pal::WorldColor(dp.sanctuary_sick, dp.sanctuary_healthy, poll),
-                    tone_delta);
+                const Color slab = pal::ShiftBrightness(pal::WorldColor(dp.sanctuary_sick, dp.sanctuary_healthy, poll), tone_delta);
                 const Color inlay = pal::WorldColor(dp.inlay_sick, dp.inlay_healthy, poll);
                 const Color groove = pal::ShiftBrightness(slab, -22);
                 const Color bevel = pal::ShiftBrightness(slab, 20);
@@ -1152,8 +1998,6 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                 DrawRectangleLines(rx, ry, tile_px, tile_px, groove);
                 DrawLine(rx + 1, ry + 1, rx + tile_px - 2, ry + 1, bevel);
                 DrawLine(rx + 1, ry + 1, rx + 1, ry + tile_px - 2, bevel);
-
-                // Motivo geometrico a cornice e rombo intarsiato
                 DrawRectangleLines(rx + 5, ry + 5, tile_px - 10, tile_px - 10, pal::WithAlpha(inlay, 130));
                 if (((r + c) & 1) == 0) {
                     const Vector2 ctr{tr.x + tr.width * 0.5f, tr.y + tr.height * 0.5f};
@@ -1162,8 +2006,86 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                         DrawCircleV(ctr, 2.2f, pal::WithAlpha(dp.ambient_accent, static_cast<unsigned char>(160.0f * health)));
                     }
                 }
+            } else if (id == eco::TileId::ZoneGateway) {
+                // Soglia monumentale di passaggio verso una zona adiacente
+                const eco::ZoneGateway* gw = FindZoneGatewayAtTile(world.overworld, r, c);
+                const bool locked = (gw != nullptr && gw->requires_bridge_unlock && !bridge_unlocked);
+                const Color dest_acc = (gw != nullptr) ? pal::GetDistrictPalette(gw->to_zone).ambient_accent : dp.ambient_accent;
+                const Color acc = locked ? pal::kAccentWarn : dest_acc;
+                const float pulse = 0.65f + 0.35f * std::sin(sim_time * 3.0f + static_cast<float>(r + c));
+                const Color slab = pal::WorldColor(dp.sanctuary_sick, dp.sanctuary_healthy, poll);
+
+                DrawRectangle(rx, ry, tile_px, tile_px, slab);
+                DrawRectangle(rx + 3, ry + 3, tile_px - 6, tile_px - 6, pal::WithAlpha(acc, static_cast<unsigned char>(42.0f * pulse)));
+                DrawRectangleLines(rx + 2, ry + 2, tile_px - 4, tile_px - 4, pal::WithAlpha(pal::kBronze, 215));
+                DrawPolyLines({tr.x + 24.0f, tr.y + 24.0f}, 4, 11.0f, 0.0f, pal::WithAlpha(acc, static_cast<unsigned char>(190.0f * pulse)));
+            } else if (id == eco::TileId::ShallowChannel) {
+                // Canale guadabile con letto di ciottoli visibile e acqua turchese traslucida
+                const Color bed = pal::ShiftBrightness(pal::WorldColor(dp.path_sick, dp.path_healthy, poll), -18);
+                const Color water_col = pal::LerpColor(bed, pal::WorldColor(dp.water_sick, dp.water_healthy, poll), 0.62f);
+                const Color foam = pal::WorldColor(dp.foam_sick, dp.foam_healthy, poll);
+                const Color curb = pal::WorldColor(dp.wall_top_sick, dp.wall_top_healthy, poll);
+
+                DrawRectangle(rx, ry, tile_px, tile_px, water_col);
+                // Ciottoli sommersi sul fondale (chiarisce che il canale e' guadabile)
+                DrawCircle(rx + 14 + static_cast<int>(h % 8u), ry + 16 + static_cast<int>((h >> 4) % 8u), 4.5f, pal::ShiftBrightness(water_col, -12));
+                DrawCircle(rx + 30 + static_cast<int>((h >> 8) % 6u), ry + 32 + static_cast<int>((h >> 12) % 6u), 4.0f, pal::ShiftBrightness(water_col, 10));
+
+                const float shimmer = std::fmod(sim_time * 28.0f + static_cast<float>(r * 13 + c * 17), static_cast<float>(tile_px));
+                DrawLineEx({tr.x + 6.0f, tr.y + shimmer}, {tr.x + tr.width - 6.0f, tr.y + shimmer}, 1.8f, pal::WithAlpha(foam, 145));
+
+                // Bordi bassi scolpiti sui lati confinanti con terra
+                if (!IsWaterLike(tilemap.GetTile(r - 1, c))) DrawRectangle(rx, ry, tile_px, 4, curb);
+                if (!IsWaterLike(tilemap.GetTile(r + 1, c))) DrawRectangle(rx, ry + tile_px - 4, tile_px, 4, pal::ShiftBrightness(curb, -16));
+                if (!IsWaterLike(tilemap.GetTile(r, c - 1))) DrawRectangle(rx, ry, 4, tile_px, curb);
+                if (!IsWaterLike(tilemap.GetTile(r, c + 1))) DrawRectangle(rx + tile_px - 4, ry, 4, tile_px, pal::ShiftBrightness(curb, -16));
+            } else if (id == eco::TileId::JadeBridge) {
+                // Ponte di Giada dei Giardini Sospesi (si materializza con la risonanza armonica)
+                const Color water_base = pal::WorldColor(dp.water_sick, dp.water_healthy, poll);
+                const Color foam = pal::WorldColor(dp.foam_sick, dp.foam_healthy, poll);
+                DrawRectangle(rx, ry, tile_px, tile_px, water_base);
+                const float flow = std::fmod(sim_time * 18.0f + static_cast<float>(r * 15), static_cast<float>(tile_px));
+                DrawLineEx({tr.x + 8.0f, tr.y + flow}, {tr.x + tr.width - 8.0f, tr.y + flow}, 1.6f, pal::WithAlpha(foam, 125));
+
+                const float vis = jade_bridge_unlocked ? 1.0f : jade_progress;
+                if (vis > 0.04f) {
+                    const unsigned char a = static_cast<unsigned char>(std::clamp(vis * 240.0f, 30.0f, 240.0f));
+                    const Color deck = pal::WithAlpha(pal::LerpColor(Color{42, 138, 114, 255}, pal::kJade, vis), a);
+                    const Color rim = pal::WithAlpha(pal::kJadeGlow, a);
+                    DrawRectangle(rx + 2, ry + 2, tile_px - 4, tile_px - 4, deck);
+                    DrawRectangleLines(rx + 2, ry + 2, tile_px - 4, tile_px - 4, rim);
+                    DrawPolyLines({tr.x + 24.0f, tr.y + 24.0f}, 6, 12.0f * vis, 30.0f, pal::WithAlpha(pal::kStoneIvory, a));
+                    DrawCircleV({tr.x + 24.0f, tr.y + 24.0f}, 3.2f * vis, rim);
+                } else {
+                    // Piloni sommersi + traccia eterea del ponte bloccato
+                    DrawCircle(rx + 12, ry + 12, 4.0f, pal::WithAlpha(pal::kJade, 75));
+                    DrawCircle(rx + tile_px - 12, ry + tile_px - 12, 4.0f, pal::WithAlpha(pal::kJade, 75));
+                    DrawRectangleLines(rx + 6, ry + 6, tile_px - 12, tile_px - 12, pal::WithAlpha(pal::kJadeGlow, 68));
+                }
+            } else if (id == eco::TileId::SolarGate) {
+                // Barriera Solare delle Terrazze dell'Alba
+                const Color slab = pal::WorldColor(dp.sanctuary_sick, dp.sanctuary_healthy, poll);
+                DrawRectangle(rx, ry, tile_px, tile_px, slab);
+                if (solar_gate_open) {
+                    // Binari in ottone aperti e luminosi
+                    DrawRectangle(rx + 6, ry + 6, tile_px - 12, tile_px - 12, pal::WithAlpha(pal::kJade, 48));
+                    DrawRectangleLines(rx + 4, ry + 4, tile_px - 8, tile_px - 8, pal::WithAlpha(pal::kBronzeBright, 180));
+                    DrawCircle(rx + 24, ry + 24, 3.2f, pal::kJadeGlow);
+                } else {
+                    // Barriera di luce solare bloccata con griglia d'oro e pilastri
+                    const float pulse = 0.65f + 0.35f * std::sin(sim_time * 4.2f + static_cast<float>(c));
+                    DrawRectangle(rx + 2, ry + 2, tile_px - 4, tile_px - 4, pal::WithAlpha(pal::kSolarGateGold, static_cast<unsigned char>(90.0f * pulse)));
+                    DrawRectangle(rx, ry, 7, tile_px, pal::kBronzeDark);
+                    DrawRectangle(rx + tile_px - 7, ry, 7, tile_px, pal::kBronzeDark);
+                    for (int bar = 10; bar < tile_px; bar += 12) {
+                        DrawLineEx({tr.x + 6.0f, tr.y + static_cast<float>(bar)},
+                                   {tr.x + tr.width - 6.0f, tr.y + static_cast<float>(bar)},
+                                   2.6f, pal::WithAlpha(pal::kSolarBeamCore, static_cast<unsigned char>(210.0f * pulse)));
+                    }
+                    DrawPoly({tr.x + 24.0f, tr.y + 24.0f}, 8, 8.0f, 22.5f, pal::kSolarGateGold);
+                    DrawCircleV({tr.x + 24.0f, tr.y + 24.0f}, 3.5f, pal::kSolarBeamCore);
+                }
             } else if (id == eco::TileId::Water) {
-                // Canali e specchi d'acqua continui (zero griglia interna) con sponde scolpite, riflessi e ninfee
                 const Color water_base = pal::WorldColor(dp.water_sick, dp.water_healthy, poll);
                 const Color water_deep = pal::ShiftBrightness(water_base, -14);
                 const Color water_shimmer = pal::ShiftBrightness(water_base, 24);
@@ -1176,32 +2098,19 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                 const bool we = IsWaterLike(tilemap.GetTile(r, c + 1));
 
                 DrawRectangle(rx, ry, tile_px, tile_px, water_base);
-                // Profondita' morbida solo lungo i bordi interni delle sponde
-                if (!wn) {
-                    DrawRectangle(rx, ry + 6, tile_px, 7, water_deep);
-                }
-                if (!ww) {
-                    DrawRectangle(rx + 6, ry, 6, tile_px, water_deep);
-                }
+                if (!wn) DrawRectangle(rx, ry + 6, tile_px, 7, water_deep);
+                if (!ww) DrawRectangle(rx + 6, ry, 6, tile_px, water_deep);
 
-                // Riflessi luminosi e onde di corrente animate
                 const float flow = std::fmod(sim_time * 22.0f + static_cast<float>(r * 17 + c * 9), static_cast<float>(tile_px));
                 const float wy = tr.y + flow;
                 const float wave_dx = std::sin(sim_time * 2.6f + static_cast<float>(r + c)) * 4.0f;
-                DrawLineEx(
-                    {tr.x + 10.0f + wave_dx, wy},
-                    {tr.x + tr.width - 10.0f + wave_dx, wy},
-                    2.0f,
-                    pal::WithAlpha(foam, static_cast<unsigned char>(115.0f + 80.0f * health)));
+                DrawLineEx({tr.x + 10.0f + wave_dx, wy}, {tr.x + tr.width - 10.0f + wave_dx, wy},
+                           2.0f, pal::WithAlpha(foam, static_cast<unsigned char>(115.0f + 80.0f * health)));
 
                 const float wy2 = tr.y + std::fmod(flow + 24.0f, static_cast<float>(tile_px));
-                DrawLineEx(
-                    {tr.x + 14.0f - wave_dx * 0.7f, wy2},
-                    {tr.x + tr.width - 14.0f - wave_dx * 0.7f, wy2},
-                    1.5f,
-                    pal::WithAlpha(water_shimmer, 140));
+                DrawLineEx({tr.x + 14.0f - wave_dx * 0.7f, wy2}, {tr.x + tr.width - 14.0f - wave_dx * 0.7f, wy2},
+                           1.5f, pal::WithAlpha(water_shimmer, 140));
 
-                // Scintillio superficiale
                 if (((h >> 5) & 3u) == 0u && health > 0.25f) {
                     const float glint = 0.5f + 0.5f * std::sin(sim_time * 4.2f + static_cast<float>(c * 3 + r * 5));
                     const float gx = tr.x + 14.0f + static_cast<float>((h >> 8) % 20u);
@@ -1209,7 +2118,6 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     DrawCircleV({gx, gy}, 1.8f + glint * 1.2f, pal::WithAlpha(foam, static_cast<unsigned char>(190.0f * glint * health)));
                 }
 
-                // Sponde scolpite auto-tiled sui lati adiacenti a terra/muri
                 if (!wn) {
                     DrawRectangle(rx, ry, tile_px, 6, bank);
                     DrawRectangle(rx, ry + 6, tile_px, 5, Color{0, 0, 0, 62});
@@ -1229,7 +2137,6 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     DrawLine(rx + tile_px - 6, ry, rx + tile_px - 6, ry + tile_px, pal::WithAlpha(foam, 165));
                 }
 
-                // Ninfee e canneti quando l'acqua si risana (non nella Caldera)
                 if (health > 0.35f && zone != eco::ZoneId::FumaroleCaldera) {
                     if (((h >> 7) & 7u) == 0u && wn && ws && ww && we) {
                         const float lx = tr.x + 24.0f + std::sin(sim_time + static_cast<float>(r)) * 1.5f;
@@ -1246,7 +2153,6 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     }
                 }
 
-                // Arcate decorative d'acquedotto che scavalcano periodicamente i canali nord-sud
                 if (wn && ws && !ww && !we && (r % 5 == 2)) {
                     const Color arch_stone = pal::WorldColor(dp.wall_top_sick, dp.wall_top_healthy, poll);
                     const Color arch_dark = pal::WorldColor(dp.wall_front_sick, dp.wall_front_healthy, poll);
@@ -1258,7 +2164,6 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                                pal::WithAlpha(foam, static_cast<unsigned char>(130.0f + 80.0f * health)));
                 }
             } else if (id == eco::TileId::HiddenBridge) {
-                // Ponte degli Archi sopra il canale centrale (zero laser sci-fi!)
                 const Color water_base = pal::WorldColor(dp.water_sick, dp.water_healthy, poll);
                 const Color foam = pal::WorldColor(dp.foam_sick, dp.foam_healthy, poll);
                 DrawRectangle(rx, ry, tile_px, tile_px, water_base);
@@ -1269,21 +2174,16 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                 const bool bs = (tilemap.GetTile(r + 1, c) == eco::TileId::HiddenBridge);
 
                 if (bridge_unlocked) {
-                    // Ombra del ponte sull'acqua
                     DrawRectangle(rx + 2, ry + tile_px - 2, tile_px - 2, 7, Color{0, 0, 0, 80});
-                    // Carreggiata in travertino scolpito + canale centrale in bronzo e giada
                     const Color deck = pal::WorldColor(Color{116, 108, 96, 255}, Color{176, 174, 162, 255}, poll);
                     const Color rail = pal::WorldColor(Color{96, 86, 76, 255}, Color{198, 194, 180, 255}, poll);
                     DrawRectangle(rx - 2, ry, tile_px + 4, tile_px, deck);
                     for (int bx = rx + 8; bx < rx + tile_px; bx += 12) {
                         DrawLine(bx, ry + 4, bx, ry + tile_px - 4, pal::ShiftBrightness(deck, -22));
                     }
-                    // Guida centrale in bronzo e giada luminescente
                     DrawRectangle(rx - 2, ry + tile_px / 2 - 4, tile_px + 4, 8, pal::kBronzeDark);
                     DrawLineEx({tr.x - 2.0f, tr.y + tr.height * 0.5f},
                                {tr.x + tr.width + 2.0f, tr.y + tr.height * 0.5f}, 2.8f, pal::kJade);
-
-                    // Parapetti ad archi in pietra e bronzo sui bordi nord/sud del ponte
                     if (!bn) {
                         DrawRectangle(rx - 2, ry, tile_px + 4, 7, rail);
                         DrawLineEx({tr.x - 2.0f, tr.y + 3.0f}, {tr.x + tr.width + 2.0f, tr.y + 3.0f}, 2.0f, pal::kBronzeBright);
@@ -1295,14 +2195,12 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                         DrawLineEx({tr.x - 2.0f, tr.y + tr.height - 4.0f}, {tr.x + tr.width + 2.0f, tr.y + tr.height - 4.0f}, 2.0f, pal::kBronze);
                     }
                 } else {
-                    // Ponte degli Archi interrotto: monconi di arcate in pietra + sigillo ambrato dei Meridiani
                     const Color rubble = pal::WorldColor(Color{92, 82, 74, 255}, Color{134, 132, 124, 255}, poll);
                     DrawRectangle(rx, ry + 3, 11, tile_px - 6, rubble);
                     DrawRectangle(rx + tile_px - 11, ry + 3, 11, tile_px - 6, rubble);
                     DrawRectangleLines(rx, ry + 3, 11, tile_px - 6, pal::ShiftBrightness(rubble, -24));
                     DrawRectangleLines(rx + tile_px - 11, ry + 3, 11, tile_px - 6, pal::ShiftBrightness(rubble, -24));
 
-                    // Catene di bronzo spezzate e sigillo d'ambra pulsante (coerente con la civilta')
                     const float pulse = 0.55f + 0.45f * std::sin(sim_time * 3.5f);
                     const Color seal = pal::WithAlpha(pal::kAmberGlow, static_cast<unsigned char>(120.0f + 100.0f * pulse));
                     DrawLineEx({tr.x + 11.0f, tr.y + 10.0f}, {tr.x + tr.width - 11.0f, tr.y + 14.0f}, 2.0f, pal::kBronzeDark);
@@ -1327,27 +2225,32 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
     // -------------------------------------------------------------------------
     // PASSATA 1B: Grandi Mosaici Astronomici/Armonici nelle Piazze dei Monumenti
     // -------------------------------------------------------------------------
-    for (const auto& m : world.machines) {
-        if (m.location != eco::LocationId::Overworld) {
-            continue;
-        }
-        if (std::fabs(m.pos.x - cam.x) > half_w + 150.0f || std::fabs(m.pos.y - cam.y) > half_h + 150.0f) {
-            continue;
+    world.ForEachMachineInScene([&](const eco::Machine& m) {
+        if (std::fabs(m.pos.x - cam.x) > half_w + 160.0f || std::fabs(m.pos.y - cam.y) > half_h + 160.0f) {
+            return;
         }
         if (m.type == eco::MachineType::SolarArray) {
             DrawSolarSundialMosaic(m.pos, poll, sim_time);
         } else if (m.type == eco::MachineType::HarmonicResonator) {
             DrawHarmonicWaveMosaic(m.pos, poll, sim_time);
         } else if (m.type == eco::MachineType::CentralAstrolabe) {
-            DrawSanctuaryGrandMosaic(m.pos, poll, sim_time, world.collectibles.CollectedCount());
+            DrawSanctuaryGrandMosaic(m.pos, poll, sim_time, world.collectibles.CollectedCount(),
+                                     world.zone_mechanics.AllSealsAttuned());
+        }
+    });
+    if (zone == eco::ZoneId::WindPlateau) {
+        if (const eco::PortalLink* tower_portal = world.overworld.FindPortal(eco::StructureId::PendulumTower)) {
+            const eco::Vec2 plaza{tower_portal->exit_spawn.x, tower_portal->exit_spawn.y + 18.0f};
+            if (std::fabs(plaza.x - cam.x) <= half_w + 100.0f && std::fabs(plaza.y - cam.y) <= half_h + 100.0f) {
+                DrawWindRoseMosaic(plaza, poll, sim_time);
+            }
         }
     }
-    if (const eco::PortalLink* tower_portal = world.overworld.FindPortal(eco::StructureId::PendulumTower)) {
-        const eco::Vec2 plaza{tower_portal->exit_spawn.x, tower_portal->exit_spawn.y + 18.0f};
-        if (std::fabs(plaza.x - cam.x) <= half_w + 100.0f && std::fabs(plaza.y - cam.y) <= half_h + 100.0f) {
-            DrawWindRoseMosaic(plaza, poll, sim_time);
-        }
-    }
+
+    // -------------------------------------------------------------------------
+    // PASSATA 1C: Elementi a terra delle 6 Meccaniche Top-Down
+    // -------------------------------------------------------------------------
+    DrawZoneMechanicsGround(world, cam, half_w, half_h);
 
     // -------------------------------------------------------------------------
     // PASSATA 2: Murature 2.5D Auto-Tiled & Rovine Stratificate con Ombre Morbide
@@ -1364,16 +2267,13 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
             const eco::Rect tr = tilemap.TileRect(r, c);
             const int rx = static_cast<int>(tr.x);
             const int ry = static_cast<int>(tr.y);
-            const eco::ZoneId zone = tilemap.DistrictAtTile(r, c);
-            const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
-            const std::uint32_t h = Hash2(c, r, 91);
+            const std::uint32_t h = Hash2(c, r, 91 + static_cast<int>(zone) * 13);
 
             const bool wn = IsWallLike(tilemap.GetTile(r - 1, c));
             const bool ws = IsWallLike(tilemap.GetTile(r + 1, c));
             const bool ww = IsWallLike(tilemap.GetTile(r, c - 1));
             const bool we = IsWallLike(tilemap.GetTile(r, c + 1));
 
-            // Ombra portata morbida a 2 strati verso sud/sud-est
             if (!ws && r + 1 < tilemap.Rows()) {
                 DrawRectangle(rx + 4, ry + tile_px, tile_px, 12, Color{0, 0, 0, 78});
                 DrawRectangle(rx + 8, ry + tile_px + 12, tile_px - 2, 6, Color{0, 0, 0, 34});
@@ -1390,18 +2290,15 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
             const Color edge_col = pal::WorldColor(dp.wall_edge_sick, dp.wall_edge_healthy, poll);
             const Color mortar = pal::ShiftBrightness(front_col, -16);
 
-            // Se la tile a sud e' esposta disegniamo la faccia frontale 2.5D (15px)
             const int front_h = ws ? 0 : 15;
             const int top_h = tile_px - front_h;
 
             if (id == eco::TileId::RuinsWall) {
-                // Rovine antiche stratificate: colonne scanalate, conci spezzati, rilievi in bronzo
                 const Color ground_under = pal::WorldColor(dp.ground_sick, dp.ground_healthy, poll);
                 DrawRectangle(rx, ry, tile_px, tile_px, ground_under);
 
                 const unsigned variant = h % 3u;
                 if (!wn && !ws && !ww && !we) {
-                    // Colonna monumentale isolata scanalata (piloni acquedotto, pergolati, colonnato Santuario)
                     DrawEllipse(rx + 28, ry + 39, 17.0f, 8.0f, Color{0, 0, 0, 92});
                     DrawRectangle(rx + 10, ry + 14, 28, 25, front_col);
                     DrawEllipse(rx + 24, ry + 39, 14.0f, 6.0f, front_col);
@@ -1412,20 +2309,17 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     DrawLine(rx + 32, ry + 18, rx + 32, ry + 39, pal::ShiftBrightness(front_col, 24));
                     DrawRing({tr.x + 24.0f, tr.y + 14.0f}, 6.0f, 8.5f, 0.0f, 360.0f, 16, pal::WithAlpha(pal::kBronze, 195));
                     if (zone == eco::ZoneId::HarmonySanctuary) {
-                        // Braciere di giada acceso sui capitelli del Santuario dell'Armonia
                         const float pulse = 0.7f + 0.3f * std::sin(sim_time * 3.0f + static_cast<float>(c + r));
                         DrawCircleV({tr.x + 24.0f, tr.y + 13.0f}, 9.0f * pulse,
                                     pal::WithAlpha(pal::kJadeGlow, static_cast<unsigned char>(45.0f + 75.0f * health)));
                         DrawCircleV({tr.x + 24.0f, tr.y + 13.0f}, 3.4f, pal::kJadeGlow);
                     } else if (zone == eco::ZoneId::HangingGardens && health > 0.35f) {
-                        // Rampicanti fioriti avvolti attorno alle colonne dei Giardini Sospesi
                         DrawCircleV({tr.x + 17.0f, tr.y + 22.0f}, 3.2f, dp.canopy_healthy);
                         DrawCircleV({tr.x + 31.0f, tr.y + 28.0f}, 3.0f, dp.canopy_hi_healthy);
                         DrawCircleV({tr.x + 17.0f, tr.y + 22.0f}, 1.8f, dp.blossom_a);
                         DrawCircleV({tr.x + 31.0f, tr.y + 28.0f}, 1.8f, dp.blossom_b);
                     }
                 } else {
-                    // Blocco di rovine scolpite con spigoli erosi e fregio geometrico
                     const int inset_l = ww ? 0 : 3;
                     const int inset_r = we ? 0 : 3;
                     const int inset_t = wn ? 0 : 3;
@@ -1433,11 +2327,9 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     if (front_h > 0) {
                         DrawRectangle(rx + inset_l, ry + top_h, tile_px - inset_l - inset_r, front_h, front_col);
                         DrawLine(rx + inset_l, ry + top_h, rx + tile_px - inset_r, ry + top_h, edge_col);
-                        // Fregio in bronzo inciso sulla faccia frontale
                         DrawLine(rx + inset_l + 4, ry + top_h + 7, rx + tile_px - inset_r - 4, ry + top_h + 7,
                                  pal::WithAlpha(pal::WorldColor(dp.inlay_sick, dp.inlay_healthy, poll), 175));
                     }
-                    // Crepe variate per blocco e fughe a conci (mai linee identiche su blocchi adiacenti!)
                     const std::uint32_t ch = Hash2(c, r, 733);
                     const int joint_x = rx + 14 + static_cast<int>(ch % 20u);
                     DrawLine(joint_x, ry + inset_t, joint_x, ry + top_h, pal::WithAlpha(mortar, 110));
@@ -1449,13 +2341,9 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                         DrawLine(cx0, cy0, cx1, cy1, pal::WithAlpha(mortar, 175));
                         DrawLine(cx1, cy1, cx1 - 4, std::min(ry + top_h - 2, cy1 + 8), pal::WithAlpha(mortar, 150));
                     }
-                    if (!wn) {
-                        DrawLine(rx + inset_l, ry + inset_t, rx + tile_px - inset_r, ry + inset_t, edge_col);
-                    }
-                    if (!ww) {
-                        DrawLine(rx + inset_l, ry + inset_t, rx + inset_l, ry + tile_px - 1, edge_col);
-                    }
-                    // Capitello/fregio circolare sul tetto della rovina (o camino di fornace nella Caldera!)
+                    if (!wn) DrawLine(rx + inset_l, ry + inset_t, rx + tile_px - inset_r, ry + inset_t, edge_col);
+                    if (!ww) DrawLine(rx + inset_l, ry + inset_t, rx + inset_l, ry + tile_px - 1, edge_col);
+
                     if (zone == eco::ZoneId::FumaroleCaldera && variant == 2u) {
                         const Color flue = pal::WorldColor(Color{206, 82, 36, 200}, Color{92, 178, 172, 165}, poll);
                         DrawCircle(rx + 24, ry + top_h / 2, 10.0f, pal::kBasaltDark);
@@ -1466,41 +2354,31 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
                     }
                 }
             } else {
-                // Muratura monumentale continua (Wall)
                 DrawRectangle(rx, ry, tile_px, top_h, top_col);
                 if (front_h > 0) {
                     DrawRectangle(rx, ry + top_h, tile_px, front_h, front_col);
-                    // Conci di pietra sulla facciata frontale
                     DrawLine(rx + 16, ry + top_h, rx + 16, ry + tile_px, mortar);
                     DrawLine(rx + 36, ry + top_h, rx + 36, ry + tile_px, mortar);
                     DrawLine(rx, ry + top_h + 7, rx + tile_px, ry + top_h + 7, pal::WithAlpha(mortar, 150));
-                    // Cornice superiore della facciata
                     DrawLine(rx, ry + top_h, rx + tile_px, ry + top_h, pal::ShiftBrightness(edge_col, -12));
                     DrawLine(rx, ry + tile_px - 1, rx + tile_px, ry + tile_px - 1, mortar);
                 }
 
-                // Fughe leggere sulla sommita' per dare scala architettonica
                 DrawLine(rx + 24, ry, rx + 24, ry + top_h, pal::WithAlpha(mortar, 85));
                 if (!wn) {
                     DrawLine(rx, ry, rx + tile_px, ry, edge_col);
                     DrawLine(rx, ry + 1, rx + tile_px, ry + 1, pal::WithAlpha(edge_col, 140));
                 }
-                if (!ww) {
-                    DrawLine(rx, ry, rx, ry + tile_px, edge_col);
-                }
-                if (!we) {
-                    DrawLine(rx + tile_px - 1, ry, rx + tile_px - 1, ry + tile_px, mortar);
-                }
+                if (!ww) DrawLine(rx, ry, rx, ry + tile_px, edge_col);
+                if (!we) DrawLine(rx + tile_px - 1, ry, rx + tile_px - 1, ry + tile_px, mortar);
 
-                // Accento architettonico in bronzo/giada nel Santuario e nel Quartiere dei Canali
-                if (!ws && (zone == eco::ZoneId::HarmonySanctuary || zone == eco::ZoneId::CanalQuarter) && ((c & 1) == 0)) {
+                if (!ws && (zone == eco::ZoneId::HarmonySanctuary || zone == eco::ZoneId::CanalQuarter || zone == eco::ZoneId::DawnTerraces) && ((c & 1) == 0)) {
                     const Color band = pal::WorldColor(dp.inlay_sick, dp.inlay_healthy, poll);
                     DrawRectangle(rx + 10, ry + top_h + 4, tile_px - 20, 3, pal::WithAlpha(band, 190));
                 }
             }
 
-            // Edera, muschio e piccoli fiori che abbracciano muri e rovine al calare dello smog
-            if (!ws && health > 0.25f && (h & 3u) != 0u) {
+            if (!ws && health > 0.25f && (h & 3u) != 0u && zone != eco::ZoneId::FumaroleCaldera) {
                 const Color moss = pal::WorldColor(Color{74, 84, 56, 175}, dp.canopy_healthy, poll);
                 const Color moss_hi = pal::WorldColor(Color{96, 104, 68, 175}, dp.canopy_hi_healthy, poll);
                 const int mx = rx + 6 + static_cast<int>((h >> 5) % 24u);
@@ -1516,206 +2394,77 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
     }
 }
 
-namespace {
-
-// Prop statici dell'Overworld: calcolati UNA sola volta (zero scansioni di mappa e zero
-// allocazioni durante il loop di gioco); il disegno filtra solo per viewport.
-struct StaticProp {
-    float x = 0.0f;
-    float y = 0.0f;
-    float scale = 1.0f;
-    std::uint32_t h = 0;
-    unsigned roll = 0;
-    eco::ZoneId zone = eco::ZoneId::DawnTerraces;
-};
-
-std::vector<StaticProp> g_prop_cache;
-int g_prop_cache_rows = -1;
-int g_prop_cache_cols = -1;
-eco::Vec2 g_prop_cache_spawn{-1.0f, -1.0f};
-
-void RebuildPropCacheIfNeeded(const eco::WorldContext& world) {
-    const eco::Tilemap& tilemap = world.overworld.tilemap;
-    if (g_prop_cache_rows == tilemap.Rows() && g_prop_cache_cols == tilemap.Cols() &&
-        g_prop_cache_spawn.x == world.overworld.spawn_point.x &&
-        g_prop_cache_spawn.y == world.overworld.spawn_point.y) {
-        return;
-    }
-    g_prop_cache_rows = tilemap.Rows();
-    g_prop_cache_cols = tilemap.Cols();
-    g_prop_cache_spawn = world.overworld.spawn_point;
-    g_prop_cache.clear();
-    g_prop_cache.reserve(256);
-
-    for (int r = 1; r <= tilemap.Rows() - 2; ++r) {
-        for (int c = 1; c <= tilemap.Cols() - 2; ++c) {
-            if (((r * 7 + c * 11) % 13) != 0) {
-                continue;
-            }
-            if (IsTileSolidForProp(tilemap.GetTile(r, c))) {
-                continue;
-            }
-            int solid_neighbors = 0;
-            for (int dr = -1; dr <= 1; ++dr) {
-                for (int dc = -1; dc <= 1; ++dc) {
-                    if (dr == 0 && dc == 0) {
-                        continue;
-                    }
-                    const eco::TileId nb = tilemap.GetTile(r + dr, c + dc);
-                    if (nb == eco::TileId::StructurePortal || nb == eco::TileId::HiddenBridge) {
-                        solid_neighbors += 9;
-                    } else if (IsWallLike(nb) || nb == eco::TileId::PavedPath) {
-                        ++solid_neighbors;
-                    }
-                }
-            }
-            if (solid_neighbors >= 5) {
-                continue;
-            }
-            const std::uint32_t h = Hash2(c, r, 409);
-            const eco::Vec2 center = tilemap.TileCenter(r, c);
-            const eco::Vec2 pos{
-                center.x + static_cast<float>(static_cast<int>(h % 13u) - 6),
-                center.y + static_cast<float>(static_cast<int>((h >> 4) % 13u) - 6)};
-            if (!IsPropPositionSafe(world, pos)) {
-                continue;
-            }
-            // Mai dentro/attorno ai varchi monumentali tra distretti
-            bool near_gateway = false;
-            for (const auto& gw : world.overworld.gateways) {
-                if (pos.DistanceTo(gw.world_center) < 150.0f) {
-                    near_gateway = true;
-                    break;
-                }
-            }
-            if (near_gateway) {
-                continue;
-            }
-            StaticProp p;
-            p.x = pos.x;
-            p.y = pos.y;
-            p.scale = 0.88f + static_cast<float>((h >> 8) % 25u) * 0.01f;
-            p.h = h;
-            p.roll = (h >> 14) % 12u;
-            p.zone = tilemap.DistrictAtTile(r, c);
-            g_prop_cache.push_back(p);
-        }
-    }
-}
-
-// Targa direzionale appesa ai pilastri del varco (testo non allocante)
-void DrawGatewayPlaque(float cx, float y, const char* text, Color accent) {
-    const int tw = MeasureUiText(text, 11);
-    const int bw = tw + 16;
-    const int bx = static_cast<int>(cx) - bw / 2;
-    const int by = static_cast<int>(y);
-    DrawRectangle(bx + 2, by + 2, bw, 18, Color{0, 0, 0, 100});
-    DrawRectangle(bx, by, bw, 18, Color{16, 22, 32, 238});
-    DrawRectangleLines(bx, by, bw, 18, pal::WithAlpha(pal::kBronze, 230));
-    DrawRectangle(bx + 2, by + 2, 3, 14, accent);
-    DrawRectangle(bx + bw - 5, by + 2, 3, 14, accent);
-    DrawTextShadow(text, bx + 8, by + 3, 11, pal::kParchmentText);
-}
-
-void DrawGatewayPillar(float cx, float base_y, float height, Color stone, Color accent, float pulse) {
-    const Color dark = pal::ShiftBrightness(stone, -34);
-    const Color hi = pal::ShiftBrightness(stone, 26);
-    DrawEllipse(static_cast<int>(cx + 4.0f), static_cast<int>(base_y + 2.0f), 17.0f, 6.0f, Color{0, 0, 0, 110});
-    DrawRectangle(static_cast<int>(cx - 15.0f), static_cast<int>(base_y - 10.0f), 30, 12, dark);
-    DrawRectangle(static_cast<int>(cx - 11.0f), static_cast<int>(base_y - height), 22, static_cast<int>(height - 8.0f), stone);
-    DrawRectangle(static_cast<int>(cx + 4.0f), static_cast<int>(base_y - height), 7, static_cast<int>(height - 8.0f), dark);
-    DrawLine(static_cast<int>(cx - 11.0f), static_cast<int>(base_y - height), static_cast<int>(cx - 11.0f), static_cast<int>(base_y - 10.0f), hi);
-    // scanalature e fasce bronzo
-    DrawLine(static_cast<int>(cx - 4.0f), static_cast<int>(base_y - height + 8.0f), static_cast<int>(cx - 4.0f), static_cast<int>(base_y - 14.0f), hi);
-    DrawRectangle(static_cast<int>(cx - 13.0f), static_cast<int>(base_y - height + 12.0f), 26, 4, pal::kBronze);
-    DrawRectangle(static_cast<int>(cx - 13.0f), static_cast<int>(base_y - 22.0f), 26, 4, pal::kBronze);
-    // capitello + lanterna del distretto di destinazione
-    DrawRectangle(static_cast<int>(cx - 15.0f), static_cast<int>(base_y - height - 5.0f), 30, 7, hi);
-    DrawRectangleLines(static_cast<int>(cx - 15.0f), static_cast<int>(base_y - height - 5.0f), 30, 7, pal::kBronzeDark);
-    const float ly = base_y - height - 17.0f;
-    DrawCircleV({cx, ly}, 15.0f * pulse, pal::WithAlpha(accent, 58));
-    DrawCircleV({cx, ly}, 6.2f, accent);
-    DrawCircleV({cx, ly}, 2.8f, pal::kStoneIvory);
-    DrawCircleLines(static_cast<int>(cx), static_cast<int>(ly), 6.2f, pal::kBronzeBright);
-}
-
-void DrawDistrictGateway(const eco::DistrictGateway& gw, const eco::WorldContext& world) {
-    const float poll = world.ecosystem.PollutionRatio();
-    const float tile = eco::kTileSize;
-    const float pulse = 0.78f + 0.22f * std::sin(world.sim_time * 2.6f + gw.world_center.x * 0.01f);
-    const pal::DistrictPalette& to_pal = pal::GetDistrictPalette(gw.to_zone);
-    const pal::DistrictPalette& from_pal = pal::GetDistrictPalette(gw.from_zone);
-    const Color to_acc = to_pal.ambient_accent;
-    const Color from_acc = from_pal.ambient_accent;
-    const Color stone = pal::WorldColor(to_pal.wall_top_sick, to_pal.wall_top_healthy, poll);
-    const bool locked = gw.requires_bridge_unlock && !world.ecosystem.architect_recruited;
-
-    const float x0 = static_cast<float>(gw.tile_min.col) * tile;
-    const float x1 = static_cast<float>(gw.tile_max.col + 1) * tile;
-    const float y0 = static_cast<float>(gw.tile_min.row) * tile;
-    const float y1 = static_cast<float>(gw.tile_max.row + 1) * tile;
-
-    if (gw.IsHorizontalWall()) {
-        // Arco monumentale: pilastri a Ovest/Est, architrave con lanterne bicolore, stele direzionali N/S
-        const float h = (y1 - y0) + 34.0f;
-        const float base_y = y1 + 2.0f;
-        DrawGatewayPillar(x0 - 6.0f, base_y, h, stone, from_acc, pulse);
-        DrawGatewayPillar(x1 + 6.0f, base_y, h, stone, to_acc, pulse);
-        // Architrave
-        const float top = base_y - h - 4.0f;
-        DrawRectangle(static_cast<int>(x0 - 18.0f), static_cast<int>(top - 7.0f), static_cast<int>(x1 - x0 + 36.0f), 12,
-                      pal::ShiftBrightness(stone, 14));
-        DrawRectangleLines(static_cast<int>(x0 - 18.0f), static_cast<int>(top - 7.0f), static_cast<int>(x1 - x0 + 36.0f), 12, pal::kBronze);
-        DrawRectangleGradientH(static_cast<int>(x0), static_cast<int>(top - 4.0f), static_cast<int>(x1 - x0), 6,
-                               pal::WithAlpha(from_acc, 220), pal::WithAlpha(to_acc, 220));
-        // Tappeto di luce sul passaggio, sfumato verso la zona di destinazione
-        DrawRectangleGradientV(static_cast<int>(x0), static_cast<int>(y0), static_cast<int>(x1 - x0), static_cast<int>(y1 - y0),
-                               pal::WithAlpha(to_acc, static_cast<unsigned char>(42.0f * pulse)), pal::WithAlpha(from_acc, 34));
-        // Stele direzionali: sopra (verso nord) e sotto (verso sud)
-        const float mid_x = (x0 + x1) * 0.5f;
-        // La stele di andata va sul lato da cui si parte: 'N ->' sul lato sud, 'S ->' sul lato nord
-        const bool go_north = (gw.signpost_label[0] == 'N');
-        DrawGatewayPlaque(mid_x, go_north ? (y1 + 18.0f) : (top - 30.0f), gw.signpost_label, to_acc);
-        DrawGatewayPlaque(mid_x, go_north ? (top - 30.0f) : (y1 + 18.0f), gw.reverse_label, from_acc);
-    } else {
-        // Varco verticale (Ponte degli Archi): pilastri a Nord/Sud, targhe a Est/Ovest
-        const float mid_y = (y0 + y1) * 0.5f;
-        const Color acc_east = locked ? pal::kAccentWarn : pal::kJadeGlow;
-        DrawGatewayPillar(x0 - 22.0f, y0 - 8.0f, 54.0f, stone, locked ? pal::kAccentWarn : from_acc, pulse);
-        DrawGatewayPillar(x0 - 22.0f, y1 + 22.0f, 54.0f, stone, locked ? pal::kAccentWarn : to_acc, pulse);
-        DrawGatewayPillar(x1 + 22.0f, y0 - 8.0f, 54.0f, stone, locked ? pal::kAccentWarn : from_acc, pulse);
-        DrawGatewayPillar(x1 + 22.0f, y1 + 22.0f, 54.0f, stone, locked ? pal::kAccentWarn : to_acc, pulse);
-        // 'E ->' sul lato ovest (si parte da li'), ritorno sul lato est
-        DrawGatewayPlaque(x0 - 70.0f, mid_y - 9.0f, gw.signpost_label, acc_east);
-        DrawGatewayPlaque(x1 + 70.0f, mid_y - 9.0f, gw.reverse_label, from_acc);
-    }
-}
-
-} // namespace
-
 // =============================================================================
-// Overworld Props — Flora Diversificata, Lanterne, Bio-Cristalli & Stele
+// Overworld Props — Varchi, Affreschi, Flora, Meccaniche Elevate & Stele
 // =============================================================================
 void DrawOverworldProceduralProps(const eco::WorldContext& world) {
+    const eco::ZoneId zone = world.overworld.active_zone;
+    const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
     const float poll = world.ecosystem.PollutionRatio();
     const float health = 1.0f - poll;
     const float sim_time = world.sim_time;
     const eco::Vec2 cam = world.overworld.camera_target;
     const float half_w = static_cast<float>(eco::kWindowWidth) * 0.5f + 120.0f;
     const float half_h = static_cast<float>(eco::kWindowHeight) * 0.5f + 120.0f;
+    const float wind_gust = (zone == eco::ZoneId::WindPlateau) ? world.zone_mechanics.wind.gust_intensity : 0.0f;
 
-    RebuildPropCacheIfNeeded(world);
+    RebuildZoneCacheIfNeeded(world);
 
-    // 0. Varchi monumentali tra i distretti (DistrictGateway) — sotto flora/prop
-    for (const auto& gw : world.overworld.gateways) {
+    // 0. Varchi monumentali tra la zona attiva e le zone adiacenti
+    for (const auto& gw : world.overworld.active_gateways) {
         if (std::fabs(gw.world_center.x - cam.x) > half_w + 160.0f ||
             std::fabs(gw.world_center.y - cam.y) > half_h + 160.0f) {
             continue;
         }
-        DrawDistrictGateway(gw, world);
+        DrawZoneGatewayArch(gw, world);
     }
 
-    // 1. Prop statici pre-calcolati: solo filtro viewport
+    // 1. Affreschi ambientali dedicati alla zona attiva
+    for (const auto& f : g_fresco_cache) {
+        if (std::fabs(f.x - cam.x) > half_w || std::fabs(f.y - cam.y) > half_h) {
+            continue;
+        }
+        switch (f.kind) {
+            case FrescoKind::SundialObelisk:
+                DrawSundialObelisk(f.x, f.y, poll, sim_time, dp);
+                if (f.caption != nullptr && f.caption[0] != '\0') {
+                    DrawMeridianStele(f.x, f.y - 30.0f, f.caption, dp.ambient_accent, health);
+                }
+                break;
+            case FrescoKind::HydroFountain:
+                DrawMeridianStatue(f.x, f.y, true, poll, sim_time, dp);
+                if (f.caption != nullptr && f.caption[0] != '\0') {
+                    DrawMeridianStele(f.x, f.y - 32.0f, f.caption, dp.ambient_accent, health);
+                }
+                break;
+            case FrescoKind::WindStele:
+                DrawCarvedBasReliefPlaque(f.x, f.y, poll, dp, f.caption);
+                break;
+            case FrescoKind::AcousticBasin:
+                DrawAcousticJadeBasin(f.x, f.y, poll, sim_time, dp);
+                if (f.caption != nullptr && f.caption[0] != '\0') {
+                    DrawMeridianStele(f.x, f.y - 26.0f, f.caption, dp.ambient_accent, health);
+                }
+                break;
+            case FrescoKind::ThermalBrazier:
+                DrawGeothermalBrazier(f.x, f.y, poll, sim_time);
+                if (f.caption != nullptr && f.caption[0] != '\0') {
+                    DrawMeridianStele(f.x, f.y - 24.0f, f.caption, dp.ambient_accent, health);
+                }
+                break;
+            case FrescoKind::SanctuaryStatue:
+                DrawMeridianStatue(f.x, f.y, false, poll, sim_time, dp);
+                if (f.caption != nullptr && f.caption[0] != '\0') {
+                    DrawMeridianStele(f.x, f.y - 38.0f, f.caption, dp.ambient_accent, health);
+                }
+                break;
+            case FrescoKind::BasRelief:
+                DrawCarvedBasReliefPlaque(f.x, f.y, poll, dp, f.caption);
+                break;
+        }
+    }
+
+    // 2. Prop statici pre-calcolati SOLO per la zona attiva
     for (const StaticProp& sp : g_prop_cache) {
         if (std::fabs(sp.x - cam.x) > half_w || std::fabs(sp.y - cam.y) > half_h) {
             continue;
@@ -1725,67 +2474,53 @@ void DrawOverworldProceduralProps(const eco::WorldContext& world) {
         const std::uint32_t h = sp.h;
         const float scale = sp.scale;
         const unsigned roll = sp.roll;
-        const eco::ZoneId zone = sp.zone;
-        const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
-        const eco::Vec2 pos{px, py};
-        {
-            if (roll == 0u) {
-                DrawBioCrystalNode(pos.x, pos.y, sim_time, poll, dp.ambient_accent);
-            } else if (roll == 1u) {
-                DrawJadeLanternPillar(pos.x, pos.y, sim_time, poll, dp.ambient_accent);
-            } else if (roll == 2u && (zone == eco::ZoneId::DawnTerraces || zone == eco::ZoneId::HarmonySanctuary || zone == eco::ZoneId::WindPlateau)) {
-                DrawBrokenColumnDrum(pos.x, pos.y, poll, dp);
-            } else if (roll == 3u && zone != eco::ZoneId::FumaroleCaldera) {
-                const bool hydro = (zone == eco::ZoneId::CanalQuarter || zone == eco::ZoneId::HangingGardens);
-                DrawMeridianStatue(pos.x, pos.y, hydro, poll, sim_time, dp);
-            } else if (roll == 4u && (zone == eco::ZoneId::HangingGardens || zone == eco::ZoneId::HarmonySanctuary)) {
-                DrawStonePlanterUrn(pos.x, pos.y, poll, sim_time, dp);
-            } else if (roll == 4u && (zone == eco::ZoneId::DawnTerraces || zone == eco::ZoneId::WindPlateau)) {
-                DrawSundialObelisk(pos.x, pos.y, poll, sim_time, dp);
-            } else {
-                // Flora specifica del distretto
-                switch (zone) {
-                    case eco::ZoneId::DawnTerraces:
-                    case eco::ZoneId::HarmonySanctuary:
-                        DrawOliveTree(pos.x, pos.y, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu));
-                        break;
-                    case eco::ZoneId::WindPlateau:
-                    case eco::ZoneId::CanalQuarter:
-                        DrawWindCypress(pos.x, pos.y, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu));
-                        break;
-                    case eco::ZoneId::HangingGardens:
-                        DrawFloweringGardenTree(pos.x, pos.y, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu));
-                        break;
-                    case eco::ZoneId::FumaroleCaldera:
-                        if ((h & 1u) == 0u) {
-                            DrawBasaltThermalVent(pos.x, pos.y, scale, sim_time, poll, static_cast<int>(h & 0xFFu));
-                        } else {
-                            DrawOliveTree(pos.x, pos.y, scale * 0.86f, sim_time, poll, dp, static_cast<int>(h & 0xFFu));
-                        }
-                        break;
-                    case eco::ZoneId::Count:
-                        break;
-                }
+
+        if (roll == 0u) {
+            DrawBioCrystalNode(px, py, sim_time, poll, dp.ambient_accent);
+        } else if (roll == 1u) {
+            DrawJadeLanternPillar(px, py, sim_time, poll, dp.ambient_accent);
+        } else if (roll == 2u && (zone == eco::ZoneId::DawnTerraces || zone == eco::ZoneId::HarmonySanctuary || zone == eco::ZoneId::WindPlateau)) {
+            DrawBrokenColumnDrum(px, py, poll, dp);
+        } else if (roll == 3u && zone != eco::ZoneId::FumaroleCaldera) {
+            const bool hydro = (zone == eco::ZoneId::CanalQuarter || zone == eco::ZoneId::HangingGardens);
+            DrawMeridianStatue(px, py, hydro, poll, sim_time, dp);
+        } else if (roll == 4u && (zone == eco::ZoneId::HangingGardens || zone == eco::ZoneId::HarmonySanctuary)) {
+            DrawStonePlanterUrn(px, py, poll, sim_time, dp);
+        } else if (roll == 4u && (zone == eco::ZoneId::DawnTerraces || zone == eco::ZoneId::WindPlateau)) {
+            DrawSundialObelisk(px, py, poll, sim_time, dp);
+        } else {
+            switch (zone) {
+                case eco::ZoneId::DawnTerraces:
+                case eco::ZoneId::HarmonySanctuary:
+                    DrawOliveTree(px, py, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu));
+                    break;
+                case eco::ZoneId::WindPlateau:
+                case eco::ZoneId::CanalQuarter:
+                    DrawWindCypress(px, py, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu), wind_gust);
+                    break;
+                case eco::ZoneId::HangingGardens:
+                    DrawFloweringGardenTree(px, py, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu));
+                    break;
+                case eco::ZoneId::FumaroleCaldera:
+                    if ((h & 1u) == 0u) {
+                        DrawBasaltThermalVent(px, py, scale, sim_time, poll, static_cast<int>(h & 0xFFu));
+                    } else {
+                        DrawGeothermalBrazier(px, py, poll, sim_time);
+                    }
+                    break;
+                case eco::ZoneId::Count:
+                    break;
             }
         }
     }
 
-    // 2. Lanterne architettoniche di benvenuto ai lati del Ponte degli Archi
-    const float bridge_x = (static_cast<float>(eco::Tilemap::kBridgeDividerCol) + 0.5f) * eco::kTileSize;
-    const float bridge_y_top = 15.4f * eco::kTileSize;
-    const float bridge_y_bot = 19.3f * eco::kTileSize;
-    const Color bridge_light = world.ecosystem.architect_recruited ? pal::kJadeGlow : pal::kAmberGlow;
-    if (std::fabs(bridge_x - cam.x) <= half_w) {
-        DrawJadeLanternPillar(bridge_x - eco::kTileSize * 1.15f, bridge_y_top, sim_time, poll, bridge_light);
-        DrawJadeLanternPillar(bridge_x - eco::kTileSize * 1.15f, bridge_y_bot, sim_time, poll, bridge_light);
-        DrawJadeLanternPillar(bridge_x + eco::kTileSize * 1.15f, bridge_y_top, sim_time, poll, bridge_light);
-        DrawJadeLanternPillar(bridge_x + eco::kTileSize * 1.15f, bridge_y_bot, sim_time, poll, bridge_light);
-    }
+    // 3. Elementi elevati delle 6 meccaniche top-down (specchi/fasci, leve, monoliti/raffiche, getti/valvole, cristalli)
+    DrawZoneMechanicsElevated(world, cam, half_w, half_h);
 
-    // 3. Stele Diegetiche scolpite (posizionate dinamicamente da world.overworld.portals)
+    // 4. Stele Diegetiche dei Portali Struttura presenti nella zona attiva
     for (const auto& portal : world.overworld.portals) {
         const float sx = portal.world_center.x;
-        const float sy = static_cast<float>(portal.tile_min.row) * eco::kTileSize - 10.0f;
+        const float sy = static_cast<float>(portal.tile_min.row) * world.overworld.tilemap.TileSize() - 10.0f;
         if (std::fabs(sx - cam.x) > half_w || std::fabs(sy - cam.y) > half_h) {
             continue;
         }
@@ -1799,18 +2534,6 @@ void DrawOverworldProceduralProps(const eco::WorldContext& world) {
             label = "CAMERA GEOTERMICA";
         }
         DrawMeridianStele(sx, sy, label, accent, health);
-    }
-
-    // Stele diegetica del Ponte degli Archi (posizionata su terreno asciutto a nord-ovest del ponte)
-    const float stele_bridge_x = 22.6f * eco::kTileSize;
-    const float stele_bridge_y = 15.35f * eco::kTileSize;
-    if (std::fabs(stele_bridge_x - cam.x) <= half_w && std::fabs(stele_bridge_y - cam.y) <= half_h) {
-        DrawMeridianStele(
-            stele_bridge_x,
-            stele_bridge_y,
-            world.ecosystem.architect_recruited ? "PONTE DEGLI ARCHI" : "PONTE SIGILLATO",
-            world.ecosystem.architect_recruited ? pal::kAccentClean : pal::kAccentWarn,
-            health);
     }
 }
 
@@ -1830,7 +2553,6 @@ void DrawStructureProceduralBackdropAndMap(
     const int world_h = static_cast<int>(tilemap.WorldHeight());
     const float parallax_x = (camera_target.x - static_cast<float>(world_w) * 0.5f) * 0.20f;
 
-    // 1. Sfondo in parallasse dedicato a ciascuna struttura
     if (sid == eco::StructureId::HypogeanCisterns) {
         DrawCisternsBackdrop(world_w, world_h, parallax_x, poll, sim_time, sp);
     } else if (sid == eco::StructureId::PendulumTower) {
@@ -1839,8 +2561,10 @@ void DrawStructureProceduralBackdropAndMap(
         DrawGeothermalBackdrop(world_w, world_h, parallax_x, poll, sim_time, sp);
     }
 
-    // 2. Tilemap 2.5D strutturale (piattaforme sospese, murature scolpite, portale di uscita)
     const int tile_px = static_cast<int>(tilemap.TileSize());
+    if (tile_px <= 0 || tilemap.Rows() <= 0 || tilemap.Cols() <= 0) {
+        return;
+    }
     const Color wall_top = pal::WorldColor(sp.wall_top_sick, sp.wall_top_healthy, poll);
     const Color wall_dark = pal::WorldColor(sp.wall_dark_sick, sp.wall_dark_healthy, poll);
     const Color plat_top = pal::WorldColor(sp.plat_top_sick, sp.plat_top_healthy, poll);
@@ -1848,7 +2572,6 @@ void DrawStructureProceduralBackdropAndMap(
     const Color plat_rim = pal::WorldColor(sp.plat_rim_sick, sp.plat_rim_healthy, poll);
     const Color accent = pal::WorldColor(sp.accent_sick, sp.accent_healthy, poll);
 
-    // Viewport culling stretto: solo le tile visibili (margine 2 tile per ombre/lanterne)
     const float ts = tilemap.TileSize();
     const int s_min_col = std::max(0, static_cast<int>(std::floor((camera_target.x - static_cast<float>(eco::kWindowWidth) * 0.5f) / ts)) - 2);
     const int s_max_col = static_cast<int>(std::ceil((camera_target.x + static_cast<float>(eco::kWindowWidth) * 0.5f) / ts)) + 2;
@@ -1868,23 +2591,19 @@ void DrawStructureProceduralBackdropAndMap(
             if (IsWallLike(id)) {
                 const bool is_perimeter = (r == 0 || r >= tilemap.Rows() - 2 || c == 0 || c == row_cols - 1);
                 if (!is_perimeter) {
-                    // Piattaforma / ballatoio sopraelevato con stile dedicato per struttura
                     DrawRectangle(rx + 2, ry + tile_px, tile_px - 2, 8, Color{0, 0, 0, 88});
                     DrawRectangle(rx, ry, tile_px, 13, plat_top);
                     DrawRectangle(rx, ry + 13, tile_px, tile_px - 13, plat_body);
 
                     if (sid == eco::StructureId::HypogeanCisterns) {
-                        // Arco di rinforzo in bronzo e pietra scolpita sotto la passerella
                         DrawRing({tr.x + tr.width * 0.5f, tr.y + tr.height}, 14.0f, 18.0f, 180.0f, 360.0f, 12, pal::WithAlpha(pal::kBronze, 180));
                         DrawLine(rx + 24, ry, rx + 24, ry + 13, pal::ShiftBrightness(plat_top, -22));
                     } else if (sid == eco::StructureId::PendulumTower) {
-                        // Ballatoio d'osservatorio in ottone con tacche graduate
                         for (int tx = rx + 6; tx < rx + tile_px - 4; tx += 8) {
                             DrawLine(tx, ry + 14, tx, ry + 26, pal::WithAlpha(plat_rim, 165));
                         }
                         DrawLine(rx + 4, ry + 28, rx + tile_px - 4, ry + 28, pal::WithAlpha(pal::kBronzeBright, 150));
                     } else {
-                        // Passerella geotermica in rame rivettato con traliccio termale
                         DrawLine(rx + 4, ry + 15, rx + tile_px - 4, ry + tile_px - 4, pal::ShiftBrightness(plat_body, 24));
                         DrawLine(rx + tile_px - 4, ry + 15, rx + 4, ry + tile_px - 4, pal::ShiftBrightness(plat_body, 24));
                         DrawCircle(rx + 6, ry + 7, 2.0f, pal::kBronzeBright);
@@ -1894,7 +2613,6 @@ void DrawStructureProceduralBackdropAndMap(
                     DrawRectangleLines(rx, ry, tile_px, tile_px, pal::ShiftBrightness(plat_body, -16));
                     DrawLineEx({tr.x + 1.0f, tr.y + 2.5f}, {tr.x + tr.width - 1.0f, tr.y + 2.5f}, 2.4f, plat_rim);
 
-                    // Lanterne sospese o sfoghi termali sotto le piattaforme (ogni 3 tile)
                     if ((c % 3 == 1) && r + 1 < tilemap.Rows() && !IsWallLike(tilemap.GetTile(r + 1, c))) {
                         const float lx = tr.x + tr.width * 0.5f;
                         const float ly = tr.y + tr.height + 11.0f;
@@ -1905,7 +2623,6 @@ void DrawStructureProceduralBackdropAndMap(
                         DrawCircleV({lx, ly}, 1.4f, pal::kStoneIvory);
                     }
                 } else {
-                    // Murature perimetrali e pavimento a conci scolpiti
                     const Color block = pal::ShiftBrightness(wall_top, static_cast<int>(h % 9u) - 4);
                     DrawRectangle(rx, ry, tile_px, tile_px, wall_dark);
                     DrawRectangle(rx + 2, ry + 2, tile_px - 4, tile_px - 8, block);
@@ -1914,17 +2631,14 @@ void DrawStructureProceduralBackdropAndMap(
                     DrawRectangleLines(rx, ry, tile_px, tile_px, pal::ShiftBrightness(wall_dark, -10));
 
                     if (r == 0 && c > 0 && c < row_cols - 1 && (c % 2 == 0)) {
-                        // Mensole/archi scolpiti lungo la volta superiore
                         DrawRectangle(rx + 14, ry + tile_px, 20, 7, wall_dark);
                         DrawLine(rx + 14, ry + tile_px + 7, rx + 34, ry + tile_px + 7, pal::WithAlpha(pal::kBronze, 150));
                     }
                     if (r == tilemap.Rows() - 2 && c > 0 && c < row_cols - 1) {
-                        // Bordo superiore del pavimento calpestabile con intarsio luminoso
                         DrawLineEx({tr.x, tr.y + 1.5f}, {tr.x + tr.width, tr.y + 1.5f}, 2.5f, pal::WithAlpha(accent, 215));
                     }
                 }
             } else if (id == eco::TileId::ExitPortal) {
-                // Portale monumentale d'uscita verso la Conca di Meridia
                 const float pulse = 0.5f + 0.5f * std::sin(sim_time * 3.6f);
                 const Color glow = pal::LerpColor(pal::kBronze, pal::kAmberGlow, pulse);
                 DrawRectangle(rx, ry, tile_px, tile_px, Color{24, 52, 68, 255});
@@ -1935,8 +2649,6 @@ void DrawStructureProceduralBackdropAndMap(
         }
     }
 
-    // 3. Stele diegetica d'uscita posizionata dinamicamente sopra i tile ExitPortal
-    // Posizione stele d'uscita: calcolata una sola volta per struttura (zero allocazioni per-frame)
     struct ExitCache { bool ready = false; float x = 0.0f; float y = 0.0f; };
     static std::array<ExitCache, static_cast<std::size_t>(eco::StructureId::Count)> exit_cache{};
     ExitCache& ec_slot = exit_cache[static_cast<std::size_t>(sid) % exit_cache.size()];
@@ -1955,8 +2667,6 @@ void DrawStructureProceduralBackdropAndMap(
         }
     }
     if (ec_slot.ready) {
-        const float ex = ec_slot.x;
-        const float ey = ec_slot.y;
         const char* exit_label = "CONCA DI MERIDIA";
         if (sid == eco::StructureId::PendulumTower) {
             exit_label = "ALTOPIANO [USCITA]";
@@ -1965,7 +2675,7 @@ void DrawStructureProceduralBackdropAndMap(
         } else {
             exit_label = "CANALI [USCITA]";
         }
-        DrawMeridianStele(ex, ey, exit_label, pal::kAmberGlow, health);
+        DrawMeridianStele(ec_slot.x, ec_slot.y, exit_label, pal::kAmberGlow, health);
     }
 }
 

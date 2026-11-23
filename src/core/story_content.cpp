@@ -47,16 +47,16 @@ std::vector<DialogueLine> DialogueForEvent(StoryEvent e, const StorySnapshot& s)
         case StoryEvent::GameStarted:
             return {
                 {"Elena Valli", "L'aria sulle Terrazze dell'Alba sa di cenere e pietra bagnata. Ecco finalmente la Conca di Meridia."},
-                {"Elena Valli", "Gli specchi dell'Eliostato sono spenti da anni, ma la mia Lente Empirica [F] puo' ancora misurare la luce."},
+                {"Elena Valli", "Lungo le lastre di travertino vedo specchi di bronzo orientabili [E] e piastre fotosensibili: i Meridiani aprivano i cancelli con la sola luce."},
                 {"Matteo Verrini", "Dottoressa Valli, la vedo salire dalle terrazze. Se vuole corrente subito senza perdere la giornata, apra la fornace con [B]."},
-                {"Elena Valli", "Sono salita fin qui per fermare il fumo che scende sui villaggi, Matteo. Prima misuro l'Eliostato con [F]."}
+                {"Elena Valli", "Sono salita fin qui per fermare il fumo che scende sui villaggi, Matteo. Prima misuro l'Eliostato con [F] e osservo i fasci sugli specchi."}
             };
 
         case StoryEvent::FirstScan:
             return {
                 {"Elena Valli", "Lo gnomone di bronzo non mente: il raggio solare incide a 45 gradi esatti sulle lastre di travertino."},
-                {"Elena Valli", "E' la legge del coseno di Lambert: il rendimento dipende dall'angolo tra lo specchio e il fascio di luce."},
-                {"Elena Valli", "Mi avvicino al meccanismo [E], allineo l'Eliostato a 45 gradi e confermo la misura con [C]."}
+                {"Elena Valli", "E' la legge del coseno di Lambert: ruotando gli specchi di bronzo [E] posso guidare il fascio sulle piastre solari per aprire il cancello."},
+                {"Elena Valli", "Mi avvicino all'Eliostato [E], lo allineo a 45 gradi e confermo la misura con [C]."}
             };
 
         case StoryEvent::SolarClean:
@@ -86,32 +86,32 @@ std::vector<DialogueLine> DialogueForEvent(StoryEvent e, const StorySnapshot& s)
 
         case StoryEvent::EnteredCanalQuarter:
             return {
-                {"Elena Valli", "Il Quartiere dei Canali... Le vasche a gradini portano ancora i segni dell'acqua limpida che un tempo nutriva l'altopiano."},
-                {"Elena Valli", "A est vedo il grande Ponte degli Archi, e tra le volte a ovest l'imbocco delle Cisterne Ipogee."}
+                {"Elena Valli", "Il Quartiere dei Canali... Le correnti nei canali a gradini spingono forte, ma lungo gli argini scorgo le leve delle chiuse idrauliche [E]."},
+                {"Elena Valli", "Deviando il flusso con le chiuse potro' attraversare i passaggi verso le Cisterne Ipogee a ovest e il Ponte degli Archi a est."}
             };
 
         case StoryEvent::EnteredWindPlateau:
             return {
-                {"Elena Valli", "Sull'Altopiano dei Venti il basalto taglia la brezza e i cipressi si piegano tutti lungo la stessa rosa scolpita nella roccia."},
-                {"Elena Valli", "In fondo alla cresta si staglia la Torre del Pendolo: i suoi oculi di pietra sembrano ancora attendere il mezzogiorno."}
+                {"Elena Valli", "Sull'Altopiano dei Venti le raffiche spazzano la cresta a intervalli regolari: quando il basalto fischia, devo ripararmi dietro i monoliti frangivento."},
+                {"Elena Valli", "In fondo al sentiero si staglia la Torre del Pendolo: i suoi oculi di pietra sembrano ancora attendere il mezzogiorno."}
             };
 
         case StoryEvent::EnteredHangingGardens:
             return {
-                {"Elena Valli", "Oltre il Ponte degli Archi si aprono i Giardini Sospesi. Anche sotto la polvere si avverte il profumo dei semi dormienti."},
-                {"Elena Valli", "Tra le vasche di giada si intravedono gli anelli del Risonatore Armonico e qualcuno che si prende cura delle aiuole."}
+                {"Elena Valli", "Oltre il Ponte degli Archi si aprono i Giardini Sospesi. Tra le aiuole emergono quattro piastre di risonanza in giada."},
+                {"Elena Valli", "Se le calpesto nell'ordine armonico giusto, il ponte di giada si tendera' verso il Risonatore e verso Miriam Ferro."}
             };
 
         case StoryEvent::EnteredFumaroleCaldera:
             return {
-                {"Elena Valli", "La Caldera delle Fumarole... Qui nacque l'Inverno di Pece. Le vecchie fornaci hanno segnato il basalto come cicatrici."},
-                {"Elena Valli", "Vicino all'ingresso della Camera Geotermica scorgo la figura di Matteo Verrini, immerso nel vapore."}
+                {"Elena Valli", "La Caldera delle Fumarole... Il terreno vibra prima che ogni geyser di vapore erutti. Lungo i bordi vedo valvole di sfogo in bronzo [E]."},
+                {"Elena Valli", "Chiudendo le valvole giuste calmero' i getti per raggiungere Matteo Verrini e l'ingresso della Camera Geotermica."}
             };
 
         case StoryEvent::EnteredHarmonySanctuary:
             return {
-                {"Elena Valli", "Il Santuario dell'Armonia. Sotto i miei passi un intero mosaico astronomico di travertino, bronzo e giada."},
-                {"Elena Valli", "Al centro della piazza riposa l'Astrolabio di Meridia: i suoi quattro anelli attendono che l'intera Conca ritrovi l'equilibrio."}
+                {"Elena Valli", "Il Santuario dell'Armonia. Attorno al mosaico astronomico brillano cinque sigilli radiali dedicati a luce, acqua, vento, suono e calore."},
+                {"Elena Valli", "Accordando i cinque sigilli [E] attorno alla piazza, l'Astrolabio Centrale ritrovera' la sintesi dell'intera Conca."}
             };
 
         case StoryEvent::EnteredCisterns:
@@ -181,14 +181,14 @@ std::vector<DialogueLine> DialogueForEvent(StoryEvent e, const StorySnapshot& s)
             if (s.pollution_level <= 25.0f) {
                 return {
                     {"Miriam Ferro", "Benvenuta nei Giardini Sospesi, Elena. Senti? Da quando l'aria si e' schiarita, perfino i vecchi ulivi hanno cambiato profumo."},
-                    {"Miriam Ferro", "Io sono Miriam. Ho custodito i semi dormienti per anni, aspettando che qualcuno sapesse riaccordare il Risonatore Armonico a 120 Hertz."},
-                    {"Elena Valli", "I cristalli di giada vibrano gia' al solo avvicinarsi. Calibro il Risonatore [E] e restituiamo il cielo ai tuoi giardini."}
+                    {"Miriam Ferro", "Io sono Miriam. I maestri accordavano le quattro piastre di giada in sequenza crescente per stendere il ponte verso il Risonatore a 120 Hertz."},
+                    {"Elena Valli", "I cristalli di giada vibrano gia' al solo avvicinarsi. Seguo l'ordine armonico delle piastre e calibro il Risonatore [E]."}
                 };
             }
             return {
                 {"Miriam Ferro", "Sei riuscita ad attraversare il Ponte degli Archi! Sono Miriam Ferro, botanica dei Giardini Sospesi."},
-                {"Miriam Ferro", "La cenere soffoca le foglie e impedisce ai semi antichi di schiudersi. Il Risonatore qui accanto nasceva per pulire l'aria a 120 Hertz."},
-                {"Elena Valli", "Se lo accordiamo sulla frequenza di risonanza senza usare la fornace, la polvere cadra' al suolo e le serre torneranno a vivere."}
+                {"Miriam Ferro", "La cenere soffoca le foglie e i ponti di giada dormono. Attiva le quattro piastre acustiche in sequenza per raggiungere il Risonatore a 120 Hertz."},
+                {"Elena Valli", "Se accordiamo le piastre e il Risonatore senza usare la fornace, la polvere cadra' al suolo e le serre torneranno a vivere."}
             };
 
         case StoryEvent::HarmonicClean:
@@ -237,8 +237,8 @@ std::vector<DialogueLine> DialogueForEvent(StoryEvent e, const StorySnapshot& s)
 
         case StoryEvent::AstrolabeUnlocked:
             return {
-                {"Eco di Meridia", "Cinque leggi hanno risposto: luce, acqua, tempo, suono e calore. Nel Santuario dell'Armonia l'Astrolabio Centrale scioglie il proprio sigillo."},
-                {"Elena Valli", "Cinque monumenti, un quinto di cerchio esatto: 72 gradi di fase! Andiamo al Santuario dell'Armonia a sud-est e allineiamo l'Astrolabio [E]."}
+                {"Eco di Meridia", "Cinque leggi hanno risposto: luce, acqua, tempo, suono e calore. Nel Santuario dell'Armonia i cinque sigilli radiali chiamano l'Astrolabio."},
+                {"Elena Valli", "Cinque monumenti, un quinto di cerchio esatto: 72 gradi di fase! Andiamo al Santuario, accordiamo i sigilli [E] e risvegliamo l'Astrolabio."}
             };
 
         case StoryEvent::AstrolabeActivated:
@@ -384,7 +384,7 @@ Objective ObjectiveFor(Chapter c, const StorySnapshot& s) {
         if (s.location == LocationId::PendulumTower) {
             return {
                 "Calibra il Pendolo Isochronos",
-                "Sali i ballatoi [SPAZIO], misura [F] e regola L=2.0 m [E]."
+                "Vai a Destra e salta sul gradino centrale: il Pendolo e' sulla galleria ampia davanti a te."
             };
         }
         if (s.mode == GameMode::Structure) {
@@ -542,6 +542,229 @@ std::vector<std::string> EndingText(bool clean_path, int relics_found, int total
         relic_summary,
         "La pietra attende: torna ai monumenti forzati a fornace e ricalibrali con la fisica pulita [E] per guarire la Conca."
     };
+}
+
+ZoneInterludeText ZoneInterludeCopy(ZoneId from, ZoneId to) noexcept {
+    if (from == ZoneId::DawnTerraces && to == ZoneId::CanalQuarter) {
+        return {
+            "ARCO DELL'ALBA",
+            "Terrazze dell'Alba  ->  Quartiere dei Canali",
+            "La pietra scaldata dagli specchi lascia spazio al mormorio delle chiuse.",
+            "Sotto gli archi d'acquedotto, l'acqua aspetta mani che sappiano deviarla."
+        };
+    }
+    if (from == ZoneId::CanalQuarter && to == ZoneId::DawnTerraces) {
+        return {
+            "SCALINATA DELLE TERRAZZE",
+            "Quartiere dei Canali  ->  Terrazze dell'Alba",
+            "Il fragore delle paratoie sfuma dietro gli ulivi e le meridiane di travertino.",
+            "A sud il cielo torna ad aprirsi sui vecchi riflettori dell'Eliostato."
+        };
+    }
+    if (from == ZoneId::CanalQuarter && to == ZoneId::WindPlateau) {
+        return {
+            "SCALINATA DI BASALTO",
+            "Quartiere dei Canali  ->  Altopiano dei Venti",
+            "I gradini salgono lungo la roccia scura mentre la brezza si fa raffica tesa.",
+            "Sulla cresta, solo chi ascolta i monoliti frangivento raggiunge la Torre."
+        };
+    }
+    if (from == ZoneId::WindPlateau && to == ZoneId::CanalQuarter) {
+        return {
+            "DISCESA DEGLI ACQUEDOTTI",
+            "Altopiano dei Venti  ->  Quartiere dei Canali",
+            "Il fischio del basalto si placa scendendo verso le vasche a gradini.",
+            "Dalle creste del tempo, la strada riporta al respiro costante dei canali."
+        };
+    }
+    if (from == ZoneId::CanalQuarter && to == ZoneId::HangingGardens) {
+        return {
+            "PONTE DEGLI ARCHI",
+            "Quartiere dei Canali  ->  Giardini Sospesi",
+            "Ogni concio del ponte regge senza malta sul vuoto luminoso della conca.",
+            "Oltre la campata, quattro piastre di giada custodiscono il silenzio dei semi."
+        };
+    }
+    if (from == ZoneId::HangingGardens && to == ZoneId::CanalQuarter) {
+        return {
+            "PONTE DEGLI ARCHI",
+            "Giardini Sospesi  ->  Quartiere dei Canali",
+            "Il profumo dei pergolati svanisce tra le arcate sospese sull'acqua.",
+            "Verso occidente si distinguono le chiuse e la discesa alle Cisterne Ipogee."
+        };
+    }
+    if (from == ZoneId::HangingGardens && to == ZoneId::FumaroleCaldera) {
+        return {
+            "SOGLIA D'OSSIDIANA",
+            "Giardini Sospesi  ->  Caldera delle Fumarole",
+            "Le foglie lasciano il posto al basalto caldo e al respiro ritmico del vapore.",
+            "Qui nacque l'Inverno di Pece: solo le valvole antiche calmano la faglia."
+        };
+    }
+    if (from == ZoneId::FumaroleCaldera && to == ZoneId::HangingGardens) {
+        return {
+            "PASSO DELLE SERRE",
+            "Caldera delle Fumarole  ->  Giardini Sospesi",
+            "Il sibilo delle fumarole si spegne tra le arcate di giada e i terrazzamenti.",
+            "L'aria torna piu' mite dove le vasche acustiche proteggono le radici."
+        };
+    }
+    if (from == ZoneId::HangingGardens && to == ZoneId::HarmonySanctuary) {
+        return {
+            "COLONNATO DEL SANTUARIO",
+            "Giardini Sospesi  ->  Santuario dell'Armonia",
+            "Un viale di colonne intrecciate conduce al mosaico delle cinque leggi.",
+            "Al centro della piazza, l'Astrolabio attende che ogni sigillo torni a vibrare."
+        };
+    }
+    if (from == ZoneId::HarmonySanctuary && to == ZoneId::HangingGardens) {
+        return {
+            "PERGOLATO DI GIADA",
+            "Santuario dell'Armonia  ->  Giardini Sospesi",
+            "Lasciato il cerchio dell'Astrolabio, il sentiero risale fra le campane verdi.",
+            "I giardini orientali custodiscono il battito discreto della Conca."
+        };
+    }
+    return {
+        "SENTIERO DI MERIDIA",
+        "Passaggio dell'Altopiano",
+        "La pietra calcarea collega ogni distretto lungo la stessa trama antica.",
+        "Ogni varco apre una misura diversa della luce, dell'acqua e del vento."
+    };
+}
+
+std::vector<ZoneLandmarkCopy> ZoneLandmarks(ZoneId zone) {
+    switch (zone) {
+        case ZoneId::DawnTerraces:
+            return {
+                {
+                    "dawn_sundial",
+                    "Meridiana Spezzata d'Ottone",
+                    "Qui i primi agrimensori incisero l'angolo del mezzogiorno prima di posare le fondamenta.",
+                    "Ruota gli specchi solari [E] per riflettere il fascio verso le piastre fotosensibili."
+                },
+                {
+                    "dawn_gnomon",
+                    "Obelisco del Coseno",
+                    "Un raggio dritto vale piu' di mille fornaci: quando la lastra si illumina, la pietra cede il passo.",
+                    "Carica tutte le piastre fotosensibili per aprire il cancello solare a nord."
+                },
+                {
+                    "dawn_olives",
+                    "Uliveto della Prima Pietra",
+                    "Piantati nell'Era I per riparare le terrazze dal vento asciutto, resistono ancora sotto la cenere.",
+                    "Usa la Lente Empirica [F] vicino all'Eliostato per leggere l'angolo di Lambert."
+                }
+            };
+        case ZoneId::CanalQuarter:
+            return {
+                {
+                    "canal_plaque",
+                    "Lapide di Valerio degli Archi",
+                    "Un ponte giusto non combatte la piena: ne devia la spinta finche' l'acqua non canta sotto i conci.",
+                    "Aziona le leve delle chiuse [E] per cambiare la direzione della corrente e abbassare i passaggi."
+                },
+                {
+                    "canal_amphora",
+                    "Fontana delle Paratoie",
+                    "Le anfore di bronzo segnavano il livello delle Cisterne Ipogee sotto la piazza occidentale.",
+                    "Sfrutta la corrente a favore per attraversare i canali bassi senza essere respinto."
+                },
+                {
+                    "canal_arch",
+                    "Pilone del Ponte degli Archi",
+                    "Sigillato dopo lo Scisma per impedire alle scorie di raggiungere i Giardini orientali.",
+                    "Porta a Clara Sereni almeno una calibrazione pulita per riaprire il varco verso est."
+                }
+            };
+        case ZoneId::WindPlateau:
+            return {
+                {
+                    "wind_rose",
+                    "Rosa dei Venti in Basalto",
+                    "Dodici inverni di raffiche scolpiti nella roccia per insegnare agli osservatori il ritmo della cresta.",
+                    "Quando il vento annuncia la raffica, riparati subito dietro un monolite frangivento."
+                },
+                {
+                    "wind_stele",
+                    "Stele Anemometrica",
+                    "Chi corre contro la burrasca spreca fiato; chi attende dietro il basalto sale senza fatica.",
+                    "Avanza tra una raffica e l'altra seguendo la scia d'aria verso la Torre del Pendolo."
+                },
+                {
+                    "wind_cypress",
+                    "Cipressi Piegati",
+                    "Le loro chiome inclinano tutte verso sud-est, indicando l'asse esatto della corrente d'alta quota.",
+                    "Dalla Torre del Pendolo a nord si sincronizzano tutte le chiuse della Conca."
+                }
+            };
+        case ZoneId::HangingGardens:
+            return {
+                {
+                    "garden_acoustic",
+                    "Vasca Acustica di Giada",
+                    "I maestri della Seconda Era accordavano la pietra come uno strumento per posare la polvere al suolo.",
+                    "Calpesta le quattro piastre di risonanza nell'ordine armonico corretto per tendere il ponte di giada."
+                },
+                {
+                    "garden_pergola",
+                    "Pergolato dei Semi Dormienti",
+                    "Sotto questi archi rampicanti Miriam custodisce i germogli sopravvissuti all'Inverno di Pece.",
+                    "Se sbagli sequenza le piastre si azzerano: ascolta il tono crescente di ogni nodo."
+                },
+                {
+                    "garden_terrace",
+                    "Colonna dei Pollini",
+                    "Quando il Risonatore canta a centoventi Hertz, il cielo orientale torna limpido in un respiro.",
+                    "Raggiungi il Risonatore Armonico oltre il ponte di giada e calibralo senza usare la fornace."
+                }
+            };
+        case ZoneId::FumaroleCaldera:
+            return {
+                {
+                    "caldera_seals",
+                    "Sigilli Geotermici di Basalto",
+                    "I maestri della faglia scavarono sfiatatoi di rame per raccogliere il calore senza bruciare pece.",
+                    "Osserva il tremore del vapore prima dell'eruzione e chiudi le valvole di sfogo [E] per calmare i geyser."
+                },
+                {
+                    "caldera_relief",
+                    "Bassorilievo dello Scisma",
+                    "Qui la fretta accese le prime fornaci d'emergenza: le colonne di basalto portano ancora la fuliggine.",
+                    "Un getto attivo respinge chi passa: attendi la pausa o aziona la valvola collegata."
+                },
+                {
+                    "caldera_brazier",
+                    "Braciere della Faglia Profonda",
+                    "Segna la discesa alla Camera Geotermica dove il ciclo di Carnot dona calore pulito ai villaggi.",
+                    "Parla con Matteo Verrini e scendi nella Camera Geotermica per regolare lo scambiatore a 600 K."
+                }
+            };
+        case ZoneId::HarmonySanctuary:
+            return {
+                {
+                    "sanctuary_mosaic",
+                    "Mosaico delle Cinque Leggi",
+                    "Luce, acqua, vento, suono e calore si incontrano in un cerchio diviso in cinque archi di 72 gradi.",
+                    "Accorda i cinque sigilli radiali [E] attorno alla piazza per preparare la sintesi dell'Astrolabio."
+                },
+                {
+                    "sanctuary_medallions",
+                    "Medaglioni delle Quattro Ere",
+                    "Alba delle Ombre, Acque e Suono, Inverno di Pece e Sigillo dell'Armonia: l'intera cronaca in pietra.",
+                    "Raccogli almeno dodici reliquie nel Codex [J] per schiudere il segreto della Valle dei Semi."
+                },
+                {
+                    "sanctuary_braziers",
+                    "Bracieri di Giada del Congedo",
+                    "Quando nessuna fornace brucia piu' scorie, la fiamma dei bracieri lascia spazio a una luce turchese.",
+                    "Attiva i cinque monumenti e allinea l'Astrolabio Centrale a 72 gradi per risvegliare Meridia."
+                }
+            };
+        case ZoneId::Count:
+            break;
+    }
+    return {};
 }
 
 } // namespace eco

@@ -25,11 +25,31 @@ enum class SfxId : int {
     PhaseShift,
     UiClick,
     EpilogueChord,
+    // Nuovi suoni procedurali per le 6 meccaniche top-down e gli intramezzi
+    SolarMirrorRotate,
+    SolarPlateUnlock,
+    SluiceLeverToggle,
+    WindGustWhoosh,
+    ResonancePadNote,
+    ResonanceSequenceFail,
+    JadeBridgeUnlock,
+    GeyserErupt,
+    ValveClose,
+    SanctuarySealTune,
+    InterludeChime,
     Count
 };
 
+enum class AudioPreviewChannel : int {
+    Master = 0,
+    Music = 1,
+    Effects = 2,
+    Ambient = 3,
+    Ui = 4
+};
+
 // Motore audio procedurale (solo Raylib/miniaudio lato src/app, zero dipendenze in src/core).
-// Sintetizza suoni ambientali e di interazione senza mai riprodurre voci o suoni sui dialoghi.
+// Sintetizza suoni ambientali, meccaniche di zona e interazioni senza mai riprodurre voci sui dialoghi.
 class AudioEngine {
 public:
     AudioEngine() = default;
@@ -45,22 +65,28 @@ public:
 
     [[nodiscard]] bool IsReady() const noexcept { return ready_; }
 
-    void SetMasterVolume(float volume) noexcept; // 0.0f .. 1.0f
+    void SetMasterVolume(float volume) noexcept;  // 0.0f .. 1.0f
     void SetMuted(bool muted) noexcept;
     void SetAmbientEnabled(bool enabled) noexcept;
-    void SetMusicVolume(float volume) noexcept;
-    void SetEffectsVolume(float volume) noexcept;
+    void SetMusicVolume(float volume) noexcept;   // 0.0f .. 1.0f
+    void SetEffectsVolume(float volume) noexcept; // 0.0f .. 1.0f
+    void SetAmbientVolume(float volume) noexcept; // 0.0f .. 1.0f
+    void SetUiSoundsEnabled(bool enabled) noexcept;
 
     [[nodiscard]] float MasterVolume() const noexcept { return master_volume_; }
     [[nodiscard]] bool IsMuted() const noexcept { return muted_; }
     [[nodiscard]] bool IsAmbientEnabled() const noexcept { return ambient_enabled_; }
     [[nodiscard]] float MusicVolume() const noexcept { return music_volume_; }
     [[nodiscard]] float EffectsVolume() const noexcept { return effects_volume_; }
+    [[nodiscard]] float AmbientVolume() const noexcept { return ambient_volume_; }
+    [[nodiscard]] bool IsUiSoundsEnabled() const noexcept { return ui_sounds_enabled_; }
 
     void PlaySfx(SfxId id, float volume_scale = 1.0f, float pitch = 1.0f);
+    void PlayUiSound(SfxId id, float volume_scale = 1.0f, float pitch = 1.0f);
+    void PlayLivePreview(AudioPreviewChannel channel, float pitch = 1.0f);
 
-    // Osserva le variazioni di stato di mondo, modal, diario e menu per attivare suoni di
-    // interazione e modulare il tappeto ambientale in base a scena, struttura e foschia.
+    // Osserva le variazioni di stato di mondo, meccaniche di zona, intramezzi, modal, diario e menu
+    // per attivare suoni di interazione e modulare il tappeto musicale/ambientale con crossfade morbido.
     // Non genera mai alcun suono per l'avanzamento o la scrittura dei dialoghi.
     void SyncAndUpdate(
         float dt,
@@ -79,18 +105,23 @@ private:
     float master_volume_ = 0.75f;
     bool muted_ = false;
     bool ambient_enabled_ = true;
-    float music_volume_ = 1.0f;
-    float effects_volume_ = 1.0f;
+    float music_volume_ = 0.85f;
+    float effects_volume_ = 0.90f;
+    float ambient_volume_ = 0.85f;
+    bool ui_sounds_enabled_ = true;
 };
 
-// Accesso leggero per piccoli suoni di interazione UI e sincronizzazione impostazioni audio.
+// Accesso leggero per piccoli suoni di interazione UI, anteprime live e sincronizzazione impostazioni audio.
 void SetGlobalAudioEngine(AudioEngine* engine) noexcept;
 void PlayUiSfx(SfxId id, float volume_scale = 1.0f, float pitch = 1.0f) noexcept;
+void PlayAudioPreview(AudioPreviewChannel channel, float pitch = 1.0f) noexcept;
 void ApplyGlobalAudioSettings(
     float master_volume,
     bool muted,
     bool ambient_enabled,
     float music_volume,
-    float effects_volume) noexcept;
+    float effects_volume,
+    float ambient_volume = 0.85f,
+    bool ui_sounds_enabled = true) noexcept;
 
 } // namespace eco::app

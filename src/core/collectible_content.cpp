@@ -24,7 +24,7 @@ const std::array<CollectibleMeta, kTotalCollectibles>& AllCollectibleMetadata() 
             "Un gnomone d'ottone ancora graduato al mezzo grado: i primi Meridiani misuravano la luce prima ancora di posare una pietra.",
             {
                 "Forgiato nei primi decenni dell'Alba delle Ombre, questo quadrante portatile serviva agli agrimensori per fissare l'inclinazione del sole al mezzogiorno dei solstizi.",
-                "Sul bordo interno sono incise le tacche dell'angolo retto e la bisettrice di 45 gradi, scelta come riferimento per tutte le terrazze orientate a sud-ovest.",
+                "Sul bordo interno sono incise le tacche dell'angolo retto e la bisettrice di 45 gradi, usata per orientare gli specchi mobili verso le piastre fotosensibili dei cancelli.",
                 "Annotazione sul rovescio: 'Chi non sa leggere un'ombra costruisce contro il cielo. Chi segue il coseno riceve la luce senza chiedere tributo alla terra.'"
             }
         },
@@ -56,7 +56,7 @@ const std::array<CollectibleMeta, kTotalCollectibles>& AllCollectibleMetadata() 
             "Un cilindro di calcare inciso a spirale: registra le altezze del sole e la direzione dei venti lungo dodici inverni.",
             {
                 "Gli osservatori dell'Altopiano dei Venti tracciavano su cilindri di pietra compatta le stagioni della Conca, ruotandoli lungo i solchi delle rose dei venti.",
-                "Le righe piu' fitte mostrano come le correnti fredde da nord-ovest scendano nei canali al tramonto, raffreddando naturalmente le cisterne sottostanti.",
+                "Le righe piu' fitte segnano il ritmo delle raffiche da nord-ovest e indicano dove furono eretti i monoliti frangivento per proteggere i viandanti diretti alla Torre.",
                 "Da queste tavole nacque l'idea che la Conca non dovesse essere dominata, ma accordata come un unico strumento esposto alle stagioni."
             }
         },
@@ -90,7 +90,7 @@ const std::array<CollectibleMeta, kTotalCollectibles>& AllCollectibleMetadata() 
             "Questi sono gli appunti del maestro che costrui' il Ponte degli Archi: guarda con quale rigore calcolava ogni spinta dell'acqua.",
             {
                 "Cilindro d'archivio attribuito a Valerio degli Archi, capomastro del Quartiere dei Canali durante il pieno fiorire della Seconda Era.",
-                "Nelle colonne incise descrive il giorno in cui le campate del Ponte degli Archi furono chiuse senza malta di gesso, affidando la tenuta al solo equilibrio dei conci di pietra.",
+                "Nelle colonne incise descrive le chiuse a leva che deviavano la spinta delle correnti nei canali a gradini, abbassando i passaggi verso le Cisterne e il Ponte degli Archi.",
                 "Passo finale: 'Un ponte ben calcolato non combatte il fiume: gli lascia spazio per cantare sotto gli archi e porta chi cammina verso i giardini.'"
             }
         },
@@ -121,8 +121,8 @@ const std::array<CollectibleMeta, kTotalCollectibles>& AllCollectibleMetadata() 
             "Miriam Ferro",
             "Toccandolo vibra ancora a centoventi Hertz esatti: era il campione con cui i maestri accordavano il Risonatore dei Giardini.",
             {
-                "Intagliato in un singolo blocco di vetro-giada delle cave orientali, questo prisma fungeva da riferimento acustico per le campane dei Giardini Sospesi.",
-                "Quando gli anelli del Risonatore oscillavano esattamente a 120 Hertz, le polveri trasportate dai venti si depositavano al suolo prima di velare le foglie.",
+                "Intagliato in un singolo blocco di vetro-giada delle cave orientali, questo prisma fungeva da riferimento acustico per le quattro piastre di risonanza e il ponte di giada dei Giardini Sospesi.",
+                "Quando i nodi venivano risvegliati in sequenza e gli anelli del Risonatore oscillavano a 120 Hertz, le polveri trasportate dai venti si depositavano al suolo prima di velare le foglie.",
                 "I cronisti raccontano che nelle sere d'estate l'intero distretto orientale risuonava di un bordone limpido, appena udibile sotto il fruscio degli ulivi."
             }
         },
@@ -171,7 +171,7 @@ const std::array<CollectibleMeta, kTotalCollectibles>& AllCollectibleMetadata() 
             "Lorenzo Altieri",
             "I maestri delle grotte scolpirono questo avvertimento prima di essere allontanati: bruciare scorie nelle faglie ferisce la pietra per secoli.",
             {
-                "Incisa in fretta nel basalto scuro da un gruppo di termodinamici contrari allo Scisma, questa stele fu nascosta nei condotti della Camera Geotermica.",
+                "Incisa in fretta nel basalto scuro da un gruppo di termodinamici contrari allo Scisma, questa stele fu nascosta accanto alle valvole di sfogo che calmavano le fumarole della Caldera.",
                 "Descrive il progressivo annerimento degli specchi solari causato dai fumi della Caldera: piu' la cenere oscurava il cielo, meno energia pulita arrivava, spingendo ad accendere altre fornaci.",
                 "Riga conclusiva: 'La scorciatoia crea la propria necessita'. Ogni fornace accesa oggi rende piu' difficile spegnerla domani.'"
             }
@@ -269,7 +269,7 @@ const std::array<CollectibleMeta, kTotalCollectibles>& AllCollectibleMetadata() 
             "Eco di Meridia",
             "Non e' mai mancata l'energia agli esseri umani, ma la pazienza della misura. Se hai letto tutte le nostre pietre, la Conca e' di nuovo viva.",
             {
-                "L'ultima iscrizione della civilta' di Meridia, posta di fronte alla grande sfera armillare del Santuario dell'Armonia.",
+                "L'ultima iscrizione della civilta' di Meridia, posta davanti ai cinque sigilli radiali e alla grande sfera armillare del Santuario dell'Armonia.",
                 "Riassume le quattro ere in un unico arco: la meraviglia dell'Alba, la fioritura delle Acque e del Suono, la ferita dell'Inverno di Pece e la promessa del Sigillo.",
                 "Epitaffio finale: 'Abbiamo chiuso il passo alla Valle dei Semi non per punire i nostri figli, ma per custodire un seme di verita': la terra guarisce quando la scienza impara ad ascoltarla.'"
             }

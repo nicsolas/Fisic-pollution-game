@@ -3,17 +3,20 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 
 #include "app/render/palette.h"
+#include "app/render/ui_style.h"
 #include "core/collectible.h"
 #include "core/ecosystem.h"
+#include "core/story.h"
 #include "core/tilemap.h"
 
 namespace eco::app {
 
 namespace {
 
-float g_particle_quality_scale = 1.0f;
+EnvironmentEffectsConfig g_env_effects{};
 
 // Stato statico (zero allocazioni) per l'interpolazione morbida della tinta atmosferica di distretto
 struct DistrictTintState {
@@ -25,6 +28,21 @@ struct DistrictTintState {
 };
 
 DistrictTintState g_district_tint{};
+
+[[nodiscard]] Color ScaleAlpha(Color c, float factor) noexcept {
+    const float clamped = std::clamp(factor, 0.0f, 1.0f);
+    return Color{
+        c.r,
+        c.g,
+        c.b,
+        static_cast<unsigned char>(static_cast<float>(c.a) * clamped)
+    };
+}
+
+[[nodiscard]] float Smoothstep01(float t) noexcept {
+    const float x = std::clamp(t, 0.0f, 1.0f);
+    return x * x * (3.0f - 2.0f * x);
+}
 
 [[nodiscard]] Color UpdateSmoothedDistrictTint(const eco::WorldContext& world) noexcept {
     const Color target = (world.current_mode == eco::GameMode::Overworld)
@@ -87,6 +105,26 @@ DistrictTintState g_district_tint{};
     return pal::kJadeGlow;
 }
 
+[[nodiscard]] const char* InterludeZoneLabel(eco::ZoneId zone) noexcept {
+    switch (zone) {
+        case eco::ZoneId::DawnTerraces:
+            return "TERRAZZE DELL'ALBA";
+        case eco::ZoneId::CanalQuarter:
+            return "QUARTIERE DEI CANALI";
+        case eco::ZoneId::WindPlateau:
+            return "ALTOPIANO DEI VENTI";
+        case eco::ZoneId::HangingGardens:
+            return "GIARDINI SOSPESI";
+        case eco::ZoneId::FumaroleCaldera:
+            return "CALDERA DELLE FUMAROLE";
+        case eco::ZoneId::HarmonySanctuary:
+            return "SANTUARIO DELL'ARMONIA";
+        case eco::ZoneId::Count:
+            break;
+    }
+    return "CONCA DI MERIDIA";
+}
+
 void DrawCollectiblePickupBurst(const eco::WorldContext& world) {
     if (!world.collectibles.HasRecentPickup()) {
         return;
@@ -134,20 +172,655 @@ void DrawCollectiblePickupBurst(const eco::WorldContext& world) {
     }
 }
 
-} // namespace
+void DrawZoneMechanicParticles(
+    const eco::WorldContext& world,
+    float min_x,
+    float min_y,
+    float span_x,
+    float span_y,
+    float weather_scale) {
+    if (weather_scale <= 0.01f) {
+        return;
+    }
 
-void SetParticleQualityScale(float scale) noexcept {
-    if (scale < 0.0f) {
-        g_particle_quality_scale = 0.0f;
-    } else if (scale > 1.0f) {
-        g_particle_quality_scale = 1.0f;
-    } else {
-        g_particle_quality_scale = scale;
+    const float sim_time = world.sim_time;
+    const float poll = world.ecosystem.PollutionRatio();
+    const float health = 1.0f - poll;
+    const eco::ZoneId zone = world.current_zone;
+    const auto& zm = world.zone_mechanics;
+
+    const float vis_min_x = min_x - 48.0f;
+    const float vis_max_x = min_x + span_x + 48.0f;
+    const float vis_min_y = min_y - 48.0f;
+    const float vis_max_y = min_y + span_y + 48.0f;
+    const auto in_view = [&](float px, float py) noexcept {
+        return px >= vis_min_x && px <= vis_max_x && py >= vis_min_y && py <= vis_max_y;
+    };
+
+    switch (zone) {
+        case eco::ZoneId::DawnTerraces: {
+            // 1. Polline dorato sospeso nella brezza dell'alba
+            const int pollen_count = static_cast<int>((14.0f + 16.0f * health) * weather_scale);
+            for (int i = 0; i < pollen_count; ++i) {
+                const float rx = HashFloat01(i, 1301);
+                const float ry = HashFloat01(i, 1307);
+                const float phase = HashFloat01(i, 1319) * 6.28318f;
+                const float wx = min_x + std::fmod(rx * span_x + sim_time * (14.0f + (i % 4) * 4.0f), span_x);
+                const float wy = min_y + std::fmod(ry * span_y + std::sin(sim_time * 1.4f + phase) * 14.0f + span_y, span_y);
+                const float shimmer = 0.55f + 0.45f * std::sin(sim_time * 3.1f + phase);
+                const Color pc = (i % 3 == 0)
+                                     ? Color{255, 240, 178, static_cast<unsigned char>(155.0f * shimmer)}
+                                     : Color{248, 206, 98, static_cast<unsigned char>(135.0f * shimmer)};
+                DrawCircleV({wx, wy}, 1.8f + shimmer * 0.9f, pc);
+            }
+
+            // 2. Pulviscolo luminoso lungo i fasci solari attivi
+            for (std::size_t s = 0; s < zm.solar_beams.size(); ++s) {
+                const auto& seg = zm.solar_beams[s];
+                if (!seg.active) {
+                    continue;
+                }
+                const float dx = seg.end.x - seg.start.x;
+                const float dy = seg.end.y - seg.start.y;
+                const float len = std::hypot(dx, dy);
+                if (len < 12.0f) {
+                    continue;
+                }
+                const int motes = std::clamp(static_cast<int>((len / 52.0f) * weather_scale), 2, 14);
+                const float nx = -dy / len;
+                const float ny = dx / len;
+                for (int m = 0; m < motes; ++m) {
+                    const float base_t = HashFloat01(m + static_cast<int>(s) * 19, 1361);
+                    const float t = std::fmod(base_t + sim_time * 0.24f, 1.0f);
+                    const float jitter = std::sin(sim_time * 4.2f + static_cast<float>(m * 3 + s)) * 5.0f;
+                    const float px = seg.start.x + dx * t + nx * jitter;
+                    const float py = seg.start.y + dy * t + ny * jitter;
+                    if (!in_view(px, py)) {
+                        continue;
+                    }
+                    DrawCircleV({px, py}, 2.4f, Color{255, 232, 138, 92});
+                    DrawCircleV({px, py}, 1.3f, Color{255, 250, 224, 210});
+                }
+            }
+
+            // 3. Scintille ascendenti dalle piastre fotosensibili illuminate
+            for (const auto& plate : zm.solar_plates) {
+                if ((!plate.lit && plate.charge <= 0.12f) || !in_view(plate.pos.x, plate.pos.y)) {
+                    continue;
+                }
+                const float intensity = std::max(plate.charge, plate.lit ? 1.0f : 0.0f);
+                const int sparks = static_cast<int>(8.0f * intensity * weather_scale);
+                for (int i = 0; i < sparks; ++i) {
+                    const float life = std::fmod(sim_time * 0.9f + HashFloat01(i + plate.id * 13, 1409), 1.0f);
+                    const float ang = HashFloat01(i + plate.id * 17, 1423) * 6.28318f;
+                    const float rad = plate.radius * (0.25f + 0.65f * HashFloat01(i, 1433));
+                    const float px = plate.pos.x + std::cos(ang) * rad;
+                    const float py = plate.pos.y + std::sin(ang) * rad * 0.7f - life * 26.0f;
+                    const auto a = static_cast<unsigned char>(210.0f * (1.0f - life) * intensity);
+                    DrawCircleV({px, py}, 2.0f * (1.0f - life * 0.5f), Color{255, 234, 142, a});
+                }
+            }
+            break;
+        }
+
+        case eco::ZoneId::CanalQuarter: {
+            // 1. Goccioline di brezza acquatica sul quartiere dei canali
+            const int mist_count = static_cast<int>(16.0f * weather_scale);
+            for (int i = 0; i < mist_count; ++i) {
+                const float rx = HashFloat01(i, 1511);
+                const float ry = HashFloat01(i, 1523);
+                const float wx = min_x + std::fmod(rx * span_x + sim_time * 16.0f, span_x);
+                const float wy = min_y + std::fmod(ry * span_y - sim_time * 11.0f + span_y * 8.0f, span_y);
+                const Color mc = pal::WorldColor(Color{132, 146, 128, 72}, Color{142, 238, 255, 118}, poll);
+                DrawCircleV({wx, wy}, 1.9f + static_cast<float>(i % 2) * 0.7f, mc);
+            }
+
+            // 2. Scie di schiuma e riflessi vivi nelle correnti d'acqua attive
+            for (std::size_t c = 0; c < zm.water_currents.size(); ++c) {
+                const auto& cur = zm.water_currents[c];
+                if (!cur.active) {
+                    continue;
+                }
+                const float area = cur.bounds.width * cur.bounds.height;
+                const int streaks = std::clamp(static_cast<int>((area / 6200.0f) * weather_scale), 3, 20);
+                const float flen = std::hypot(cur.flow_dir.x, cur.flow_dir.y);
+                const float fx = (flen > 0.001f) ? (cur.flow_dir.x / flen) : 1.0f;
+                const float fy = (flen > 0.001f) ? (cur.flow_dir.y / flen) : 0.0f;
+                const float speed = std::clamp(cur.strength * 0.55f, 40.0f, 130.0f);
+
+                for (int i = 0; i < streaks; ++i) {
+                    const float sx = HashFloat01(i + static_cast<int>(c) * 29, 1559);
+                    const float sy = HashFloat01(i + static_cast<int>(c) * 31, 1571);
+                    const float px = cur.bounds.x + std::fmod(sx * cur.bounds.width + sim_time * fx * speed + cur.bounds.width * 20.0f,
+                                                              std::max(1.0f, cur.bounds.width));
+                    const float py = cur.bounds.y + std::fmod(sy * cur.bounds.height + sim_time * fy * speed + cur.bounds.height * 20.0f,
+                                                              std::max(1.0f, cur.bounds.height));
+                    if (!in_view(px, py)) {
+                        continue;
+                    }
+                    const float slen = 12.0f + HashFloat01(i, 1583) * 14.0f;
+                    const Color foam = pal::WorldColor(Color{136, 146, 120, 95}, Color{178, 248, 255, 165}, poll);
+                    DrawLineEx({px, py}, {px + fx * slen, py + fy * slen}, 1.5f, foam);
+                }
+            }
+            break;
+        }
+
+        case eco::ZoneId::WindPlateau: {
+            // Reazione live a WindState (calma -> telegraphing -> raffica impetuosa)
+            const auto& w = zm.wind;
+            const float wlen = std::hypot(w.wind_dir.x, w.wind_dir.y);
+            const float dx = (wlen > 0.001f) ? (w.wind_dir.x / wlen) : -1.0f;
+            const float dy = (wlen > 0.001f) ? (w.wind_dir.y / wlen) : 0.15f;
+
+            const float gust = w.gust_active ? std::max(0.35f, w.gust_intensity)
+                                             : (w.telegraphing ? 0.30f : 0.10f);
+            const int wind_count = static_cast<int>((14.0f + 44.0f * gust) * weather_scale);
+            const float base_speed = 95.0f + 290.0f * gust;
+
+            for (int i = 0; i < wind_count; ++i) {
+                const float rx = HashFloat01(i, 511);
+                const float ry = HashFloat01(i, 613);
+                const float spd = base_speed * (0.75f + HashFloat01(i, 719) * 0.55f);
+                const float wx = min_x + std::fmod(rx * span_x + sim_time * dx * spd + span_x * 20.0f, span_x);
+                const float wy = min_y + std::fmod(ry * span_y + sim_time * dy * spd +
+                                                   std::sin(sim_time * 2.2f + static_cast<float>(i)) * (10.0f * (1.0f - gust * 0.6f)) +
+                                                   span_y * 20.0f,
+                                                   span_y);
+                const float len = (18.0f + 44.0f * gust) * (0.7f + HashFloat01(i, 811) * 0.6f);
+                const float thickness = w.gust_active ? (1.4f + 1.1f * gust) : 1.2f;
+                const auto alpha = static_cast<unsigned char>(std::clamp(58.0f + 135.0f * gust, 40.0f, 205.0f));
+                const Color wc = w.telegraphing && !w.gust_active
+                                     ? Color{196, 232, 255, alpha}
+                                     : pal::WorldColor(Color{165, 152, 134, alpha}, Color{216, 240, 255, alpha}, poll);
+                DrawLineEx({wx, wy}, {wx + dx * len, wy + dy * len}, thickness, wc);
+            }
+            break;
+        }
+
+        case eco::ZoneId::HangingGardens: {
+            // 1. Petali e foglie portati dalla brezza nei Giardini Sospesi
+            const int leaf_count = static_cast<int>((14.0f + 24.0f * health) * weather_scale);
+            for (int i = 0; i < leaf_count; ++i) {
+                const float rx = HashFloat01(i, 505);
+                const float ry = HashFloat01(i, 606);
+                const float wx = min_x + std::fmod(rx * span_x + sim_time * 24.0f, span_x);
+                const float wy = min_y + std::fmod(ry * span_y + std::sin(sim_time * 2.0f + static_cast<float>(i)) * 18.0f + span_y, span_y);
+                const Color lc = (i % 3 == 0)
+                                     ? Color{248, 178, 188, 175}
+                                     : ((i % 3 == 1) ? Color{252, 228, 128, 160} : Color{118, 228, 152, 165});
+                DrawPoly({wx, wy}, 4, 2.7f, sim_time * 75.0f + static_cast<float>(i * 23), lc);
+            }
+
+            // 2. Scintille e onde armoniche dalle piastre di risonanza attive o appena colpite
+            for (const auto& pad : zm.resonance_pads) {
+                if ((!pad.activated && pad.pulse_timer <= 0.01f) || !in_view(pad.pos.x, pad.pos.y)) {
+                    continue;
+                }
+                if (pad.pulse_timer > 0.01f) {
+                    const float p = 1.0f - std::clamp(pad.pulse_timer / 0.8f, 0.0f, 1.0f);
+                    const float r = pad.radius * (0.85f + p * 1.45f);
+                    DrawCircleLines(
+                        static_cast<int>(pad.pos.x),
+                        static_cast<int>(pad.pos.y),
+                        r,
+                        pal::WithAlpha(pal::kJadeGlow, static_cast<unsigned char>(190.0f * (1.0f - p))));
+                }
+                if (pad.activated) {
+                    const int sparks = static_cast<int>(6.0f * weather_scale);
+                    for (int i = 0; i < sparks; ++i) {
+                        const float life = std::fmod(sim_time * 0.75f + HashFloat01(i + pad.id * 11, 1601), 1.0f);
+                        const float ang = sim_time * 1.4f + static_cast<float>(i) * (6.28318f / std::max(1, sparks));
+                        const float px = pad.pos.x + std::cos(ang) * (pad.radius * 0.65f);
+                        const float py = pad.pos.y + std::sin(ang) * (pad.radius * 0.45f) - life * 28.0f;
+                        const auto a = static_cast<unsigned char>(200.0f * (1.0f - life));
+                        DrawCircleV({px, py}, 2.1f, pal::WithAlpha(pal::kJadeGlow, a));
+                    }
+                }
+            }
+            break;
+        }
+
+        case eco::ZoneId::FumaroleCaldera: {
+            // 1. Braci lente e cenere termale di fondo
+            const int ember_count = static_cast<int>(22.0f * weather_scale);
+            for (int i = 0; i < ember_count; ++i) {
+                const float rx = HashFloat01(i, 521);
+                const float ry = HashFloat01(i, 631);
+                const float spd = 18.0f + HashFloat01(i, 733) * 24.0f;
+                const float wx = min_x + std::fmod(rx * span_x + std::sin(sim_time * 2.1f + static_cast<float>(i)) * 18.0f + span_x, span_x);
+                const float wy = min_y + std::fmod(ry * span_y - sim_time * spd + span_y * 10.0f, span_y);
+                const Color ec = pal::WorldColor(Color{235, 118, 52, 155}, Color{215, 238, 242, 95}, poll);
+                DrawCircleV({wx, wy}, 2.0f + static_cast<float>(i % 3) * 0.7f, ec);
+            }
+
+            // 2. Vapore e getti termici reattivi per ogni fumarola/geyser
+            for (const auto& g : zm.geysers) {
+                if (!in_view(g.pos.x, g.pos.y)) {
+                    continue;
+                }
+                if (g.phase == eco::GeyserPhase::Erupting) {
+                    const float eff = std::max(0.45f, g.intensity);
+                    const int puffs = static_cast<int>(16.0f * eff * weather_scale);
+                    for (int i = 0; i < puffs; ++i) {
+                        const float life = std::fmod(sim_time * 1.9f + HashFloat01(i + g.id * 23, 1709), 1.0f);
+                        const float spread = (HashFloat01(i + g.id * 7, 1721) - 0.5f) * g.radius * (0.7f + life * 1.2f);
+                        const float px = g.pos.x + spread;
+                        const float py = g.pos.y - life * (52.0f + 32.0f * eff);
+                        const float rad = (4.5f + life * 9.5f) * eff;
+                        const auto a = static_cast<unsigned char>(135.0f * (1.0f - life));
+                        DrawCircleV({px, py}, rad, Color{236, 224, 212, a});
+                        if (i % 3 == 0) {
+                            DrawCircleV({px, py + 4.0f}, 2.2f, Color{252, 136, 54, static_cast<unsigned char>(210.0f * (1.0f - life))});
+                        }
+                    }
+                } else if (g.phase == eco::GeyserPhase::Telegraphing) {
+                    const int wisps = static_cast<int>(8.0f * weather_scale);
+                    for (int i = 0; i < wisps; ++i) {
+                        const float life = std::fmod(sim_time * 1.5f + HashFloat01(i + g.id * 19, 1733), 1.0f);
+                        const float spread = (HashFloat01(i, 1741) - 0.5f) * g.radius * 0.8f;
+                        const float px = g.pos.x + spread;
+                        const float py = g.pos.y - life * 24.0f;
+                        DrawCircleV({px, py}, 2.6f + life * 2.5f, Color{248, 172, 74, static_cast<unsigned char>(145.0f * (1.0f - life))});
+                    }
+                } else if (g.phase == eco::GeyserPhase::Calmed) {
+                    const int mist = static_cast<int>(5.0f * weather_scale);
+                    for (int i = 0; i < mist; ++i) {
+                        const float life = std::fmod(sim_time * 0.55f + HashFloat01(i + g.id * 13, 1753), 1.0f);
+                        const float spread = std::sin(sim_time * 1.4f + static_cast<float>(i)) * (g.radius * 0.45f);
+                        const float px = g.pos.x + spread;
+                        const float py = g.pos.y - life * 26.0f;
+                        DrawCircleV({px, py}, 3.5f + life * 4.5f, Color{156, 232, 240, static_cast<unsigned char>(78.0f * (1.0f - life))});
+                    }
+                }
+            }
+            break;
+        }
+
+        case eco::ZoneId::HarmonySanctuary: {
+            // Scintille armoniche orbitanti attorno ai 5 sigilli accordati del Santuario
+            for (const auto& seal : zm.sanctuary_seals) {
+                if ((!seal.attuned && seal.glow <= 0.1f) || !in_view(seal.pos.x, seal.pos.y)) {
+                    continue;
+                }
+                const Color accent = pal::GetDistrictPalette(seal.element_zone).ambient_accent;
+                const float g = std::max(seal.glow, seal.attuned ? 1.0f : 0.0f);
+                const int motes = static_cast<int>(7.0f * g * weather_scale);
+                for (int i = 0; i < motes; ++i) {
+                    const float ang = sim_time * 1.6f + static_cast<float>(i) * (6.28318f / std::max(1, motes));
+                    const float r = seal.radius * (0.65f + 0.18f * std::sin(sim_time * 2.5f + static_cast<float>(i)));
+                    const float px = seal.pos.x + std::cos(ang) * r;
+                    const float py = seal.pos.y + std::sin(ang) * r * 0.72f - std::abs(std::sin(sim_time + static_cast<float>(i))) * 8.0f;
+                    DrawCircleV({px, py}, 3.0f, pal::WithAlpha(accent, static_cast<unsigned char>(85.0f * g)));
+                    DrawCircleV({px, py}, 1.5f, pal::WithAlpha(RAYWHITE, static_cast<unsigned char>(215.0f * g)));
+                }
+            }
+            break;
+        }
+
+        case eco::ZoneId::Count:
+            break;
     }
 }
 
+// ============================================================================
+// Vignette Panoramiche Procedurali per gli Intramezzi tra Zone
+// ============================================================================
+
+enum class InterludeSceneKind : int {
+    DawnArch = 0,          // DawnTerraces <-> CanalQuarter (Arco dell'Alba)
+    BasaltStair = 1,       // CanalQuarter <-> WindPlateau (Scalinata di Basalto)
+    SluiceBridge = 2,      // CanalQuarter <-> HangingGardens (Ponte delle Chiuse / Ponte degli Archi)
+    ObsidianThreshold = 3, // HangingGardens <-> FumaroleCaldera (Soglia d'Ossidiana)
+    SanctuaryColonnade = 4,// HangingGardens <-> HarmonySanctuary (Colonnato del Santuario)
+    GenericMeridia = 5     // Fallback elegante
+};
+
+[[nodiscard]] InterludeSceneKind ClassifyThresholdScene(eco::ZoneId a, eco::ZoneId b) noexcept {
+    const auto is_pair = [&](eco::ZoneId x, eco::ZoneId y) noexcept {
+        return (a == x && b == y) || (a == y && b == x);
+    };
+    if (is_pair(eco::ZoneId::DawnTerraces, eco::ZoneId::CanalQuarter)) {
+        return InterludeSceneKind::DawnArch;
+    }
+    if (is_pair(eco::ZoneId::CanalQuarter, eco::ZoneId::WindPlateau)) {
+        return InterludeSceneKind::BasaltStair;
+    }
+    if (is_pair(eco::ZoneId::CanalQuarter, eco::ZoneId::HangingGardens)) {
+        return InterludeSceneKind::SluiceBridge;
+    }
+    if (is_pair(eco::ZoneId::HangingGardens, eco::ZoneId::FumaroleCaldera)) {
+        return InterludeSceneKind::ObsidianThreshold;
+    }
+    if (is_pair(eco::ZoneId::HangingGardens, eco::ZoneId::HarmonySanctuary)) {
+        return InterludeSceneKind::SanctuaryColonnade;
+    }
+    return InterludeSceneKind::GenericMeridia;
+}
+
+void DrawClampedRect(float x, float y, float w, float h, Rectangle clip, Color col) noexcept {
+    const float x0 = std::max(x, clip.x);
+    const float y0 = std::max(y, clip.y);
+    const float x1 = std::min(x + w, clip.x + clip.width);
+    const float y1 = std::min(y + h, clip.y + clip.height);
+    if (x1 > x0 && y1 > y0) {
+        DrawRectangle(
+            static_cast<int>(x0),
+            static_cast<int>(y0),
+            static_cast<int>(x1 - x0),
+            static_cast<int>(y1 - y0),
+            col);
+    }
+}
+
+void DrawInterludeHorizonHills(
+    Rectangle v,
+    float parallax,
+    float base_y_ratio,
+    float amp,
+    float freq,
+    float seed,
+    Color col) {
+    const int steps = 28;
+    const float dx = v.width / static_cast<float>(steps);
+    const float base_y = v.y + v.height * base_y_ratio;
+    for (int i = 0; i < steps; ++i) {
+        const float x0 = v.x + static_cast<float>(i) * dx;
+        const float x1 = std::min(v.x + v.width, x0 + dx + 1.0f);
+        const float h0 = std::sin((static_cast<float>(i) * freq) + parallax * 0.015f + seed) * amp +
+                         std::cos((static_cast<float>(i) * freq * 0.55f) - seed) * (amp * 0.45f);
+        const float h1 = std::sin((static_cast<float>(i + 1) * freq) + parallax * 0.015f + seed) * amp +
+                         std::cos((static_cast<float>(i + 1) * freq * 0.55f) - seed) * (amp * 0.45f);
+        const float y0 = std::clamp(base_y + h0, v.y + 40.0f, v.y + v.height - 6.0f);
+        const float y1 = std::clamp(base_y + h1, v.y + 40.0f, v.y + v.height - 6.0f);
+        DrawTriangle(
+            {x0, v.y + v.height},
+            {x1, y1},
+            {x0, y0},
+            col);
+        DrawTriangle(
+            {x0, v.y + v.height},
+            {x1, v.y + v.height},
+            {x1, y1},
+            col);
+    }
+}
+
+void DrawInterludePanoramicArt(
+    Rectangle v,
+    eco::ZoneId from_zone,
+    eco::ZoneId to_zone,
+    float progress,
+    float sim_time,
+    float pollution_ratio,
+    float alpha) {
+    const auto& p_from = pal::GetDistrictPalette(from_zone);
+    const auto& p_to = pal::GetDistrictPalette(to_zone);
+    const float poll = std::clamp(pollution_ratio, 0.0f, 1.0f);
+    const float health = 1.0f - poll;
+    const float parallax = (progress - 0.5f) * 54.0f;
+
+    // 1. Cielo panoramico interpolato tra le palette di partenza e arrivo
+    const Color sky_top_healthy = pal::LerpColor(
+        pal::ShiftBrightness(p_from.atmosphere_tint, -95),
+        pal::ShiftBrightness(p_to.atmosphere_tint, -85),
+        0.55f);
+    const Color sky_bot_healthy = pal::LerpColor(p_from.atmosphere_tint, p_to.atmosphere_tint, 0.55f);
+    const Color sky_top = ScaleAlpha(pal::WorldColor(Color{32, 28, 28, 255}, sky_top_healthy, poll), alpha);
+    const Color sky_bot = ScaleAlpha(pal::WorldColor(Color{84, 68, 56, 255}, sky_bot_healthy, poll), alpha);
+    DrawRectangleGradientV(
+        static_cast<int>(v.x),
+        static_cast<int>(v.y),
+        static_cast<int>(v.width),
+        static_cast<int>(v.height),
+        sky_top,
+        sky_bot);
+
+    // 2. Catene montuose / colline lontane in parallasse
+    const Color far_hill = ScaleAlpha(
+        pal::WorldColor(Color{48, 42, 40, 225}, pal::ShiftBrightness(p_to.wall_front_healthy, -14), poll),
+        alpha);
+    const Color mid_hill = ScaleAlpha(
+        pal::WorldColor(Color{38, 34, 34, 240}, pal::ShiftBrightness(p_from.wall_front_healthy, -22), poll),
+        alpha);
+    DrawInterludeHorizonHills(v, parallax * 0.25f, 0.56f, 24.0f, 0.42f, 1.1f, far_hill);
+    DrawInterludeHorizonHills(v, parallax * 0.50f, 0.68f, 18.0f, 0.58f, 2.7f, mid_hill);
+
+    const InterludeSceneKind kind = ClassifyThresholdScene(from_zone, to_zone);
+    const Color stone_light = ScaleAlpha(pal::WorldColor(p_to.wall_top_sick, p_to.wall_top_healthy, poll), alpha);
+    const Color stone_dark = ScaleAlpha(pal::WorldColor(p_to.wall_front_sick, p_to.wall_front_healthy, poll), alpha);
+    const Color accent_col = ScaleAlpha(pal::LerpColor(p_from.ambient_accent, p_to.ambient_accent, 0.6f), alpha);
+    const Color brass_col = ScaleAlpha(pal::kBronzeBright, alpha);
+
+    switch (kind) {
+        case InterludeSceneKind::DawnArch: {
+            // Disco solare dell'alba con aloni concentrici
+            const Vector2 sun_pos{v.x + v.width * 0.50f - parallax * 0.22f, v.y + v.height * 0.44f};
+            DrawCircleV(sun_pos, 108.0f, ScaleAlpha(Color{255, 224, 134, static_cast<unsigned char>(36 + 34 * health)}, alpha));
+            DrawCircleV(sun_pos, 64.0f, ScaleAlpha(Color{255, 236, 168, static_cast<unsigned char>(64 + 48 * health)}, alpha));
+            DrawCircleV(sun_pos, 32.0f, ScaleAlpha(Color{255, 246, 206, 210}, alpha));
+
+            // Specchio d'acqua del canale in basso a destra
+            const Color water_col = ScaleAlpha(pal::WorldColor(p_to.water_sick, p_to.water_healthy, poll), alpha);
+            DrawClampedRect(v.x, v.y + v.height * 0.74f, v.width, v.height * 0.26f, v, water_col);
+            for (int r = 0; r < 6; ++r) {
+                const float ry = v.y + v.height * (0.78f + static_cast<float>(r) * 0.032f);
+                const float rw = 160.0f - static_cast<float>(r) * 18.0f;
+                const float rx = sun_pos.x - rw * 0.5f + std::sin(sim_time * 2.2f + static_cast<float>(r)) * 10.0f;
+                DrawClampedRect(rx, ry, rw, 2.5f, v, ScaleAlpha(Color{255, 238, 178, 120}, alpha));
+            }
+
+            // Grande Arco di Travertino dell'Alba al centro
+            const float cx = v.x + v.width * 0.50f + parallax * 0.65f;
+            const float arch_w = 290.0f;
+            const float pillar_w = 52.0f;
+            const float top_y = v.y + 78.0f;
+            const float base_y = v.y + v.height;
+            DrawClampedRect(cx - arch_w * 0.5f, top_y, pillar_w, base_y - top_y, v, stone_dark);
+            DrawClampedRect(cx + arch_w * 0.5f - pillar_w, top_y, pillar_w, base_y - top_y, v, stone_dark);
+            DrawClampedRect(cx - arch_w * 0.5f - 18.0f, top_y - 22.0f, arch_w + 36.0f, 34.0f, v, stone_light);
+            DrawClampedRect(cx - arch_w * 0.5f - 24.0f, top_y - 28.0f, arch_w + 48.0f, 8.0f, v, brass_col);
+            // Ghiera gnomonica in ottone sulla chiave di volta
+            DrawCircleLines(static_cast<int>(cx), static_cast<int>(top_y + 18.0f), 26.0f, brass_col);
+            DrawCircleV({cx, top_y + 18.0f}, 5.5f, accent_col);
+            break;
+        }
+
+        case InterludeSceneKind::BasaltStair: {
+            // Scalinata monumentale in basalto che sale verso le rupi dell'Altopiano dei Venti
+            const float base_x = v.x + 80.0f + parallax * 0.55f;
+            const Color basalt_top = ScaleAlpha(Color{92, 108, 128, 255}, alpha);
+            const Color basalt_side = ScaleAlpha(Color{34, 42, 58, 255}, alpha);
+            for (int step = 0; step < 12; ++step) {
+                const float t = static_cast<float>(step) / 11.0f;
+                const float sx = base_x + t * 520.0f;
+                const float sy = v.y + v.height - 22.0f - t * 210.0f;
+                const float sw = v.width - (sx - v.x) + 40.0f;
+                DrawClampedRect(sx, sy, sw, 26.0f, v, basalt_side);
+                DrawClampedRect(sx, sy, sw, 5.0f, v, basalt_top);
+            }
+            // Monoliti frangivento e cipressi piegati sulla cresta
+            for (int m = 0; m < 4; ++m) {
+                const float mx = v.x + 210.0f + static_cast<float>(m) * 185.0f + parallax * 0.72f;
+                const float my = v.y + 125.0f + static_cast<float>(3 - m) * 28.0f;
+                DrawClampedRect(mx, my, 24.0f, 150.0f, v, basalt_side);
+                DrawClampedRect(mx + 4.0f, my + 8.0f, 3.0f, 120.0f, v, ScaleAlpha(pal::kPalWindPlateau.inlay_healthy, alpha * 0.85f));
+            }
+            // Scie di vento oblique in primo piano
+            for (int w = 0; w < 14; ++w) {
+                const float wy = v.y + 42.0f + HashFloat01(w, 2111) * (v.height - 84.0f);
+                const float wx = v.x + std::fmod(HashFloat01(w, 2129) * v.width - sim_time * (180.0f + (w % 4) * 45.0f) + v.width * 20.0f, v.width);
+                const float wlen = 65.0f + HashFloat01(w, 2141) * 90.0f;
+                const float x2 = std::max(v.x + 4.0f, wx - wlen);
+                DrawLineEx({wx, wy}, {x2, wy + 12.0f}, 1.8f, ScaleAlpha(Color{212, 240, 255, 140}, alpha));
+            }
+            break;
+        }
+
+        case InterludeSceneKind::SluiceBridge: {
+            // Acqua zaffiro del grande canale
+            const float water_y = v.y + v.height * 0.68f;
+            const Color water_top = ScaleAlpha(pal::WorldColor(p_from.water_sick, p_from.water_healthy, poll), alpha);
+            const Color water_bot = ScaleAlpha(pal::ShiftBrightness(p_from.water_healthy, -45), alpha);
+            DrawRectangleGradientV(
+                static_cast<int>(v.x),
+                static_cast<int>(water_y),
+                static_cast<int>(v.width),
+                static_cast<int>(v.y + v.height - water_y),
+                water_top,
+                water_bot);
+
+            // Ponte degli Archi (5 arcate in pietra e bronzo)
+            const float deck_y = v.y + v.height * 0.44f;
+            DrawClampedRect(v.x, deck_y, v.width, 28.0f, v, stone_light);
+            DrawClampedRect(v.x, deck_y - 6.0f, v.width, 6.0f, v, brass_col);
+            const int arches = 5;
+            const float span = v.width / static_cast<float>(arches);
+            for (int a = 0; a <= arches; ++a) {
+                const float px = v.x + static_cast<float>(a) * span + parallax * 0.55f - 16.0f;
+                DrawClampedRect(px, deck_y + 24.0f, 32.0f, v.y + v.height - (deck_y + 24.0f), v, stone_dark);
+                // Sbuffi di schiuma idraulica alla base dei piloni
+                const float foam_r = 14.0f + std::sin(sim_time * 3.0f + static_cast<float>(a)) * 4.0f;
+                if (px + 16.0f > v.x + 12.0f && px + 16.0f < v.x + v.width - 12.0f) {
+                    DrawCircleV({px + 16.0f, water_y + 8.0f}, foam_r, ScaleAlpha(Color{190, 248, 255, 95}, alpha));
+                }
+            }
+            // Tralci smeraldo dei Giardini Sospesi che scendono dall'alto a destra
+            for (int vine = 0; vine < 7; ++vine) {
+                const float vx = v.x + v.width * 0.58f + static_cast<float>(vine) * 54.0f + parallax * 0.85f;
+                if (vx < v.x + 10.0f || vx > v.x + v.width - 10.0f) {
+                    continue;
+                }
+                const float vlen = 72.0f + HashFloat01(vine, 2203) * 115.0f;
+                const float sway = std::sin(sim_time * 1.8f + static_cast<float>(vine)) * 8.0f;
+                DrawLineEx({vx, v.y + 2.0f}, {vx + sway, v.y + vlen}, 3.0f, ScaleAlpha(pal::kPalHangingGardens.canopy_healthy, alpha));
+                DrawCircleV({vx + sway, v.y + vlen}, 5.5f, ScaleAlpha(pal::kPalHangingGardens.blossom_a, alpha));
+            }
+            break;
+        }
+
+        case InterludeSceneKind::ObsidianThreshold: {
+            // Terreno scuro di basalto e fessure geotermiche luminose
+            const float floor_y = v.y + v.height * 0.72f;
+            DrawClampedRect(v.x, floor_y, v.width, v.y + v.height - floor_y, v, ScaleAlpha(Color{30, 24, 28, 255}, alpha));
+            for (int f = 0; f < 5; ++f) {
+                const float fx = v.x + 140.0f + static_cast<float>(f) * 165.0f + parallax * 0.6f;
+                const float glow = 0.65f + 0.35f * std::sin(sim_time * 3.2f + static_cast<float>(f) * 1.3f);
+                DrawClampedRect(fx, floor_y + 18.0f, 82.0f, 5.0f, v, ScaleAlpha(Color{252, 134, 48, static_cast<unsigned char>(210.0f * glow)}, alpha));
+                DrawClampedRect(fx + 10.0f, floor_y + 16.0f, 62.0f, 2.0f, v, ScaleAlpha(Color{255, 224, 146, static_cast<unsigned char>(220.0f * glow)}, alpha));
+            }
+            // Colonne di giada a sinistra vs pilastri esagonali d'ossidiana a destra
+            for (int col = 0; col < 3; ++col) {
+                const float lx = v.x + 56.0f + static_cast<float>(col) * 86.0f + parallax * 0.7f;
+                DrawClampedRect(lx, v.y + 40.0f + static_cast<float>(col) * 24.0f, 28.0f, v.y + v.height - (v.y + 40.0f), v, ScaleAlpha(Color{42, 82, 68, 240}, alpha));
+                DrawClampedRect(lx + 4.0f, v.y + 46.0f + static_cast<float>(col) * 24.0f, 4.0f, 160.0f, v, ScaleAlpha(pal::kJadeGlow, alpha * 0.65f));
+            }
+            for (int col = 0; col < 4; ++col) {
+                const float rx = v.x + v.width - 96.0f - static_cast<float>(col) * 78.0f + parallax * 0.7f;
+                const float top = v.y + 28.0f + static_cast<float>(col % 2) * 34.0f;
+                DrawClampedRect(rx, top, 42.0f, v.y + v.height - top, v, ScaleAlpha(Color{36, 32, 42, 248}, alpha));
+                DrawClampedRect(rx + 2.0f, top, 4.0f, v.y + v.height - top, v, ScaleAlpha(Color{244, 126, 52, 135}, alpha));
+            }
+            break;
+        }
+
+        case InterludeSceneKind::SanctuaryColonnade: {
+            // Cupola lontana dell'Astrolabio Centrale con anelli celesti
+            const Vector2 dome_c{v.x + v.width * 0.50f - parallax * 0.25f, v.y + v.height * 0.46f};
+            const float pulse = 0.6f + 0.4f * std::sin(sim_time * 2.4f);
+            DrawCircleV(dome_c, 92.0f, ScaleAlpha(Color{104, 246, 220, static_cast<unsigned char>(32 + 24 * pulse)}, alpha));
+            DrawCircleLines(static_cast<int>(dome_c.x), static_cast<int>(dome_c.y), 74.0f, ScaleAlpha(pal::kJadeGlow, alpha * 0.75f));
+            DrawCircleLines(static_cast<int>(dome_c.x), static_cast<int>(dome_c.y), 48.0f, brass_col);
+            DrawCircleV(dome_c, 12.0f, ScaleAlpha(Color{248, 246, 232, 230}, alpha));
+
+            // Specchio d'acqua centrale del colonnato
+            const float pool_y = v.y + v.height * 0.72f;
+            DrawClampedRect(v.x, pool_y, v.width, v.y + v.height - pool_y, v, ScaleAlpha(Color{30, 118, 136, 235}, alpha));
+            DrawClampedRect(dome_c.x - 42.0f, pool_y + 12.0f, 84.0f, 4.0f, v, ScaleAlpha(pal::kJadeGlow, alpha * 0.75f));
+
+            // Colonnato simmetrico in marmo avorio in prospettiva
+            for (int side = -1; side <= 1; side += 2) {
+                for (int c = 0; c < 4; ++c) {
+                    const float depth = static_cast<float>(c) / 3.0f;
+                    const float cx = v.x + v.width * 0.50f + static_cast<float>(side) * (135.0f + depth * 280.0f) + parallax * (0.4f + depth * 0.5f);
+                    const float cw = 18.0f + depth * 22.0f;
+                    const float top = v.y + 92.0f - depth * 64.0f;
+                    DrawClampedRect(cx - cw * 0.5f, top, cw, v.y + v.height - top, v, stone_light);
+                    DrawClampedRect(cx - cw * 0.5f - 4.0f, top, cw + 8.0f, 8.0f, v, brass_col);
+                }
+            }
+            break;
+        }
+
+        case InterludeSceneKind::GenericMeridia: {
+            // Arco dei Meridiani generico con cresta astrolabica
+            const float cx = v.x + v.width * 0.50f + parallax * 0.5f;
+            DrawClampedRect(cx - 140.0f, v.y + 84.0f, 40.0f, v.height - 84.0f, v, stone_dark);
+            DrawClampedRect(cx + 100.0f, v.y + 84.0f, 40.0f, v.height - 84.0f, v, stone_dark);
+            DrawClampedRect(cx - 156.0f, v.y + 62.0f, 312.0f, 28.0f, v, stone_light);
+            DrawCircleLines(static_cast<int>(cx), static_cast<int>(v.y + 132.0f), 34.0f, brass_col);
+            DrawCircleV({cx, v.y + 132.0f}, 7.0f, accent_col);
+            break;
+        }
+    }
+
+    // 3. Pulviscolo atmosferico fluttuante nella vignetta
+    const int motes = 24;
+    for (int i = 0; i < motes; ++i) {
+        const float rx = HashFloat01(i, 2309);
+        const float ry = HashFloat01(i, 2333);
+        const float phase = HashFloat01(i, 2347) * 6.28318f;
+        const float mx = v.x + 12.0f + std::fmod(rx * (v.width - 24.0f) + sim_time * (14.0f + (i % 3) * 8.0f), v.width - 24.0f);
+        const float my = v.y + 12.0f + std::fmod(ry * (v.height - 24.0f) - sim_time * (8.0f + (i % 4) * 5.0f) + v.height * 10.0f, v.height - 24.0f);
+        const float glow = 0.5f + 0.5f * std::sin(sim_time * 3.4f + phase);
+        DrawCircleV({mx, my}, 2.0f + glow * 1.3f, ScaleAlpha(pal::WithAlpha(p_to.ambient_accent, static_cast<unsigned char>(175.0f * glow)), alpha));
+    }
+
+    // 4. Sfumatura morbida sui bordi interni della vignetta
+    DrawRectangleGradientV(
+        static_cast<int>(v.x),
+        static_cast<int>(v.y),
+        static_cast<int>(v.width),
+        46,
+        ScaleAlpha(Color{6, 10, 16, 155}, alpha),
+        Color{6, 10, 16, 0});
+    DrawRectangleGradientV(
+        static_cast<int>(v.x),
+        static_cast<int>(v.y + v.height - 64.0f),
+        static_cast<int>(v.width),
+        64,
+        Color{6, 10, 16, 0},
+        ScaleAlpha(Color{6, 10, 16, 195}, alpha));
+
+    // 5. Cornice ornamentale in ottone e pietra
+    DrawRectangleLinesEx(v, 2.0f, ScaleAlpha(pal::LerpColor(p_to.ambient_accent, pal::kBronzeBright, 0.55f), alpha));
+    DrawRectangleLinesEx(
+        Rectangle{v.x + 5.0f, v.y + 5.0f, v.width - 10.0f, v.height - 10.0f},
+        1.0f,
+        ScaleAlpha(pal::WithAlpha(pal::kBronzeBright, 115), alpha));
+}
+
+} // namespace
+
+void SetEnvironmentEffectsConfig(const EnvironmentEffectsConfig& cfg) noexcept {
+    g_env_effects.particle_density = std::clamp(cfg.particle_density, 0.0f, 1.0f);
+    g_env_effects.fog_haze_intensity = std::clamp(cfg.fog_haze_intensity, 0.0f, 1.0f);
+    g_env_effects.sun_rays_intensity = std::clamp(cfg.sun_rays_intensity, 0.0f, 1.0f);
+    g_env_effects.vignette_intensity = std::clamp(cfg.vignette_intensity, 0.0f, 1.0f);
+    g_env_effects.zone_weather_intensity = std::clamp(cfg.zone_weather_intensity, 0.0f, 1.0f);
+    g_env_effects.atmosphere_enabled = cfg.atmosphere_enabled;
+}
+
+const EnvironmentEffectsConfig& GetEnvironmentEffectsConfig() noexcept {
+    return g_env_effects;
+}
+
+void SetParticleQualityScale(float scale) noexcept {
+    g_env_effects.particle_density = std::clamp(scale, 0.0f, 1.0f);
+}
+
 float GetParticleQualityScale() noexcept {
-    return g_particle_quality_scale;
+    return g_env_effects.particle_density;
 }
 
 void DrawWorldAtmosphericParticles(
@@ -156,9 +829,11 @@ void DrawWorldAtmosphericParticles(
     // Il burst della raccolta reliquia e' sempre leggibile anche con particelle ridotte
     DrawCollectiblePickupBurst(world);
 
-    if (g_particle_quality_scale <= 0.01f) {
+    const float p_scale = g_env_effects.particle_density;
+    if (p_scale <= 0.01f) {
         return;
     }
+    const float w_scale = p_scale * g_env_effects.zone_weather_intensity;
 
     const float sim_time = world.sim_time;
     const float poll = world.ecosystem.PollutionRatio();
@@ -169,11 +844,13 @@ void DrawWorldAtmosphericParticles(
     const float span_y = static_cast<float>(eco::kWindowHeight) * 1.16f;
 
     if (world.current_mode == eco::GameMode::Overworld) {
-        const eco::ZoneId zone = world.overworld.DistrictAt(camera_target);
+        const eco::ZoneId zone = world.current_zone;
 
-        // 1. Lucciole e pulviscolo luminoso della Conca quando l'aria guarisce
+        // 1. Lucciole e pulviscolo luminoso della Conca
         const int firefly_base = (zone == eco::ZoneId::HangingGardens || zone == eco::ZoneId::HarmonySanctuary) ? 52 : 34;
-        const int firefly_count = static_cast<int>(health * static_cast<float>(firefly_base) * g_particle_quality_scale);
+        const int firefly_count = static_cast<int>(
+            std::max(0.20f, health) * static_cast<float>(firefly_base) * p_scale *
+            (0.35f + 0.65f * g_env_effects.zone_weather_intensity));
         for (int i = 0; i < firefly_count; ++i) {
             const float rx = HashFloat01(i, 101);
             const float ry = HashFloat01(i, 202);
@@ -197,46 +874,8 @@ void DrawWorldAtmosphericParticles(
             DrawCircleV({wx, wy}, 1.7f, pal::WithAlpha(c, alpha));
         }
 
-        // 2. Effetti caratteristici del distretto inquadrato
-        if (zone == eco::ZoneId::WindPlateau) {
-            // Correnti d'aria / scie di vento oblique sull'Altopiano dei Venti
-            const int wind_count = static_cast<int>(18.0f * g_particle_quality_scale);
-            for (int i = 0; i < wind_count; ++i) {
-                const float rx = HashFloat01(i, 511);
-                const float ry = HashFloat01(i, 613);
-                const float spd = 110.0f + HashFloat01(i, 719) * 85.0f;
-                const float wx = min_x + std::fmod(rx * span_x + sim_time * spd, span_x);
-                const float wy = min_y + std::fmod(ry * span_y + std::sin(sim_time * 1.4f + static_cast<float>(i)) * 16.0f + span_y, span_y);
-                const float len = 24.0f + HashFloat01(i, 811) * 28.0f;
-                const Color wc = pal::WorldColor(Color{165, 152, 134, 65}, Color{208, 236, 248, 85}, poll);
-                DrawLineEx({wx, wy}, {wx + len, wy - 5.0f}, 1.4f, wc);
-            }
-        } else if (zone == eco::ZoneId::FumaroleCaldera) {
-            // Sb sbuffi di vapore termale / braci lente nella Caldera delle Fumarole
-            const int ember_count = static_cast<int>(24.0f * g_particle_quality_scale);
-            for (int i = 0; i < ember_count; ++i) {
-                const float rx = HashFloat01(i, 521);
-                const float ry = HashFloat01(i, 631);
-                const float spd = 18.0f + HashFloat01(i, 733) * 22.0f;
-                const float wx = min_x + std::fmod(rx * span_x + std::sin(sim_time * 2.1f + static_cast<float>(i)) * 18.0f + span_x, span_x);
-                const float wy = min_y + std::fmod(ry * span_y - sim_time * spd + span_y * 10.0f, span_y);
-                const Color ec = pal::WorldColor(Color{235, 118, 52, 155}, Color{215, 238, 242, 95}, poll);
-                DrawCircleV({wx, wy}, 2.0f + static_cast<float>(i % 3) * 0.7f, ec);
-            }
-        } else if (health > 0.35f) {
-            // Petali e foglie portati dalla brezza nei distretti mediterranei / Giardini
-            const int leaf_count = static_cast<int>((health - 0.35f) * 32.0f * g_particle_quality_scale);
-            for (int i = 0; i < leaf_count; ++i) {
-                const float rx = HashFloat01(i, 505);
-                const float ry = HashFloat01(i, 606);
-                const float wx = min_x + std::fmod(rx * span_x + sim_time * 24.0f, span_x);
-                const float wy = min_y + std::fmod(ry * span_y + std::sin(sim_time * 2.0f + static_cast<float>(i)) * 18.0f + span_y, span_y);
-                const Color lc = (zone == eco::ZoneId::HangingGardens && (i % 3 == 0))
-                                     ? Color{248, 178, 188, 175}
-                                     : Color{128, 226, 154, 165};
-                DrawPoly({wx, wy}, 4, 2.7f, sim_time * 75.0f + static_cast<float>(i * 23), lc);
-            }
-        }
+        // 2. Effetti meteo/ambientali reattivi alle 6 zone separate e alle loro meccaniche
+        DrawZoneMechanicParticles(world, min_x, min_y, span_x, span_y, w_scale);
     } else {
         // Particelle dedicate a ciascuna delle 3 strutture interne (viewport-culled, zero allocazioni)
         const float map_w = world.ActiveTilemap().WorldWidth();
@@ -248,11 +887,11 @@ void DrawWorldAtmosphericParticles(
         const auto in_viewport = [&](float px, float py) noexcept {
             return px >= vis_min_x && px <= vis_max_x && py >= vis_min_y && py <= vis_max_y;
         };
+        const float struct_scale = p_scale * (0.45f + 0.55f * g_env_effects.zone_weather_intensity);
 
         switch (world.active_structure) {
             case eco::StructureId::HypogeanCisterns: {
-                // Nebbia idraulica e gocce luminose ascendenti nelle Cisterne Ipogee
-                const int mist_count = static_cast<int>(38.0f * g_particle_quality_scale);
+                const int mist_count = static_cast<int>(38.0f * struct_scale);
                 for (int i = 0; i < mist_count; ++i) {
                     const float rx = HashFloat01(i, 707);
                     const float ry = HashFloat01(i, 808);
@@ -272,8 +911,7 @@ void DrawWorldAtmosphericParticles(
                 break;
             }
             case eco::StructureId::PendulumTower: {
-                // Pulviscolo dorato sospeso nei fasci di luce degli oculi della Torre del Pendolo
-                const int dust_count = static_cast<int>(42.0f * g_particle_quality_scale);
+                const int dust_count = static_cast<int>(42.0f * struct_scale);
                 for (int i = 0; i < dust_count; ++i) {
                     const float rx = HashFloat01(i, 743);
                     const float ry = HashFloat01(i, 853);
@@ -295,8 +933,7 @@ void DrawWorldAtmosphericParticles(
             }
             case eco::StructureId::GeothermalChamber:
             case eco::StructureId::Count: {
-                // Vapore termale e scintille ramate nella Camera Geotermica
-                const int steam_count = static_cast<int>(40.0f * g_particle_quality_scale);
+                const int steam_count = static_cast<int>(40.0f * struct_scale);
                 for (int i = 0; i < steam_count; ++i) {
                     const float rx = HashFloat01(i, 761);
                     const float ry = HashFloat01(i, 863);
@@ -320,50 +957,69 @@ void DrawWorldAtmosphericParticles(
 }
 
 void DrawScreenSpaceAtmosphere(const eco::WorldContext& world) {
+    if (!g_env_effects.atmosphere_enabled) {
+        return;
+    }
+
     const float sim_time = world.sim_time;
     const float poll = world.ecosystem.PollutionRatio();
     const float health = 1.0f - poll;
     const int sw = eco::kWindowWidth;
     const int sh = eco::kWindowHeight;
 
-    // 0. Gradiente / tinta atmosferica di distretto (interpolata dolcemente al cambio zona)
-    const Color zone_tint = UpdateSmoothedDistrictTint(world);
-    if (world.current_mode == eco::GameMode::Overworld) {
-        const unsigned char top_a = static_cast<unsigned char>(16.0f + 16.0f * health);
-        const unsigned char mid_a = static_cast<unsigned char>(7.0f + 7.0f * health);
-        const unsigned char bot_a = static_cast<unsigned char>(12.0f + 12.0f * health);
-        DrawRectangle(0, 52, sw, sh - 52, pal::WithAlpha(zone_tint, mid_a));
-        DrawRectangleGradientV(0, 52, sw, 148, pal::WithAlpha(zone_tint, top_a), pal::WithAlpha(zone_tint, 0));
-        DrawRectangleGradientV(0, sh - 128, sw, 128, pal::WithAlpha(zone_tint, 0), pal::WithAlpha(zone_tint, bot_a));
-    } else {
-        DrawRectangleGradientV(0, 52, sw, 110, pal::WithAlpha(zone_tint, 18), pal::WithAlpha(zone_tint, 0));
-    }
+    const float fog_k = g_env_effects.fog_haze_intensity;
+    const float ray_k = g_env_effects.sun_rays_intensity;
+    const float vig_k = g_env_effects.vignette_intensity;
 
-    // 1. Raggi solari d'alba (God-Rays) nell'Overworld quando la Conca e' limpida
-    if (world.current_mode == eco::GameMode::Overworld && health > 0.72f) {
-        const float ray_strength = (health - 0.72f) / 0.28f;
-        for (int r = 0; r < 4; ++r) {
-            const float shift = std::sin(sim_time * 0.42f + static_cast<float>(r) * 1.35f) * 32.0f;
-            const float x0 = 130.0f + static_cast<float>(r) * 295.0f + shift;
-            const float w = 72.0f + static_cast<float>(r % 2) * 36.0f;
-            const auto alpha = static_cast<unsigned char>(21.0f * ray_strength);
-            const Color sun_ray{255, 238, 172, alpha};
-            DrawTriangle(
-                Vector2{x0, 52.0f},
-                Vector2{x0 + 220.0f, static_cast<float>(sh)},
-                Vector2{x0 + 220.0f + w, static_cast<float>(sh)},
-                sun_ray);
+    // 0. Gradiente / tinta atmosferica di distretto (scalata da fog_haze_intensity)
+    const Color zone_tint = UpdateSmoothedDistrictTint(world);
+    if (fog_k > 0.01f) {
+        if (world.current_mode == eco::GameMode::Overworld) {
+            const auto top_a = static_cast<unsigned char>((16.0f + 16.0f * health) * fog_k);
+            const auto mid_a = static_cast<unsigned char>((7.0f + 7.0f * health) * fog_k);
+            const auto bot_a = static_cast<unsigned char>((12.0f + 12.0f * health) * fog_k);
+            DrawRectangle(0, 52, sw, sh - 52, pal::WithAlpha(zone_tint, mid_a));
+            DrawRectangleGradientV(0, 52, sw, 148, pal::WithAlpha(zone_tint, top_a), pal::WithAlpha(zone_tint, 0));
+            DrawRectangleGradientV(0, sh - 128, sw, 128, pal::WithAlpha(zone_tint, 0), pal::WithAlpha(zone_tint, bot_a));
+        } else {
+            DrawRectangleGradientV(0, 52, sw, 110, pal::WithAlpha(zone_tint, static_cast<unsigned char>(18.0f * fog_k)), pal::WithAlpha(zone_tint, 0));
         }
     }
 
-    // 2. Foschia e cenere di pece obliqua quando l'inquinamento e' attivo
+    // 1. Raggi solari d'alba (God-Rays) scalati da sun_rays_intensity
+    if (world.current_mode == eco::GameMode::Overworld && ray_k > 0.01f) {
+        const bool sunlit_zone = (world.current_zone == eco::ZoneId::DawnTerraces ||
+                                  world.current_zone == eco::ZoneId::HarmonySanctuary);
+        const float base_strength = sunlit_zone
+                                        ? std::clamp(0.38f + health * 0.62f, 0.25f, 1.0f)
+                                        : std::clamp((health - 0.55f) / 0.45f, 0.0f, 1.0f);
+        const float ray_strength = base_strength * ray_k;
+        if (ray_strength > 0.02f) {
+            for (int r = 0; r < 4; ++r) {
+                const float shift = std::sin(sim_time * 0.42f + static_cast<float>(r) * 1.35f) * 32.0f;
+                const float x0 = 130.0f + static_cast<float>(r) * 295.0f + shift;
+                const float w = 72.0f + static_cast<float>(r % 2) * 36.0f;
+                const auto alpha = static_cast<unsigned char>(24.0f * ray_strength);
+                const Color sun_ray = (world.current_zone == eco::ZoneId::HarmonySanctuary)
+                                          ? Color{188, 250, 232, alpha}
+                                          : Color{255, 238, 172, alpha};
+                DrawTriangle(
+                    Vector2{x0, 52.0f},
+                    Vector2{x0 + 220.0f, static_cast<float>(sh)},
+                    Vector2{x0 + 220.0f + w, static_cast<float>(sh)},
+                    sun_ray);
+            }
+        }
+    }
+
+    // 2. Foschia e cenere di pece obliqua quando l'inquinamento e' attivo (scalata da fog_haze_intensity)
     const float smog_ratio = world.ecosystem.SmogAlpha();
-    if (smog_ratio > 0.01f) {
-        const auto smog_a = static_cast<unsigned char>(smog_ratio * 185.0f);
+    if (smog_ratio > 0.01f && fog_k > 0.01f) {
+        const auto smog_a = static_cast<unsigned char>(smog_ratio * 185.0f * fog_k);
         const Color smog_col = pal::LerpColor(Color{54, 58, 52, smog_a}, Color{72, 56, 44, smog_a}, poll);
         DrawRectangle(0, 52, sw, sh - 52, smog_col);
 
-        const int ash_count = static_cast<int>(poll * 52.0f * g_particle_quality_scale);
+        const int ash_count = static_cast<int>(poll * 52.0f * g_env_effects.particle_density * fog_k);
         for (int i = 0; i < ash_count; ++i) {
             const float sx = HashFloat01(i, 909) * static_cast<float>(sw);
             const float sy = 52.0f + HashFloat01(i, 1010) * static_cast<float>(sh - 52);
@@ -377,9 +1033,161 @@ void DrawScreenSpaceAtmosphere(const eco::WorldContext& world) {
         }
     }
 
-    // 3. Vignettatura morbida cinematografica
-    DrawRectangleGradientV(0, 52, sw, 32, Color{0, 0, 0, 72}, Color{0, 0, 0, 0});
-    DrawRectangleGradientV(0, sh - 46, sw, 46, Color{0, 0, 0, 0}, Color{0, 0, 0, 92});
+    // 3. Vignettatura morbida cinematografica (scalata da vignette_intensity)
+    if (vig_k > 0.01f) {
+        const auto top_v = static_cast<unsigned char>(78.0f * vig_k);
+        const auto bot_v = static_cast<unsigned char>(98.0f * vig_k);
+        const auto side_v = static_cast<unsigned char>(54.0f * vig_k);
+        DrawRectangleGradientV(0, 52, sw, 38, Color{0, 0, 0, top_v}, Color{0, 0, 0, 0});
+        DrawRectangleGradientV(0, sh - 52, sw, 52, Color{0, 0, 0, 0}, Color{0, 0, 0, bot_v});
+        DrawRectangleGradientH(0, 52, 48, sh - 52, Color{0, 0, 0, side_v}, Color{0, 0, 0, 0});
+        DrawRectangleGradientH(sw - 48, 52, 48, sh - 52, Color{0, 0, 0, 0}, Color{0, 0, 0, side_v});
+    }
+}
+
+void DrawZoneInterludeOverlay(
+    eco::ZoneId from_zone,
+    eco::ZoneId to_zone,
+    float progress,
+    float sim_time,
+    float pollution_ratio,
+    const char* title,
+    const char* body_line1,
+    const char* body_line2,
+    const char* skip_hint,
+    const char* direction_tag) {
+    const float p = std::clamp(progress, 0.0f, 1.0f);
+
+    // Dissolvenza morbida in ingresso (0..0.18) e uscita (0.80..1.0)
+    float fade = 1.0f;
+    if (p < 0.18f) {
+        fade = Smoothstep01(p / 0.18f);
+    } else if (p > 0.80f) {
+        fade = 1.0f - Smoothstep01((p - 0.80f) / 0.20f);
+    }
+    if (fade <= 0.01f) {
+        return;
+    }
+
+    const int sw = eco::kWindowWidth;
+    const int sh = eco::kWindowHeight;
+    const auto& p_to = pal::GetDistrictPalette(to_zone);
+    const Color accent = p_to.ambient_accent;
+
+    // 1. Sipario scuro cinematografico (copre in modo pulito lo swap di memoria al 50%)
+    DrawRectangle(0, 0, sw, sh, ScaleAlpha(Color{8, 13, 20, 250}, fade));
+
+    // 2. Vignetta panoramica procedurale centrata
+    const Rectangle vignette_rect{160.0f, 64.0f, 960.0f, 384.0f};
+    DrawInterludePanoramicArt(
+        vignette_rect,
+        from_zone,
+        to_zone,
+        p,
+        sim_time,
+        pollution_ratio,
+        fade);
+
+    // 3. Spazio tipografico inferiore curato
+    const float text_fade = fade * Smoothstep01(std::clamp((p - 0.05f) / 0.16f, 0.0f, 1.0f));
+    const float mid_x = static_cast<float>(sw) * 0.5f;
+
+    char fallback_dir[128]{};
+    const char* dir_str = direction_tag;
+    if (dir_str == nullptr || dir_str[0] == '\0') {
+        std::snprintf(
+            fallback_dir,
+            sizeof(fallback_dir),
+            "%s  ->  %s",
+            InterludeZoneLabel(from_zone),
+            InterludeZoneLabel(to_zone));
+        dir_str = fallback_dir;
+    }
+
+    const int dir_w = MeasureUiText(dir_str, 13);
+    DrawTextShadow(
+        dir_str,
+        static_cast<int>(mid_x - static_cast<float>(dir_w) * 0.5f),
+        468,
+        13,
+        ScaleAlpha(pal::LerpColor(accent, pal::kBronzeBright, 0.45f), text_fade));
+
+    if (title != nullptr && title[0] != '\0') {
+        const int tw = MeasureUiText(title, 28);
+        DrawTextShadow(
+            title,
+            static_cast<int>(mid_x - static_cast<float>(tw) * 0.5f),
+            492,
+            28,
+            ScaleAlpha(RAYWHITE, text_fade));
+    }
+
+    DrawDivider(static_cast<int>(mid_x) - 210, 534, 420, ScaleAlpha(accent, text_fade));
+
+    if (body_line1 != nullptr && body_line1[0] != '\0') {
+        const int w1 = MeasureUiText(body_line1, 17);
+        DrawTextShadow(
+            body_line1,
+            static_cast<int>(mid_x - static_cast<float>(w1) * 0.5f),
+            552,
+            17,
+            ScaleAlpha(pal::kParchmentText, text_fade));
+    }
+    if (body_line2 != nullptr && body_line2[0] != '\0') {
+        const int w2 = MeasureUiText(body_line2, 17);
+        DrawTextShadow(
+            body_line2,
+            static_cast<int>(mid_x - static_cast<float>(w2) * 0.5f),
+            580,
+            17,
+            ScaleAlpha(Color{202, 218, 232, 240}, text_fade));
+    }
+
+    // 4. Barra di avanzamento discreta centrata
+    const Rectangle bar{mid_x - 180.0f, 640.0f, 360.0f, 6.0f};
+    DrawRectangleRec(bar, ScaleAlpha(Color{22, 34, 48, 220}, fade));
+    const float fill_w = bar.width * p;
+    if (fill_w > 1.0f) {
+        DrawRectangle(
+            static_cast<int>(bar.x),
+            static_cast<int>(bar.y),
+            static_cast<int>(fill_w),
+            static_cast<int>(bar.height),
+            ScaleAlpha(accent, fade));
+    }
+    DrawRectangleLinesEx(bar, 1.0f, ScaleAlpha(pal::WithAlpha(pal::kBronzeBright, 130), fade));
+
+    // 5. Hint discreto per saltare in basso a destra
+    if (skip_hint != nullptr && skip_hint[0] != '\0') {
+        const char* key_lbl = "SPAZIO";
+        const int badge_w = MeasureKeyBadge(key_lbl);
+        const int hint_w = MeasureUiText(skip_hint, 13);
+        const int total_w = badge_w + 8 + hint_w;
+        const int hx = sw - 46 - total_w;
+        const int hy = sh - 44;
+        DrawKeyBadge(key_lbl, hx, hy, ScaleAlpha(accent, fade));
+        DrawTextShadow(skip_hint, hx + badge_w + 8, hy + 2, 13, ScaleAlpha(Color{198, 214, 228, 220}, fade));
+    }
+}
+
+void DrawZoneInterludeOverlay(const eco::WorldContext& world) {
+    if (!world.interlude.active) {
+        return;
+    }
+    const eco::ZoneInterludeText copy = eco::ZoneInterludeCopy(
+        world.interlude.from_zone,
+        world.interlude.to_zone);
+    DrawZoneInterludeOverlay(
+        world.interlude.from_zone,
+        world.interlude.to_zone,
+        world.interlude.Progress(),
+        world.sim_time,
+        world.ecosystem.PollutionRatio(),
+        copy.threshold_title,
+        copy.line1,
+        copy.line2,
+        world.interlude.CanSkip() ? "Salta" : "",
+        copy.direction_tag);
 }
 
 } // namespace eco::app

@@ -55,9 +55,9 @@ WorldNpc WorldNpc::CreateDefault(NpcId id) {
         case NpcId::ClaraSereni:
             npc.location = LocationId::Overworld;
             npc.zone = ZoneId::CanalQuarter;
-            npc.pos = TileCenterPos(17, 21); // (1032, 840) — Ponte degli Archi
+            npc.pos = TileCenterPos(12, 29); // (1416, 600) — Ponte degli Archi (mappa 26x36)
             npc.last_dialogue =
-                "Prima di aprire il Ponte degli Archi ho bisogno di una prova: riaccendi un monumento con una misura pulita.";
+                "Prima di aprire il Ponte degli Archi ho bisogno di una prova pulita. Intanto usa le leve delle chiuse [E] per domare le correnti nei canali.";
             break;
         case NpcId::LorenzoAltieri:
             npc.location = LocationId::HypogeanCisterns;
@@ -70,16 +70,16 @@ WorldNpc WorldNpc::CreateDefault(NpcId id) {
         case NpcId::MiriamFerro:
             npc.location = LocationId::Overworld;
             npc.zone = ZoneId::HangingGardens;
-            npc.pos = TileCenterPos(19, 31); // (1512, 936) — Giardini Sospesi
+            npc.pos = TileCenterPos(15, 11); // (552, 744) — Giardini Sospesi (mappa 26x36)
             npc.last_dialogue =
-                "I semi dormienti nei terrazzamenti aspettano una frequenza limpida. Accorda il Risonatore Armonico e torneranno a fiorire.";
+                "Attiva le quattro piastre di giada in sequenza armonica per stendere il ponte verso il Risonatore, poi accordalo a 120 Hertz.";
             break;
         case NpcId::MatteoVerrini:
             npc.location = LocationId::Overworld;
             npc.zone = ZoneId::FumaroleCaldera;
-            npc.pos = TileCenterPos(8, 33); // (1608, 408) — Caldera delle Fumarole
+            npc.pos = TileCenterPos(17, 12); // (600, 840) — Caldera delle Fumarole (mappa 26x36)
             npc.last_dialogue =
-                "I villaggi a valle non possono attendere l'inverno. Se vuoi spegnere le nostre fornaci, dimostra che Carnot basta da solo.";
+                "Chiudi pure le valvole di sfogo [E] per passare tra i geyser, ma se vuoi spegnere le nostre fornaci dimostra che Carnot basta da solo.";
             break;
         case NpcId::Count:
             break;

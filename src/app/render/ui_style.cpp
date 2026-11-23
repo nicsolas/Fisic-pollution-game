@@ -272,6 +272,16 @@ void DrawDivider(int x, int y, int width, Color accent) {
 }
 
 void DrawTabBar(Rectangle area, const char* const* labels, int count, int active_index, Color accent) {
+    DrawCategoryTabs(area, labels, count, active_index, -1, accent);
+}
+
+void DrawCategoryTabs(
+    Rectangle area,
+    const char* const* labels,
+    int count,
+    int active_index,
+    int hovered_index,
+    Color accent) {
     if (labels == nullptr || count <= 0) {
         return;
     }
@@ -285,12 +295,15 @@ void DrawTabBar(Rectangle area, const char* const* labels, int count, int active
             area.height
         };
         const bool active = (i == active_index);
-        const Color bg = active ? pal::LerpColor(pal::kUiHeaderBg, accent, 0.22f) : Color{14, 22, 34, 210};
+        const bool hovered = (i == hovered_index) && !active;
+        const Color bg = active
+                             ? pal::LerpColor(pal::kUiHeaderBg, accent, 0.24f)
+                             : (hovered ? pal::LerpColor(pal::kUiHeaderBg, accent, 0.10f) : Color{14, 22, 34, 214});
         DrawRectangleRec(tr, bg);
         DrawRectangleLinesEx(
             tr,
-            active ? 1.8f : 1.0f,
-            active ? accent : pal::WithAlpha(kBrassFrame, 115));
+            active ? 1.8f : (hovered ? 1.4f : 1.0f),
+            active ? accent : (hovered ? pal::WithAlpha(accent, 175) : pal::WithAlpha(kBrassFrame, 115)));
         if (active) {
             DrawRectangle(
                 static_cast<int>(tr.x) + 2,
@@ -298,12 +311,334 @@ void DrawTabBar(Rectangle area, const char* const* labels, int count, int active
                 std::max(0, static_cast<int>(tr.width) - 4),
                 3,
                 accent);
+            DrawRectangle(
+                static_cast<int>(tr.x) + 2,
+                static_cast<int>(tr.y) + 2,
+                std::max(0, static_cast<int>(tr.width) - 4),
+                1,
+                pal::WithAlpha(kBrassBright, 130));
         }
         const char* label = (labels[i] != nullptr) ? labels[i] : "";
         const int tw = MeasureUiText(label, 14);
         const int tx = static_cast<int>(tr.x + (tr.width - static_cast<float>(tw)) * 0.5f);
         const int ty = static_cast<int>(tr.y + (tr.height - 15.0f) * 0.5f);
-        DrawTextShadow(label, tx, ty, 14, active ? RAYWHITE : Color{165, 182, 198, 220});
+        const Color text_col = active
+                                   ? RAYWHITE
+                                   : (hovered ? Color{216, 230, 244, 240} : Color{165, 182, 198, 220});
+        DrawTextShadow(label, tx, ty, 14, text_col);
+    }
+}
+
+Rectangle SliderTrackRect(Rectangle row_rect) noexcept {
+    const float right_pad = 14.0f;
+    const float value_reserve = 64.0f;
+    const float gap = 12.0f;
+    const float max_track_w = std::max(80.0f, row_rect.width * 0.44f - value_reserve);
+    const float track_w = std::clamp(row_rect.width * 0.34f, std::min(110.0f, max_track_w), std::min(220.0f, max_track_w));
+    const float track_h = 12.0f;
+    const float track_x = row_rect.x + row_rect.width - right_pad - value_reserve - gap - track_w;
+    const float track_y = row_rect.y + (row_rect.height - track_h) * 0.5f;
+    return Rectangle{track_x, track_y, track_w, track_h};
+}
+
+namespace {
+
+void DrawSettingRowBackground(Rectangle r, Color accent, bool focused, bool hovered) {
+    const Color fill = focused
+                           ? pal::LerpColor(pal::kUiHeaderBg, accent, 0.20f)
+                           : (hovered ? pal::LerpColor(Color{16, 26, 38, 222}, accent, 0.08f)
+                                      : Color{14, 23, 35, 206});
+    DrawRectangleRec(r, fill);
+    if (focused) {
+        DrawRectangle(
+            static_cast<int>(r.x),
+            static_cast<int>(r.y),
+            4,
+            static_cast<int>(r.height),
+            accent);
+    } else if (hovered) {
+        DrawRectangle(
+            static_cast<int>(r.x),
+            static_cast<int>(r.y),
+            2,
+            static_cast<int>(r.height),
+            pal::WithAlpha(accent, 165));
+    }
+    DrawRectangleLinesEx(
+        r,
+        focused ? 1.5f : 1.0f,
+        focused ? pal::WithAlpha(accent, 225)
+                : (hovered ? pal::WithAlpha(accent, 140) : pal::WithAlpha(kBrassFrame, 82)));
+}
+
+} // namespace
+
+void DrawSettingSlider(Rectangle track, float value01, Color accent, bool focused, bool hovered) {
+    const float v = std::clamp(value01, 0.0f, 1.0f);
+    const float radius = track.height * 0.5f;
+
+    // Binario scuro incassato
+    DrawRectangleRounded(track, 0.85f, 8, Color{10, 16, 24, 242});
+    DrawRectangleRoundedLinesEx(
+        track,
+        0.85f,
+        8,
+        1.1f,
+        focused ? pal::WithAlpha(accent, 210) : pal::WithAlpha(kBrassFrame, 125));
+
+    // Tacche discrete al 25%, 50%, 75%
+    for (int step = 1; step <= 3; ++step) {
+        const float tx = track.x + track.width * (static_cast<float>(step) * 0.25f);
+        DrawLine(
+            static_cast<int>(tx),
+            static_cast<int>(track.y + 2.0f),
+            static_cast<int>(tx),
+            static_cast<int>(track.y + track.height - 2.0f),
+            Color{130, 146, 164, 72});
+    }
+
+    // Riempimento graduato
+    const float fill_w = std::max(0.0f, (track.width - 2.0f) * v);
+    if (fill_w > 1.5f) {
+        const Rectangle fill_rect{
+            track.x + 1.0f,
+            track.y + 1.0f,
+            fill_w,
+            std::max(2.0f, track.height - 2.0f)
+        };
+        const Color fill_col = focused ? pal::ShiftBrightness(accent, 14) : accent;
+        DrawRectangleRounded(fill_rect, 0.85f, 8, fill_col);
+        DrawRectangle(
+            static_cast<int>(fill_rect.x + 2.0f),
+            static_cast<int>(fill_rect.y + 1.0f),
+            std::max(0, static_cast<int>(fill_rect.width - 4.0f)),
+            2,
+            pal::WithAlpha(RAYWHITE, 75));
+    }
+
+    // Cursore (thumb) in ottone / accento
+    const float knob_x = track.x + radius + (track.width - radius * 2.0f) * v;
+    const float knob_y = track.y + radius;
+    const float knob_r = focused ? (radius + 3.2f) : (hovered ? (radius + 2.6f) : (radius + 1.8f));
+    if (focused || hovered) {
+        DrawCircleV({knob_x, knob_y}, knob_r + 3.2f, pal::WithAlpha(accent, focused ? 65 : 40));
+    }
+    DrawCircleV({knob_x, knob_y}, knob_r, Color{242, 236, 220, 255});
+    DrawCircleLines(static_cast<int>(knob_x), static_cast<int>(knob_y), knob_r, focused ? accent : kBrassBright);
+    DrawCircleV({knob_x, knob_y}, knob_r * 0.42f, accent);
+}
+
+void DrawSettingToggle(Rectangle pill, bool enabled, Color accent, bool focused, bool hovered) {
+    const Color track_col = enabled
+                                ? pal::LerpColor(Color{24, 58, 56, 245}, accent, 0.48f)
+                                : Color{18, 26, 36, 240};
+    DrawRectangleRounded(pill, 0.95f, 10, track_col);
+    DrawRectangleRoundedLinesEx(
+        pill,
+        0.95f,
+        10,
+        focused ? 1.6f : 1.2f,
+        enabled ? (focused ? pal::ShiftBrightness(accent, 22) : accent)
+                : (focused ? pal::WithAlpha(accent, 190) : pal::WithAlpha(kBrassFrame, 125)));
+
+    const float pad = 3.0f;
+    const float knob_r = std::max(4.0f, pill.height * 0.5f - pad);
+    const float knob_x = enabled
+                             ? (pill.x + pill.width - pad - knob_r)
+                             : (pill.x + pad + knob_r);
+    const float knob_y = pill.y + pill.height * 0.5f;
+
+    if (focused || hovered) {
+        DrawCircleV({knob_x, knob_y}, knob_r + 2.5f, pal::WithAlpha(enabled ? accent : kBrassBright, 55));
+    }
+    DrawCircleV({knob_x, knob_y}, knob_r, enabled ? RAYWHITE : Color{176, 188, 200, 240});
+    DrawCircleLines(static_cast<int>(knob_x), static_cast<int>(knob_y), knob_r, enabled ? accent : Color{96, 112, 128, 210});
+}
+
+void DrawSliderRow(
+    Rectangle r,
+    const char* label,
+    float ratio,
+    const char* value_text,
+    Color accent,
+    bool focused,
+    bool hovered) {
+    DrawSettingRowBackground(r, accent, focused, hovered);
+
+    const int text_y = static_cast<int>(r.y + (r.height - 16.0f) * 0.5f);
+    if (label != nullptr) {
+        DrawTextShadow(
+            label,
+            static_cast<int>(r.x) + 14,
+            text_y,
+            15,
+            focused ? RAYWHITE : Color{216, 226, 236, 240});
+    }
+
+    const Rectangle track = SliderTrackRect(r);
+    DrawSettingSlider(track, ratio, accent, focused, hovered);
+
+    if (value_text != nullptr && value_text[0] != '\0') {
+        const int vw = MeasureUiText(value_text, 14);
+        const int vx = static_cast<int>(r.x + r.width) - 14 - vw;
+        const int vy = static_cast<int>(r.y + (r.height - 15.0f) * 0.5f);
+        DrawTextShadow(
+            value_text,
+            vx,
+            vy,
+            14,
+            focused ? pal::ShiftBrightness(accent, 28) : Color{196, 212, 228, 235});
+    }
+}
+
+void DrawToggleRow(
+    Rectangle r,
+    const char* label,
+    bool enabled,
+    const char* state_text,
+    Color accent,
+    bool focused,
+    bool hovered) {
+    DrawSettingRowBackground(r, accent, focused, hovered);
+
+    const int text_y = static_cast<int>(r.y + (r.height - 16.0f) * 0.5f);
+    if (label != nullptr) {
+        DrawTextShadow(
+            label,
+            static_cast<int>(r.x) + 14,
+            text_y,
+            15,
+            focused ? RAYWHITE : Color{216, 226, 236, 240});
+    }
+
+    const float pill_w = 46.0f;
+    const float pill_h = 22.0f;
+    const Rectangle pill{
+        r.x + r.width - 14.0f - pill_w,
+        r.y + (r.height - pill_h) * 0.5f,
+        pill_w,
+        pill_h
+    };
+    DrawSettingToggle(pill, enabled, accent, focused, hovered);
+
+    if (state_text != nullptr && state_text[0] != '\0') {
+        const int sw = MeasureUiText(state_text, 14);
+        const int sx = static_cast<int>(pill.x) - 12 - sw;
+        const int sy = static_cast<int>(r.y + (r.height - 15.0f) * 0.5f);
+        const Color st_col = enabled
+                                 ? (focused ? pal::ShiftBrightness(accent, 28) : accent)
+                                 : Color{154, 168, 184, 220};
+        DrawTextShadow(state_text, sx, sy, 14, st_col);
+    }
+}
+
+void DrawChoiceRow(
+    Rectangle r,
+    const char* label,
+    const char* value_text,
+    Color accent,
+    bool focused,
+    bool hovered) {
+    DrawSettingRowBackground(r, accent, focused, hovered);
+
+    const int text_y = static_cast<int>(r.y + (r.height - 16.0f) * 0.5f);
+    if (label != nullptr) {
+        DrawTextShadow(
+            label,
+            static_cast<int>(r.x) + 14,
+            text_y,
+            15,
+            focused ? RAYWHITE : Color{216, 226, 236, 240});
+    }
+
+    const float box_w = std::clamp(r.width * 0.36f, 150.0f, 245.0f);
+    const float box_h = std::max(24.0f, r.height - 10.0f);
+    const Rectangle box{
+        r.x + r.width - 14.0f - box_w,
+        r.y + (r.height - box_h) * 0.5f,
+        box_w,
+        box_h
+    };
+    DrawRectangleRec(box, Color{11, 18, 28, 232});
+    DrawRectangleLinesEx(
+        box,
+        focused ? 1.4f : 1.0f,
+        focused ? pal::WithAlpha(accent, 220) : pal::WithAlpha(kBrassFrame, 110));
+
+    // Frecce direzionali < >
+    const Color arrow_col = focused ? accent : (hovered ? pal::WithAlpha(accent, 190) : Color{140, 158, 176, 200});
+    const float cy = box.y + box.height * 0.5f;
+    DrawTriangle(
+        {box.x + 8.0f, cy},
+        {box.x + 15.0f, cy + 4.5f},
+        {box.x + 15.0f, cy - 4.5f},
+        arrow_col);
+    DrawTriangle(
+        {box.x + box.width - 8.0f, cy},
+        {box.x + box.width - 15.0f, cy - 4.5f},
+        {box.x + box.width - 15.0f, cy + 4.5f},
+        arrow_col);
+
+    if (value_text != nullptr && value_text[0] != '\0') {
+        const int vw = MeasureUiText(value_text, 14);
+        const int vx = static_cast<int>(box.x + (box.width - static_cast<float>(vw)) * 0.5f);
+        const int vy = static_cast<int>(box.y + (box.height - 15.0f) * 0.5f);
+        DrawTextShadow(value_text, vx, vy, 14, focused ? RAYWHITE : Color{208, 222, 236, 238});
+    }
+}
+
+void DrawActionButton(
+    Rectangle r,
+    const char* label,
+    Color accent,
+    bool focused,
+    bool hovered,
+    bool primary) {
+    const Color top_col = primary
+                              ? pal::LerpColor(pal::kUiHeaderBg, accent, focused ? 0.38f : (hovered ? 0.28f : 0.20f))
+                              : (focused ? pal::LerpColor(pal::kUiHeaderBg, accent, 0.24f)
+                                         : (hovered ? pal::LerpColor(pal::kUiHeaderBg, accent, 0.12f)
+                                                    : Color{18, 28, 42, 232}));
+    const Color bot_col = pal::ShiftBrightness(top_col, -10);
+
+    DrawRectangle(
+        static_cast<int>(r.x) + 2,
+        static_cast<int>(r.y) + 3,
+        static_cast<int>(r.width),
+        static_cast<int>(r.height),
+        Color{0, 0, 0, 100});
+    DrawRectangleGradientV(
+        static_cast<int>(r.x),
+        static_cast<int>(r.y),
+        static_cast<int>(r.width),
+        static_cast<int>(r.height),
+        top_col,
+        bot_col);
+
+    DrawRectangleLinesEx(
+        r,
+        (focused || primary) ? 1.7f : 1.1f,
+        focused ? accent : (primary ? pal::WithAlpha(accent, 210) : (hovered ? pal::WithAlpha(accent, 175) : pal::WithAlpha(kBrassFrame, 120))));
+
+    if (focused || primary) {
+        DrawRectangle(
+            static_cast<int>(r.x) + 2,
+            static_cast<int>(r.y) + 2,
+            std::max(0, static_cast<int>(r.width) - 4),
+            2,
+            pal::WithAlpha(accent, focused ? 220 : 145));
+    }
+
+    if (label != nullptr && label[0] != '\0') {
+        const int lw = MeasureUiText(label, 15);
+        const int lx = static_cast<int>(r.x + (r.width - static_cast<float>(lw)) * 0.5f);
+        const int ly = static_cast<int>(r.y + (r.height - 16.0f) * 0.5f);
+        DrawTextShadow(
+            label,
+            lx,
+            ly,
+            15,
+            (focused || primary || hovered) ? RAYWHITE : Color{204, 218, 232, 235});
     }
 }
 

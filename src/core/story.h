@@ -75,6 +75,20 @@ struct Objective {
     std::string hint{};
 };
 
+struct ZoneInterludeText {
+    const char* threshold_title = "";
+    const char* direction_tag = "";
+    const char* line1 = "";
+    const char* line2 = "";
+};
+
+struct ZoneLandmarkCopy {
+    const char* id = "";
+    const char* title = "";
+    const char* inscription = "";
+    const char* mechanic_hint = "";
+};
+
 struct StorySnapshot {
     GameMode mode = GameMode::Overworld;
     LocationId location = LocationId::Overworld;
@@ -97,13 +111,15 @@ struct StorySnapshot {
     bool simulation_completed = false;
 };
 
-// --- Contenuti narrativi (src/core/story_content.cpp, proprietario: @narratore-2) ---
+// --- Contenuti narrativi (src/core/story_content.cpp, proprietario: @narratore) ---
 [[nodiscard]] const char* ChapterTitle(Chapter c);
 [[nodiscard]] std::vector<DialogueLine> DialogueForEvent(StoryEvent e, const StorySnapshot& s);
 [[nodiscard]] Objective ObjectiveFor(Chapter c, const StorySnapshot& s);
 [[nodiscard]] std::vector<std::string> IntroCrawl();
 [[nodiscard]] std::vector<std::string> EndingText(
     bool clean_path, int relics_found, int total_relics);
+[[nodiscard]] ZoneInterludeText ZoneInterludeCopy(ZoneId from, ZoneId to) noexcept;
+[[nodiscard]] std::vector<ZoneLandmarkCopy> ZoneLandmarks(ZoneId zone);
 
 // --- Logica narrativa e Cronologia Dialoghi (src/core/story.cpp, proprietario: @ingegnere-1) ---
 [[nodiscard]] Chapter ChapterFor(const StorySnapshot& s);
@@ -124,6 +140,8 @@ public:
     [[nodiscard]] bool HasActiveDialogue() const noexcept;
     [[nodiscard]] const DialogueLine* CurrentLine() const noexcept;
     [[nodiscard]] float LineElapsed() const noexcept;
+    void SetTypewriterCharactersPerSecond(float characters_per_second) noexcept;
+    [[nodiscard]] float TypewriterCharactersPerSecond() const noexcept;
     [[nodiscard]] Chapter CurrentChapter() const noexcept;
     [[nodiscard]] Objective CurrentObjective() const;
     [[nodiscard]] bool EventFired(StoryEvent e) const noexcept;
@@ -160,6 +178,7 @@ private:
     float line_elapsed_ = 0.0f;
     StorySnapshot last_{};
     bool has_last_ = false;
+    float typewriter_characters_per_second_ = 58.0f;
     Chapter chapter_ = Chapter::Prologo;
 };
 

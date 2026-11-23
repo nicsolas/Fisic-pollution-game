@@ -15,21 +15,38 @@ enum class ParticleQuality : int {
 };
 
 struct GraphicsSettings {
+    // Schermo & Grafica
     bool fullscreen = false;
     int monitor_index = -1;   // -1: Auto (Monitor corrente), 0..N-1: Monitor specifico
     int resolution_index = 1; // 0: 1024x576, 1: 1280x720, 2: 1600x900, 3: 1920x1080
     int fps_index = 0;        // 0: 60 FPS, 1: 120 FPS, 2: 144 FPS, 3: Illimitato
     ParticleQuality particle_quality = ParticleQuality::High;
     bool clean_ttf_font = true;
-    bool show_fps = false;
-    bool compact_tutorial = false; // true = avanzamento dialoghi piu' rapido
-    int audio_volume_index = 3;    // 0: 0% (Muto), 1: 25%, 2: 50%, 3: 75%, 4: 100%
-    int music_volume_index = 4;
-    int effects_volume_index = 4;
-    bool ambient_audio = true;     // true: Ambiente + Interazioni, false: Solo Interazioni
     std::string gpu_preference = "auto";
     std::string initial_gpu_preference = "auto";
     std::string active_gpu_renderer{};
+
+    // Gioco & Interfaccia
+    bool show_fps = false;
+    bool compact_tutorial = false; // true = avanzamento dialoghi piu' rapido
+    int dialogue_speed_index = 1;  // 0: Lento, 1: Normale, 2: Rapido
+
+    // Effetti Ambientali granulari (0.0f .. 1.0f)
+    float particle_density = 1.0f;       // Densita' particelle globali
+    float fog_haze_intensity = 1.0f;     // Intensita' foschia/nebbia atmosferica
+    float sun_rays_intensity = 1.0f;     // Raggi solari / luce volumetrica
+    float vignette_intensity = 1.0f;     // Vignettatura atmosferica
+    float zone_weather_intensity = 1.0f; // Meteo/effetti di zona (vento, vapore, polline, scintille)
+    bool atmosphere_enabled = true;      // Master toggle atmosfera screen-space
+
+    // Audio & Suoni granulari (0.0f .. 1.0f)
+    bool audio_muted = false;       // Mute rapido [M] che preserva master_volume
+    float master_volume = 0.75f;    // Volume generale
+    float music_volume = 0.85f;     // Volume musica / tappeto armonico
+    float effects_volume = 0.90f;   // Volume effetti / interazioni & meccaniche
+    float ambient_volume = 0.85f;   // Volume ambiente / natura (vento, acqua, vapore)
+    bool ambient_audio = true;      // Paesaggio sonoro ambientale attivo/disattivo
+    bool ui_sounds_enabled = true;  // Suoni interfaccia (menu, click, tab) on/off
 };
 
 [[nodiscard]] inline const char* DefaultSettingsFilePath() noexcept {
@@ -54,7 +71,8 @@ public:
     enum class SettingsCategory : int {
         Game = 0,
         Graphics = 1,
-        Audio = 2
+        Environment = 2,
+        Audio = 3
     };
 
     void OpenPause() noexcept;
@@ -82,6 +100,10 @@ private:
     bool opened_from_title_ = false;
     int pause_cursor_ = 0;
     int settings_cursor_ = 0;
+    int hovered_pause_row_ = -1;
+    int hovered_settings_row_ = -1;
+    int hovered_tab_ = -1;
+    int dragging_slider_row_ = -1;
     SettingsCategory settings_category_ = SettingsCategory::Game;
     float save_feedback_timer_ = 0.0f;
     std::string save_feedback_msg_{};

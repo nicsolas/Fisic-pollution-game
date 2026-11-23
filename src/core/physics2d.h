@@ -35,7 +35,9 @@ struct SideScrollMoveResult {
     Vec2 velocity,
     float dt,
     const Tilemap& tilemap,
-    bool bridge_unlocked = false) noexcept;
+    bool bridge_unlocked = false,
+    bool solar_gate_open = false,
+    bool jade_bridge_unlocked = false) noexcept;
 
 SlideMoveResult MovePlayerTopDown(
     Player& player,
@@ -43,7 +45,10 @@ SlideMoveResult MovePlayerTopDown(
     float dt,
     const Tilemap& tilemap,
     bool bridge_unlocked = false,
-    float speed = kTopDownSpeed) noexcept;
+    float speed = kTopDownSpeed,
+    Vec2 external_velocity = {0.0f, 0.0f},
+    bool solar_gate_open = false,
+    bool jade_bridge_unlocked = false) noexcept;
 
 [[nodiscard]] bool IsSupportedByFloor(
     Vec2 pos,

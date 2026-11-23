@@ -328,6 +328,15 @@ float StoryDirector::LineElapsed() const noexcept {
     return line_elapsed_;
 }
 
+void StoryDirector::SetTypewriterCharactersPerSecond(float characters_per_second) noexcept {
+    typewriter_characters_per_second_ =
+        std::isfinite(characters_per_second) ? std::clamp(characters_per_second, 20.0f, 120.0f) : 58.0f;
+}
+
+float StoryDirector::TypewriterCharactersPerSecond() const noexcept {
+    return typewriter_characters_per_second_;
+}
+
 Chapter StoryDirector::CurrentChapter() const noexcept {
     return chapter_;
 }

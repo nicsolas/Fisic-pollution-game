@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -28,6 +30,8 @@ namespace eco::app {
 
 namespace {
 
+constexpr int kCategoryCount = 4;
+
 struct ResolutionOption {
     int width;
     int height;
@@ -35,10 +39,10 @@ struct ResolutionOption {
 };
 
 constexpr std::array<ResolutionOption, 4> kResolutions = {{
-    {1024, 576, "1024 x 576 (Compatta 16:9)"},
-    {1280, 720, "1280 x 720 (HD 16:9)"},
-    {1600, 900, "1600 x 900 (HD+ 16:9)"},
-    {1920, 1080, "1920 x 1080 (Full HD / Max Monitor)"}
+    {1024, 576, "1024 x 576"},
+    {1280, 720, "1280 x 720 (HD)"},
+    {1600, 900, "1600 x 900 (HD+)"},
+    {1920, 1080, "1920 x 1080 (FHD)"}
 }};
 
 struct FpsOption {
@@ -47,35 +51,152 @@ struct FpsOption {
 };
 
 constexpr std::array<FpsOption, 4> kFpsOptions = {{
-    {60, "60 FPS (Consigliato)"},
+    {60, "60 FPS"},
     {120, "120 FPS"},
     {144, "144 FPS"},
     {0, "Illimitato"}
 }};
 
-struct VolumeOption {
-    float level;
+struct DialogueSpeedOption {
+    float characters_per_second;
     const char* label;
 };
 
-constexpr std::array<VolumeOption, 5> kVolumeOptions = {{
-    {0.00f, "< Muto (0%) >"},
-    {0.25f, "< Basso (25%) >"},
-    {0.50f, "< Medio (50%) >"},
-    {0.75f, "< Normale (75%) >"},
-    {1.00f, "< Massimo (100%) >"}
+constexpr std::array<DialogueSpeedOption, 3> kDialogueSpeedOptions = {{
+    {38.0f, "Lento (38 cps)"},
+    {58.0f, "Normale (58 cps)"},
+    {84.0f, "Rapido (84 cps)"}
 }};
 
-[[nodiscard]] const char* ParticleQualityLabel(ParticleQuality q) noexcept {
-    switch (q) {
-        case ParticleQuality::High:
-            return "Alta (100% - Lucciole, Polline, Vapore)";
-        case ParticleQuality::Medium:
-            return "Media (50% - Bilanciata)";
-        case ParticleQuality::Off:
-            return "Disattivata (Off)";
+constexpr std::array<float, 5> kLegacyVolumeLevels = {0.0f, 0.25f, 0.50f, 0.75f, 1.00f};
+
+struct SettingsPanelLayout {
+    int box_w = 880;
+    int box_h = 612;
+    int bx = (eco::kWindowWidth - 880) / 2;
+    int by = (eco::kWindowHeight - 612) / 2;
+
+    [[nodiscard]] Rectangle PanelRect() const noexcept {
+        return Rectangle{
+            static_cast<float>(bx),
+            static_cast<float>(by),
+            static_cast<float>(box_w),
+            static_cast<float>(box_h)
+        };
     }
-    return "Alta";
+
+    [[nodiscard]] Rectangle TabsArea() const noexcept {
+        return Rectangle{
+            static_cast<float>(bx + 24),
+            static_cast<float>(by + 54),
+            static_cast<float>(box_w - 48),
+            36.0f
+        };
+    }
+
+    [[nodiscard]] Rectangle TabRect(int idx) const noexcept {
+        const Rectangle area = TabsArea();
+        const float gap = 8.0f;
+        const float tab_w =
+            (area.width - gap * static_cast<float>(kCategoryCount - 1)) / static_cast<float>(kCategoryCount);
+        return Rectangle{
+            area.x + static_cast<float>(idx) * (tab_w + gap),
+            area.y,
+            tab_w,
+            area.height
+        };
+    }
+
+    [[nodiscard]] Rectangle RowRect(int row) const noexcept {
+        return Rectangle{
+            static_cast<float>(bx + 24),
+            static_cast<float>(by + 104 + row * 48),
+            static_cast<float>(box_w - 48),
+            42.0f
+        };
+    }
+
+    [[nodiscard]] Rectangle BackButtonRect() const noexcept {
+        return Rectangle{
+            static_cast<float>(bx + 24),
+            static_cast<float>(by + box_h - 72),
+            224.0f,
+            38.0f
+        };
+    }
+
+    [[nodiscard]] Rectangle ResetButtonRect() const noexcept {
+        return Rectangle{
+            static_cast<float>(bx + 264),
+            static_cast<float>(by + box_h - 72),
+            234.0f,
+            38.0f
+        };
+    }
+
+    [[nodiscard]] Rectangle ApplyGpuButtonRect() const noexcept {
+        return Rectangle{
+            static_cast<float>(bx + box_w - 24 - 246),
+            static_cast<float>(by + box_h - 72),
+            246.0f,
+            38.0f
+        };
+    }
+};
+
+[[nodiscard]] int OptionCountForCategory(PauseSettingsMenu::SettingsCategory cat) noexcept {
+    switch (cat) {
+        case PauseSettingsMenu::SettingsCategory::Game:
+            return 3;
+        case PauseSettingsMenu::SettingsCategory::Graphics:
+            return 6;
+        case PauseSettingsMenu::SettingsCategory::Environment:
+            return 6;
+        case PauseSettingsMenu::SettingsCategory::Audio:
+            return 7;
+    }
+    return 3;
+}
+
+[[nodiscard]] bool IsSliderRow(PauseSettingsMenu::SettingsCategory cat, int row) noexcept {
+    if (cat == PauseSettingsMenu::SettingsCategory::Environment) {
+        return row >= 1 && row <= 5;
+    }
+    if (cat == PauseSettingsMenu::SettingsCategory::Audio) {
+        return row >= 1 && row <= 4;
+    }
+    return false;
+}
+
+[[nodiscard]] float* GetSliderValuePtr(
+    GraphicsSettings& settings,
+    PauseSettingsMenu::SettingsCategory cat,
+    int row) noexcept {
+    if (cat == PauseSettingsMenu::SettingsCategory::Environment) {
+        switch (row) {
+            case 1: return &settings.particle_density;
+            case 2: return &settings.fog_haze_intensity;
+            case 3: return &settings.sun_rays_intensity;
+            case 4: return &settings.vignette_intensity;
+            case 5: return &settings.zone_weather_intensity;
+            default: return nullptr;
+        }
+    }
+    if (cat == PauseSettingsMenu::SettingsCategory::Audio) {
+        switch (row) {
+            case 1: return &settings.master_volume;
+            case 2: return &settings.music_volume;
+            case 3: return &settings.effects_volume;
+            case 4: return &settings.ambient_volume;
+            default: return nullptr;
+        }
+    }
+    return nullptr;
+}
+
+[[nodiscard]] std::string FormatPercent(float v) {
+    const int pct = static_cast<int>(std::lround(std::clamp(v, 0.0f, 1.0f) * 100.0f));
+    return std::to_string(pct) + "%";
 }
 
 [[nodiscard]] bool IsTitleStateActive(const AppContext& ctx) noexcept {
@@ -96,28 +217,110 @@ constexpr std::array<VolumeOption, 5> kVolumeOptions = {{
 [[nodiscard]] std::string FormatMonitorLabel(int monitor_index) {
     const int count = IsWindowReady() ? std::max(1, GetMonitorCount()) : 1;
     if (monitor_index < 0 || monitor_index >= count) {
-        return "< Auto (Monitor Corrente) >";
-    }
-    const char* raw_name = IsWindowReady() ? GetMonitorName(monitor_index) : nullptr;
-    std::string mname = (raw_name != nullptr && raw_name[0] != '\0')
-                            ? std::string(raw_name)
-                            : ("Schermo " + std::to_string(monitor_index + 1));
-    if (mname.size() > 16) {
-        mname = mname.substr(0, 16);
+        return "Auto (Corrente)";
     }
     const int mw = IsWindowReady() ? GetMonitorWidth(monitor_index) : 1280;
     const int mh = IsWindowReady() ? GetMonitorHeight(monitor_index) : 720;
-    return "< Monitor " + std::to_string(monitor_index + 1) + "/" + std::to_string(count) +
-           ": " + mname + " (" + std::to_string(mw) + "x" + std::to_string(mh) + ") >";
+    return "Monitor " + std::to_string(monitor_index + 1) + "/" + std::to_string(count) +
+           " (" + std::to_string(mw) + "x" + std::to_string(mh) + ")";
 }
 
 [[nodiscard]] std::string FormatGpuLabel(const std::string& gpu_id) {
     const auto& list = EnumerateGpuOptions();
     const int idx = FindGpuOptionIndex(gpu_id);
-    if (idx >= 0 && idx < static_cast<int>(list.size())) {
-        return "< " + list[static_cast<std::size_t>(idx)].label + " >";
+    std::string label = (idx >= 0 && idx < static_cast<int>(list.size()))
+                            ? list[static_cast<std::size_t>(idx)].label
+                            : std::string("Auto (Sistema)");
+    if (label.size() > 24) {
+        label = label.substr(0, 22) + "..";
     }
-    return "< Auto (Predefinita di Sistema) >";
+    return label;
+}
+
+void PlayAudioFeedbackForRow(
+    PauseSettingsMenu::SettingsCategory category,
+    int row,
+    int dir) {
+    const float pitch = (dir > 0) ? 1.05f : ((dir < 0) ? 0.95f : 1.0f);
+    if (category == PauseSettingsMenu::SettingsCategory::Audio) {
+        switch (row) {
+            case 0: // Mute
+            case 6: // UI sounds
+                PlayAudioPreview(AudioPreviewChannel::Ui, pitch);
+                return;
+            case 1: // Master
+                PlayAudioPreview(AudioPreviewChannel::Master, pitch);
+                return;
+            case 2: // Music
+                PlayAudioPreview(AudioPreviewChannel::Music, pitch);
+                return;
+            case 3: // Effects
+                PlayAudioPreview(AudioPreviewChannel::Effects, pitch);
+                return;
+            case 4: // Ambient volume
+            case 5: // Ambient enabled
+                PlayAudioPreview(AudioPreviewChannel::Ambient, pitch);
+                return;
+            default:
+                break;
+        }
+    }
+    PlayUiSfx(SfxId::UiClick, 0.56f, pitch);
+}
+
+void SyncLegacyParticleQuality(GraphicsSettings& settings) noexcept {
+    if (settings.particle_density <= 0.05f) {
+        settings.particle_quality = ParticleQuality::Off;
+    } else if (settings.particle_density < 0.75f) {
+        settings.particle_quality = ParticleQuality::Medium;
+    } else {
+        settings.particle_quality = ParticleQuality::High;
+    }
+}
+
+void ResetCategoryDefaults(
+    GraphicsSettings& settings,
+    PauseSettingsMenu::SettingsCategory category) {
+    switch (category) {
+        case PauseSettingsMenu::SettingsCategory::Game:
+            settings.compact_tutorial = false;
+            settings.show_fps = false;
+            settings.dialogue_speed_index = 1;
+            break;
+        case PauseSettingsMenu::SettingsCategory::Graphics:
+            settings.monitor_index = -1;
+            settings.resolution_index = 1;
+            settings.fps_index = 0;
+            settings.clean_ttf_font = true;
+            settings.gpu_preference = "auto";
+            if (settings.fullscreen) {
+                ToggleAppFullscreen(settings);
+            } else {
+                ApplySafeWindowResolution(settings);
+            }
+            break;
+        case PauseSettingsMenu::SettingsCategory::Environment:
+            settings.atmosphere_enabled = true;
+            settings.particle_density = 1.0f;
+            settings.fog_haze_intensity = 1.0f;
+            settings.sun_rays_intensity = 1.0f;
+            settings.vignette_intensity = 1.0f;
+            settings.zone_weather_intensity = 1.0f;
+            SyncLegacyParticleQuality(settings);
+            break;
+        case PauseSettingsMenu::SettingsCategory::Audio:
+            settings.audio_muted = false;
+            settings.master_volume = 0.75f;
+            settings.music_volume = 0.85f;
+            settings.effects_volume = 0.90f;
+            settings.ambient_volume = 0.85f;
+            settings.ambient_audio = true;
+            settings.ui_sounds_enabled = true;
+            break;
+    }
+    ApplyGraphicsSettingsToRuntime(settings);
+    (void)SaveGraphicsSettings(settings);
+    PlayUiSfx(SfxId::UiClick, 0.65f, 1.12f);
 }
 
 void AdjustSettingValue(
@@ -128,99 +331,114 @@ void AdjustSettingValue(
     if (dir == 0) {
         return;
     }
+
+    if (float* slider = GetSliderValuePtr(settings, category, row); slider != nullptr) {
+        constexpr float kStep = 0.05f;
+        const float stepped = std::round((*slider + static_cast<float>(dir) * kStep) * 20.0f) / 20.0f;
+        *slider = std::clamp(stepped, 0.0f, 1.0f);
+        if (category == PauseSettingsMenu::SettingsCategory::Environment && row == 1) {
+            SyncLegacyParticleQuality(settings);
+        }
+        if (category == PauseSettingsMenu::SettingsCategory::Audio && row == 1 && *slider > 0.001f) {
+            settings.audio_muted = false;
+        }
+        ApplyGraphicsSettingsToRuntime(settings);
+        (void)SaveGraphicsSettings(settings);
+        PlayAudioFeedbackForRow(category, row, dir);
+        return;
+    }
+
     switch (category) {
         case PauseSettingsMenu::SettingsCategory::Game:
             if (row == 0) {
                 settings.compact_tutorial = !settings.compact_tutorial;
             } else if (row == 1) {
                 settings.show_fps = !settings.show_fps;
+            } else if (row == 2) {
+                const int n = static_cast<int>(kDialogueSpeedOptions.size());
+                settings.dialogue_speed_index = (settings.dialogue_speed_index + dir + n) % n;
             }
             break;
         case PauseSettingsMenu::SettingsCategory::Graphics:
             switch (row) {
-        case 0: { // Modalita' schermo
-            ToggleAppFullscreen(settings);
+                case 0:
+                    ToggleAppFullscreen(settings);
+                    break;
+                case 1: {
+                    const int count = IsWindowReady() ? std::max(1, GetMonitorCount()) : 1;
+                    const int total_slots = count + 1;
+                    int slot = (settings.monitor_index < 0 || settings.monitor_index >= count)
+                                   ? 0
+                                   : (settings.monitor_index + 1);
+                    slot = (slot + dir + total_slots) % total_slots;
+                    settings.monitor_index = (slot == 0) ? -1 : (slot - 1);
+                    ApplySelectedMonitor(settings);
+                    break;
+                }
+                case 2: {
+                    const auto& gpus = EnumerateGpuOptions();
+                    const int n = std::max(1, static_cast<int>(gpus.size()));
+                    int idx = FindGpuOptionIndex(settings.gpu_preference);
+                    idx = (idx + dir + n) % n;
+                    settings.gpu_preference = gpus[static_cast<std::size_t>(idx)].id;
+                    break;
+                }
+                case 3: {
+                    const int n = static_cast<int>(kResolutions.size());
+                    settings.resolution_index = (settings.resolution_index + dir + n) % n;
+                    ApplySafeWindowResolution(settings);
+                    break;
+                }
+                case 4: {
+                    const int n = static_cast<int>(kFpsOptions.size());
+                    settings.fps_index = (settings.fps_index + dir + n) % n;
+                    ApplyGraphicsSettingsToRuntime(settings);
+                    break;
+                }
+                case 5:
+                    settings.clean_ttf_font = !settings.clean_ttf_font;
+                    ApplyGraphicsSettingsToRuntime(settings);
+                    break;
+                default:
+                    break;
+            }
             break;
-        }
-        case 1: { // Selezione Monitor / Schermo
-            const int count = IsWindowReady() ? std::max(1, GetMonitorCount()) : 1;
-            // Ciclo: -1 (Auto) -> 0 -> 1 -> ... -> count-1
-            const int total_slots = count + 1;
-            int slot = (settings.monitor_index < 0 || settings.monitor_index >= count)
-                           ? 0
-                           : (settings.monitor_index + 1);
-            slot = (slot + dir + total_slots) % total_slots;
-            settings.monitor_index = (slot == 0) ? -1 : (slot - 1);
-            ApplySelectedMonitor(settings);
-            break;
-        }
-        case 2: { // GPU / Scheda Grafica
-            const auto& gpus = EnumerateGpuOptions();
-            const int n = std::max(1, static_cast<int>(gpus.size()));
-            int idx = FindGpuOptionIndex(settings.gpu_preference);
-            idx = (idx + dir + n) % n;
-            settings.gpu_preference = gpus[static_cast<std::size_t>(idx)].id;
-            break;
-        }
-        case 3: { // Risoluzione finestra
-            const int n = static_cast<int>(kResolutions.size());
-            settings.resolution_index = (settings.resolution_index + dir + n) % n;
-            ApplySafeWindowResolution(settings);
-            break;
-        }
-        case 4: { // Limite FPS
-            const int n = static_cast<int>(kFpsOptions.size());
-            settings.fps_index = (settings.fps_index + dir + n) % n;
-            ApplyGraphicsSettingsToRuntime(settings);
-            break;
-        }
-        case 5: { // Qualita' particelle
-            int q = static_cast<int>(settings.particle_quality);
-            q = (q + dir + 3) % 3;
-            settings.particle_quality = static_cast<ParticleQuality>(q);
-            ApplyGraphicsSettingsToRuntime(settings);
-            break;
-        }
-        case 6: { // Font Interfaccia
-            settings.clean_ttf_font = !settings.clean_ttf_font;
-            ApplyGraphicsSettingsToRuntime(settings);
-            break;
-        }
-        case 7: { // Contatore FPS
-            settings.show_fps = !settings.show_fps;
-            break;
-        }
-        default:
-            break;
+        case PauseSettingsMenu::SettingsCategory::Environment:
+            if (row == 0) {
+                settings.atmosphere_enabled = !settings.atmosphere_enabled;
+                ApplyGraphicsSettingsToRuntime(settings);
             }
             break;
         case PauseSettingsMenu::SettingsCategory::Audio:
             if (row == 0) {
-            const int n = static_cast<int>(kVolumeOptions.size());
-            settings.audio_volume_index = (settings.audio_volume_index + dir + n) % n;
-            ApplyGraphicsSettingsToRuntime(settings);
-            } else if (row == 1) {
-            const int n = static_cast<int>(kVolumeOptions.size());
-            settings.music_volume_index = (settings.music_volume_index + dir + n) % n;
-            ApplyGraphicsSettingsToRuntime(settings);
-            } else if (row == 2) {
-            const int n = static_cast<int>(kVolumeOptions.size());
-            settings.effects_volume_index = (settings.effects_volume_index + dir + n) % n;
-            ApplyGraphicsSettingsToRuntime(settings);
-            } else if (row == 3) {
-            settings.ambient_audio = !settings.ambient_audio;
-            ApplyGraphicsSettingsToRuntime(settings);
-            break;
+                settings.audio_muted = !settings.audio_muted;
+                ApplyGraphicsSettingsToRuntime(settings);
+            } else if (row == 5) {
+                settings.ambient_audio = !settings.ambient_audio;
+                ApplyGraphicsSettingsToRuntime(settings);
+            } else if (row == 6) {
+                settings.ui_sounds_enabled = !settings.ui_sounds_enabled;
+                ApplyGraphicsSettingsToRuntime(settings);
             }
             break;
     }
+
     (void)SaveGraphicsSettings(settings);
-    PlayUiSfx(SfxId::UiClick, 0.58f, (dir > 0) ? 1.06f : 0.94f);
+    PlayAudioFeedbackForRow(category, row, dir);
 }
 
 [[nodiscard]] int ParseIntSetting(const std::string& s, int fallback) noexcept {
     try {
         return std::stoi(s);
+    } catch (...) {
+        return fallback;
+    }
+}
+
+[[nodiscard]] float ParseFloatSetting(const std::string& s, float fallback) noexcept {
+    try {
+        const float v = std::stof(s);
+        return std::isfinite(v) ? v : fallback;
     } catch (...) {
         return fallback;
     }
@@ -233,6 +451,11 @@ bool LoadGraphicsSettings(GraphicsSettings& settings, const std::string& path) {
     if (!in.is_open()) {
         return false;
     }
+    bool has_particle_density = false;
+    bool has_master_float = false;
+    bool has_music_float = false;
+    bool has_effects_float = false;
+
     std::string line;
     while (std::getline(in, line)) {
         const std::size_t eq = line.find('=');
@@ -258,27 +481,63 @@ bool LoadGraphicsSettings(GraphicsSettings& settings, const std::string& path) {
         } else if (key == "particle_quality") {
             const int q = std::clamp(ParseIntSetting(val, 0), 0, 2);
             settings.particle_quality = static_cast<ParticleQuality>(q);
+            if (!has_particle_density) {
+                settings.particle_density = (q == 0) ? 1.0f : ((q == 1) ? 0.5f : 0.0f);
+            }
         } else if (key == "clean_ttf_font") {
             settings.clean_ttf_font = (ParseIntSetting(val, 1) != 0);
         } else if (key == "show_fps") {
             settings.show_fps = (ParseIntSetting(val, 0) != 0);
         } else if (key == "compact_tutorial") {
             settings.compact_tutorial = (ParseIntSetting(val, 0) != 0);
-        } else if (key == "audio_volume_index") {
-            settings.audio_volume_index =
-                std::clamp(ParseIntSetting(val, 3), 0, static_cast<int>(kVolumeOptions.size()) - 1);
-        } else if (key == "music_volume_index") {
-            settings.music_volume_index =
-                std::clamp(ParseIntSetting(val, 4), 0, static_cast<int>(kVolumeOptions.size()) - 1);
-        } else if (key == "effects_volume_index") {
-            settings.effects_volume_index =
-                std::clamp(ParseIntSetting(val, 4), 0, static_cast<int>(kVolumeOptions.size()) - 1);
-        } else if (key == "ambient_audio") {
-            settings.ambient_audio = (ParseIntSetting(val, 1) != 0);
+        } else if (key == "dialogue_speed_index") {
+            settings.dialogue_speed_index =
+                std::clamp(ParseIntSetting(val, 1), 0, static_cast<int>(kDialogueSpeedOptions.size()) - 1);
         } else if (key == "gpu_preference") {
             if (!val.empty()) {
                 settings.gpu_preference = val;
             }
+        } else if (key == "particle_density") {
+            settings.particle_density = std::clamp(ParseFloatSetting(val, 1.0f), 0.0f, 1.0f);
+            has_particle_density = true;
+            SyncLegacyParticleQuality(settings);
+        } else if (key == "fog_haze_intensity") {
+            settings.fog_haze_intensity = std::clamp(ParseFloatSetting(val, 1.0f), 0.0f, 1.0f);
+        } else if (key == "sun_rays_intensity") {
+            settings.sun_rays_intensity = std::clamp(ParseFloatSetting(val, 1.0f), 0.0f, 1.0f);
+        } else if (key == "vignette_intensity") {
+            settings.vignette_intensity = std::clamp(ParseFloatSetting(val, 1.0f), 0.0f, 1.0f);
+        } else if (key == "zone_weather_intensity") {
+            settings.zone_weather_intensity = std::clamp(ParseFloatSetting(val, 1.0f), 0.0f, 1.0f);
+        } else if (key == "atmosphere_enabled") {
+            settings.atmosphere_enabled = (ParseIntSetting(val, 1) != 0);
+        } else if (key == "audio_muted") {
+            settings.audio_muted = (ParseIntSetting(val, 0) != 0);
+        } else if (key == "master_volume") {
+            settings.master_volume = std::clamp(ParseFloatSetting(val, 0.75f), 0.0f, 1.0f);
+            has_master_float = true;
+        } else if (key == "music_volume") {
+            settings.music_volume = std::clamp(ParseFloatSetting(val, 0.85f), 0.0f, 1.0f);
+            has_music_float = true;
+        } else if (key == "effects_volume") {
+            settings.effects_volume = std::clamp(ParseFloatSetting(val, 0.90f), 0.0f, 1.0f);
+            has_effects_float = true;
+        } else if (key == "ambient_volume") {
+            settings.ambient_volume = std::clamp(ParseFloatSetting(val, 0.85f), 0.0f, 1.0f);
+        } else if (key == "ambient_audio") {
+            settings.ambient_audio = (ParseIntSetting(val, 1) != 0);
+        } else if (key == "ui_sounds_enabled") {
+            settings.ui_sounds_enabled = (ParseIntSetting(val, 1) != 0);
+        } else if (key == "audio_volume_index" && !has_master_float) {
+            const int idx = std::clamp(ParseIntSetting(val, 3), 0, static_cast<int>(kLegacyVolumeLevels.size()) - 1);
+            settings.master_volume = kLegacyVolumeLevels[static_cast<std::size_t>(idx)];
+            settings.audio_muted = (idx == 0);
+        } else if (key == "music_volume_index" && !has_music_float) {
+            const int idx = std::clamp(ParseIntSetting(val, 4), 0, static_cast<int>(kLegacyVolumeLevels.size()) - 1);
+            settings.music_volume = kLegacyVolumeLevels[static_cast<std::size_t>(idx)];
+        } else if (key == "effects_volume_index" && !has_effects_float) {
+            const int idx = std::clamp(ParseIntSetting(val, 4), 0, static_cast<int>(kLegacyVolumeLevels.size()) - 1);
+            settings.effects_volume = kLegacyVolumeLevels[static_cast<std::size_t>(idx)];
         }
     }
     return true;
@@ -303,11 +562,21 @@ bool SaveGraphicsSettings(const GraphicsSettings& settings, const std::string& p
     out << "clean_ttf_font=" << (settings.clean_ttf_font ? 1 : 0) << "\n";
     out << "show_fps=" << (settings.show_fps ? 1 : 0) << "\n";
     out << "compact_tutorial=" << (settings.compact_tutorial ? 1 : 0) << "\n";
-    out << "audio_volume_index=" << settings.audio_volume_index << "\n";
-    out << "music_volume_index=" << settings.music_volume_index << "\n";
-    out << "effects_volume_index=" << settings.effects_volume_index << "\n";
-    out << "ambient_audio=" << (settings.ambient_audio ? 1 : 0) << "\n";
+    out << "dialogue_speed_index=" << settings.dialogue_speed_index << "\n";
     out << "gpu_preference=" << settings.gpu_preference << "\n";
+    out << "particle_density=" << settings.particle_density << "\n";
+    out << "fog_haze_intensity=" << settings.fog_haze_intensity << "\n";
+    out << "sun_rays_intensity=" << settings.sun_rays_intensity << "\n";
+    out << "vignette_intensity=" << settings.vignette_intensity << "\n";
+    out << "zone_weather_intensity=" << settings.zone_weather_intensity << "\n";
+    out << "atmosphere_enabled=" << (settings.atmosphere_enabled ? 1 : 0) << "\n";
+    out << "audio_muted=" << (settings.audio_muted ? 1 : 0) << "\n";
+    out << "master_volume=" << settings.master_volume << "\n";
+    out << "music_volume=" << settings.music_volume << "\n";
+    out << "effects_volume=" << settings.effects_volume << "\n";
+    out << "ambient_volume=" << settings.ambient_volume << "\n";
+    out << "ambient_audio=" << (settings.ambient_audio ? 1 : 0) << "\n";
+    out << "ui_sounds_enabled=" << (settings.ui_sounds_enabled ? 1 : 0) << "\n";
     return out.good();
 }
 
@@ -329,37 +598,23 @@ int ResolveTargetMonitor(const GraphicsSettings& settings) noexcept {
 void ApplyGraphicsSettingsToRuntime(const GraphicsSettings& settings) {
     SetUiFontCleanMode(settings.clean_ttf_font);
 
-    switch (settings.particle_quality) {
-        case ParticleQuality::High:
-            SetParticleQualityScale(1.0f);
-            break;
-        case ParticleQuality::Medium:
-            SetParticleQualityScale(0.5f);
-            break;
-        case ParticleQuality::Off:
-            SetParticleQualityScale(0.0f);
-            break;
-    }
+    EnvironmentEffectsConfig env_cfg{};
+    env_cfg.particle_density = std::clamp(settings.particle_density, 0.0f, 1.0f);
+    env_cfg.fog_haze_intensity = std::clamp(settings.fog_haze_intensity, 0.0f, 1.0f);
+    env_cfg.sun_rays_intensity = std::clamp(settings.sun_rays_intensity, 0.0f, 1.0f);
+    env_cfg.vignette_intensity = std::clamp(settings.vignette_intensity, 0.0f, 1.0f);
+    env_cfg.zone_weather_intensity = std::clamp(settings.zone_weather_intensity, 0.0f, 1.0f);
+    env_cfg.atmosphere_enabled = settings.atmosphere_enabled;
+    SetEnvironmentEffectsConfig(env_cfg);
 
-    const int vol_idx = std::clamp(
-        settings.audio_volume_index,
-        0,
-        static_cast<int>(kVolumeOptions.size()) - 1);
-    const float vol = kVolumeOptions[static_cast<std::size_t>(vol_idx)].level;
-    const int music_idx = std::clamp(
-        settings.music_volume_index,
-        0,
-        static_cast<int>(kVolumeOptions.size()) - 1);
-    const int effects_idx = std::clamp(
-        settings.effects_volume_index,
-        0,
-        static_cast<int>(kVolumeOptions.size()) - 1);
     ApplyGlobalAudioSettings(
-        vol,
-        vol <= 0.001f,
+        std::clamp(settings.master_volume, 0.0f, 1.0f),
+        settings.audio_muted,
         settings.ambient_audio,
-        kVolumeOptions[static_cast<std::size_t>(music_idx)].level,
-        kVolumeOptions[static_cast<std::size_t>(effects_idx)].level);
+        std::clamp(settings.music_volume, 0.0f, 1.0f),
+        std::clamp(settings.effects_volume, 0.0f, 1.0f),
+        std::clamp(settings.ambient_volume, 0.0f, 1.0f),
+        settings.ui_sounds_enabled);
 
     if (IsWindowReady()) {
         const int idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
@@ -372,11 +627,6 @@ void ApplySelectedMonitor(GraphicsSettings& settings) {
         return;
     }
     const int target_mon = ResolveTargetMonitor(settings);
-    // In Raylib/GLFW:
-    // - Se fullscreen == true, SetWindowMonitor(target_mon) sposta istantaneamente il fullscreen
-    //   sul monitor scelto (risolvendo il salto al secondo monitor su Wayland e X11!).
-    // - Se fullscreen == false, SetWindowMonitor centra la finestra sul monitor scelto (su X11)
-    //   e memorizza il monitor per il successivo F11 anche su Wayland.
     SetWindowMonitor(target_mon);
 }
 
@@ -428,7 +678,6 @@ void ToggleAppFullscreen(GraphicsSettings& settings) {
         if (!IsWindowFullscreen()) {
             ToggleFullscreen();
         }
-        // Forza sempre lo schermo scelto dall'utente (fix multi-monitor su Wayland/X11)
         SetWindowMonitor(mon);
     } else {
         if (IsWindowFullscreen()) {
@@ -451,6 +700,7 @@ void PauseSettingsMenu::OpenPause() noexcept {
     in_settings_ = false;
     opened_from_title_ = false;
     pause_cursor_ = 0;
+    dragging_slider_row_ = -1;
 }
 
 void PauseSettingsMenu::OpenSettingsDirect() noexcept {
@@ -458,12 +708,14 @@ void PauseSettingsMenu::OpenSettingsDirect() noexcept {
     in_settings_ = true;
     opened_from_title_ = true;
     settings_cursor_ = 0;
+    dragging_slider_row_ = -1;
 }
 
 void PauseSettingsMenu::Close() noexcept {
     is_open_ = false;
     in_settings_ = false;
     opened_from_title_ = false;
+    dragging_slider_row_ = -1;
 }
 
 void PauseSettingsMenu::TriggerSaveFeedback(const char* message) noexcept {
@@ -475,11 +727,17 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
     AppContext& ctx,
     GraphicsSettings& settings,
     JournalOverlay* journal) {
+    const int dialogue_speed_idx = std::clamp(
+        settings.dialogue_speed_index,
+        0,
+        static_cast<int>(kDialogueSpeedOptions.size()) - 1);
+    ctx.world.story.SetTypewriterCharactersPerSecond(
+        kDialogueSpeedOptions[static_cast<std::size_t>(dialogue_speed_idx)].characters_per_second);
+
     if (save_feedback_timer_ > 0.0f) {
         save_feedback_timer_ = std::max(0.0f, save_feedback_timer_ - GetFrameTime());
     }
 
-    // Richiesta di apertura impostazioni proveniente dal menu del Titolo
     if (ctx.open_settings_requested) {
         ctx.open_settings_requested = false;
         OpenSettingsDirect();
@@ -492,18 +750,19 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         ToggleAppFullscreen(settings);
     }
 
-    // Scorciatoia globale M per attivare/silenziare rapidamente l'audio
+    // Scorciatoia globale M per silenziare/riattivare preservando il volume impostato
     if (IsKeyPressed(KEY_M)) {
-        settings.audio_volume_index = (settings.audio_volume_index == 0) ? 3 : 0;
+        settings.audio_muted = !settings.audio_muted;
         ApplyGraphicsSettingsToRuntime(settings);
         (void)SaveGraphicsSettings(settings);
-        if (settings.audio_volume_index > 0) {
-            PlayUiSfx(SfxId::UiClick, 0.55f, 1.05f);
+        if (!settings.audio_muted) {
+            PlayAudioPreview(AudioPreviewChannel::Ui, 1.08f);
         }
     }
 
-    // Avanzamento esplicito dei dialoghi: un tasto chiarisce il ritmo e evita attese passive.
+    // Avanzamento esplicito dei dialoghi (non durante intramezzi o menu)
     if (!is_open_ &&
+        !ctx.world.interlude.active &&
         (journal == nullptr || !journal->IsOpen()) &&
         !ctx.world.calibration_modal.is_open &&
         ctx.world.story.HasActiveDialogue() &&
@@ -515,7 +774,9 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
     }
 
     // Avanzamento rapido dei dialoghi se il giocatore attiva il ritmo sintetico
-    if (!is_open_ && (journal == nullptr || !journal->IsOpen()) &&
+    if (!is_open_ &&
+        !ctx.world.interlude.active &&
+        (journal == nullptr || !journal->IsOpen()) &&
         settings.compact_tutorial && ctx.world.story.HasActiveDialogue() &&
         ctx.world.story.LineElapsed() > 3.2f) {
         ctx.world.story.AdvanceDialogue();
@@ -523,9 +784,16 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
 
     const bool on_title = IsTitleStateActive(ctx);
 
-    // Priorita' ESC: Calibrazione -> Diario [H/J] -> Menu di Pausa / Impostazioni
+    // Priorita' ESC: Intramezzo (salta) -> Calibrazione -> Diario [H/J] -> Menu di Pausa / Impostazioni
     if (IsKeyPressed(KEY_ESCAPE)) {
         if (!is_open_) {
+            if (ctx.world.interlude.active) {
+                if (ctx.world.interlude.CanSkip()) {
+                    ctx.world.SkipZoneInterlude();
+                    PlayUiSfx(SfxId::UiClick, 0.45f, 1.0f);
+                }
+                return false;
+            }
             if (ctx.world.calibration_modal.is_open) {
                 ctx.world.calibration_modal.Cancel();
                 return false;
@@ -542,6 +810,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
             return true;
         }
 
+        dragging_slider_row_ = -1;
         if (in_settings_) {
             if (opened_from_title_) {
                 Close();
@@ -566,15 +835,19 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
 
     const Vector2 mouse = GetMousePosition();
     const bool mouse_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+    const bool mouse_down = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+    const bool mouse_released = IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
+    const bool mouse_moved = (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f);
+
     const bool up_pressed = IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W);
     const bool down_pressed = IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S);
     const bool left_pressed = IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A);
     const bool right_pressed = IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D);
     const bool confirm_pressed =
-        IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) || IsKeyPressed(KEY_E) || IsKeyPressed(KEY_SPACE);
+        IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) || IsKeyPressed(KEY_SPACE);
 
     if (!in_settings_) {
-        // --- MENU DI PAUSA (7 Voci, inclusa Salva Partita) ---
+        // --- MENU DI PAUSA (7 Voci) ---
         constexpr int kPauseItemCount = 7;
         if (up_pressed) {
             pause_cursor_ = (pause_cursor_ - 1 + kPauseItemCount) % kPauseItemCount;
@@ -585,21 +858,23 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
             PlayUiSfx(SfxId::UiClick, 0.45f, 0.96f);
         }
 
-        const int box_w = 550;
-        const int box_h = 468;
+        const int box_w = 560;
+        const int box_h = 480;
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
+        hovered_pause_row_ = -1;
         int activated_action = -1;
         for (int i = 0; i < kPauseItemCount; ++i) {
             const Rectangle btn_rect{
                 static_cast<float>(bx + 36),
-                static_cast<float>(by + 68 + i * 50),
+                static_cast<float>(by + 68 + i * 52),
                 static_cast<float>(box_w - 72),
-                40.0f
+                42.0f
             };
             if (CheckCollisionPointRec(mouse, btn_rect)) {
-                if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
+                hovered_pause_row_ = i;
+                if (mouse_moved || mouse_clicked) {
                     pause_cursor_ = i;
                 }
                 if (mouse_clicked) {
@@ -608,7 +883,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
             }
         }
 
-        if (confirm_pressed) {
+        if (confirm_pressed || IsKeyPressed(KEY_E)) {
             activated_action = pause_cursor_;
         }
 
@@ -630,9 +905,11 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                     journal->OpenHistory();
                 }
                 return false;
-            case 3: // Impostazioni Schermo, GPU & Audio
+            case 3: // Impostazioni
                 in_settings_ = true;
                 settings_cursor_ = 0;
+                dragging_slider_row_ = -1;
+                PlayUiSfx(SfxId::UiClick, 0.55f, 1.06f);
                 break;
             case 4: // Ricomincia Viaggio (Reset Conca)
                 ctx.world.Reset();
@@ -657,53 +934,124 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
             default:
                 break;
         }
+        return is_open_;
+    }
+
+    // --- SOTTOMENU IMPOSTAZIONI A 4 SCHEDE (GIOCO / GRAFICA / AMBIENTE / AUDIO) ---
+    const SettingsPanelLayout layout{};
+
+    // Cambio scheda pulito: [Q/E], [TAB]/[SHIFT+TAB], [1-4], oppure click mouse (mai A/D!)
+    auto switch_category = [&](int new_cat) {
+        const int clamped = ((new_cat % kCategoryCount) + kCategoryCount) % kCategoryCount;
+        if (clamped != static_cast<int>(settings_category_)) {
+            settings_category_ = static_cast<SettingsCategory>(clamped);
+            settings_cursor_ = 0;
+            dragging_slider_row_ = -1;
+            PlayUiSfx(SfxId::UiClick, 0.48f, 1.04f);
+        }
+    };
+
+    if (IsKeyPressed(KEY_Q)) {
+        switch_category(static_cast<int>(settings_category_) - 1);
+    } else if (IsKeyPressed(KEY_E)) {
+        switch_category(static_cast<int>(settings_category_) + 1);
+    } else if (IsKeyPressed(KEY_TAB)) {
+        const bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+        switch_category(static_cast<int>(settings_category_) + (shift ? -1 : 1));
+    } else if (IsKeyPressed(KEY_ONE)) {
+        switch_category(0);
+    } else if (IsKeyPressed(KEY_TWO)) {
+        switch_category(1);
+    } else if (IsKeyPressed(KEY_THREE)) {
+        switch_category(2);
+    } else if (IsKeyPressed(KEY_FOUR)) {
+        switch_category(3);
+    }
+
+    // Aggiorna conteggi se la categoria e' appena cambiata
+    const int cur_option_count = OptionCountForCategory(settings_category_);
+    const bool cur_gpu_changed =
+        settings_category_ == SettingsCategory::Graphics &&
+        settings.gpu_preference != settings.initial_gpu_preference;
+    const int cur_back_idx = cur_option_count;
+    const int cur_reset_idx = cur_option_count + 1;
+    const int cur_apply_idx = cur_option_count + 2;
+    const int cur_total_rows = cur_gpu_changed ? (cur_option_count + 3) : (cur_option_count + 2);
+    settings_cursor_ = std::clamp(settings_cursor_, 0, cur_total_rows - 1);
+
+    // Gestione drag continuo dello slider con mouse
+    if (dragging_slider_row_ >= 0) {
+        if (mouse_down && dragging_slider_row_ < cur_option_count) {
+            if (float* slider_val = GetSliderValuePtr(settings, settings_category_, dragging_slider_row_);
+                slider_val != nullptr) {
+                const Rectangle track = SliderTrackRect(layout.RowRect(dragging_slider_row_));
+                const float ratio = std::clamp((mouse.x - track.x) / std::max(1.0f, track.width), 0.0f, 1.0f);
+                const float snapped = std::round(ratio * 20.0f) / 20.0f;
+                if (std::abs(snapped - *slider_val) > 1e-4f) {
+                    *slider_val = snapped;
+                    if (settings_category_ == SettingsCategory::Environment && dragging_slider_row_ == 1) {
+                        SyncLegacyParticleQuality(settings);
+                    }
+                    if (settings_category_ == SettingsCategory::Audio && dragging_slider_row_ == 1 && snapped > 0.001f) {
+                        settings.audio_muted = false;
+                    }
+                    ApplyGraphicsSettingsToRuntime(settings);
+                }
+            }
+        }
+        if (mouse_released || !mouse_down) {
+            (void)SaveGraphicsSettings(settings);
+            PlayAudioFeedbackForRow(settings_category_, dragging_slider_row_, 0);
+            dragging_slider_row_ = -1;
+        }
+        return is_open_;
+    }
+
+    // Navigazione tastiera righe
+    if (up_pressed) {
+        settings_cursor_ = (settings_cursor_ - 1 + cur_total_rows) % cur_total_rows;
+        PlayUiSfx(SfxId::UiClick, 0.45f, 1.04f);
+    }
+    if (down_pressed) {
+        settings_cursor_ = (settings_cursor_ + 1) % cur_total_rows;
+        PlayUiSfx(SfxId::UiClick, 0.45f, 0.96f);
+    }
+
+    // Regolazione tastiera opzione / pulsanti in basso
+    if (settings_cursor_ < cur_option_count) {
+        if (left_pressed) {
+            AdjustSettingValue(settings, settings_category_, settings_cursor_, -1);
+        } else if (right_pressed || confirm_pressed) {
+            AdjustSettingValue(settings, settings_category_, settings_cursor_, +1);
+        }
     } else {
-        // --- SOTTOMENU IMPOSTAZIONI A SCHEDE ---
-        const bool gpu_changed =
-            settings_category_ == SettingsCategory::Graphics &&
-            settings.gpu_preference != settings.initial_gpu_preference;
-        int kOptionCount = 2;
-        if (settings_category_ == SettingsCategory::Graphics) {
-            kOptionCount = 8;
-        } else if (settings_category_ == SettingsCategory::Audio) {
-            kOptionCount = 4;
-        }
-        const int kSettingsRowCount =
-            kOptionCount + (settings_category_ == SettingsCategory::Graphics && gpu_changed ? 2 : 1);
-
-        if (IsKeyPressed(KEY_A)) {
-            const int category =
-                (static_cast<int>(settings_category_) + 2) % 3;
-            settings_category_ = static_cast<SettingsCategory>(category);
-            settings_cursor_ = 0;
-            PlayUiSfx(SfxId::UiClick, 0.45f, 0.94f);
-        }
-        if (IsKeyPressed(KEY_D)) {
-            const int category =
-                (static_cast<int>(settings_category_) + 1) % 3;
-            settings_category_ = static_cast<SettingsCategory>(category);
-            settings_cursor_ = 0;
-            PlayUiSfx(SfxId::UiClick, 0.45f, 1.06f);
-        }
-
-        if (up_pressed) {
-            settings_cursor_ = (settings_cursor_ - 1 + kSettingsRowCount) % kSettingsRowCount;
-            PlayUiSfx(SfxId::UiClick, 0.45f, 1.04f);
-        }
-        if (down_pressed) {
-            settings_cursor_ = (settings_cursor_ + 1) % kSettingsRowCount;
-            PlayUiSfx(SfxId::UiClick, 0.45f, 0.96f);
-        }
-
-        if (settings_cursor_ < kOptionCount) {
-            if (left_pressed) {
-                AdjustSettingValue(settings, settings_category_, settings_cursor_, -1);
-            } else if (right_pressed || confirm_pressed) {
-                AdjustSettingValue(settings, settings_category_, settings_cursor_, +1);
+        // Navigazione orizzontale sui pulsanti in basso
+        if (left_pressed) {
+            if (settings_cursor_ > cur_back_idx) {
+                --settings_cursor_;
+                PlayUiSfx(SfxId::UiClick, 0.42f, 0.96f);
+            }
+        } else if (right_pressed) {
+            if (settings_cursor_ + 1 < cur_total_rows) {
+                ++settings_cursor_;
+                PlayUiSfx(SfxId::UiClick, 0.42f, 1.04f);
             }
         } else if (confirm_pressed) {
-            if (settings_category_ == SettingsCategory::Graphics &&
-                gpu_changed && settings_cursor_ == kOptionCount) {
+            if (settings_cursor_ == cur_back_idx) {
+                PlayUiSfx(SfxId::UiClick, 0.55f, 0.94f);
+                if (opened_from_title_) {
+                    Close();
+                    return false;
+                }
+                in_settings_ = false;
+                return true;
+            }
+            if (settings_cursor_ == cur_reset_idx) {
+                ResetCategoryDefaults(settings, settings_category_);
+                TriggerSaveFeedback("Predefiniti della scheda ripristinati.");
+                return true;
+            }
+            if (cur_gpu_changed && settings_cursor_ == cur_apply_idx) {
                 (void)SaveGraphicsSettings(settings);
                 if (IsGameplayStateActive(ctx)) {
                     (void)eco::SaveWorldToFile(ctx.world);
@@ -711,6 +1059,73 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                 ctx.relaunch_gpu_requested = true;
                 return false;
             }
+        }
+    }
+
+    // Mouse sulle schede
+    hovered_tab_ = -1;
+    for (int tab = 0; tab < kCategoryCount; ++tab) {
+        if (CheckCollisionPointRec(mouse, layout.TabRect(tab))) {
+            hovered_tab_ = tab;
+            if (mouse_clicked) {
+                switch_category(tab);
+                return true;
+            }
+        }
+    }
+
+    // Mouse sulle righe delle opzioni
+    hovered_settings_row_ = -1;
+    for (int i = 0; i < cur_option_count; ++i) {
+        const Rectangle row_rect = layout.RowRect(i);
+        if (CheckCollisionPointRec(mouse, row_rect)) {
+            hovered_settings_row_ = i;
+            if (mouse_moved || mouse_clicked) {
+                settings_cursor_ = i;
+            }
+            if (mouse_clicked) {
+                if (IsSliderRow(settings_category_, i)) {
+                    const Rectangle track = SliderTrackRect(row_rect);
+                    const Rectangle grab_rect{
+                        track.x - 10.0f,
+                        row_rect.y + 4.0f,
+                        track.width + 20.0f,
+                        row_rect.height - 8.0f
+                    };
+                    if (CheckCollisionPointRec(mouse, grab_rect)) {
+                        dragging_slider_row_ = i;
+                        if (float* slider_val = GetSliderValuePtr(settings, settings_category_, i);
+                            slider_val != nullptr) {
+                            const float ratio = std::clamp((mouse.x - track.x) / std::max(1.0f, track.width), 0.0f, 1.0f);
+                            *slider_val = std::round(ratio * 20.0f) / 20.0f;
+                            if (settings_category_ == SettingsCategory::Environment && i == 1) {
+                                SyncLegacyParticleQuality(settings);
+                            }
+                            if (settings_category_ == SettingsCategory::Audio && i == 1 && *slider_val > 0.001f) {
+                                settings.audio_muted = false;
+                            }
+                            ApplyGraphicsSettingsToRuntime(settings);
+                        }
+                    } else {
+                        const float mid_x = row_rect.x + row_rect.width * 0.5f;
+                        AdjustSettingValue(settings, settings_category_, i, (mouse.x < mid_x) ? -1 : +1);
+                    }
+                } else {
+                    const float choice_mid = row_rect.x + row_rect.width - 136.0f;
+                    AdjustSettingValue(settings, settings_category_, i, (mouse.x < choice_mid) ? -1 : +1);
+                }
+            }
+        }
+    }
+
+    // Mouse sui pulsanti in basso (Indietro, Predefiniti, Applica GPU)
+    const Rectangle back_rect = layout.BackButtonRect();
+    if (CheckCollisionPointRec(mouse, back_rect)) {
+        hovered_settings_row_ = cur_back_idx;
+        if (mouse_moved || mouse_clicked) {
+            settings_cursor_ = cur_back_idx;
+        }
+        if (mouse_clicked) {
             PlayUiSfx(SfxId::UiClick, 0.55f, 0.94f);
             if (opened_from_title_) {
                 Close();
@@ -719,91 +1134,35 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
             in_settings_ = false;
             return true;
         }
+    }
 
-        const int box_w = 820;
-        const int box_h = 594;
-        const int bx = (eco::kWindowWidth - box_w) / 2;
-        const int by = (eco::kWindowHeight - box_h) / 2;
-
-        for (int tab = 0; tab < 3; ++tab) {
-            const Rectangle tab_rect{
-                static_cast<float>(bx + 26 + tab * 258),
-                static_cast<float>(by + 50),
-                238.0f,
-                34.0f
-            };
-            if (CheckCollisionPointRec(mouse, tab_rect) && mouse_clicked) {
-                settings_category_ = static_cast<SettingsCategory>(tab);
-                settings_cursor_ = 0;
-                PlayUiSfx(SfxId::UiClick, 0.48f, 1.0f);
-            }
+    const Rectangle reset_rect = layout.ResetButtonRect();
+    if (CheckCollisionPointRec(mouse, reset_rect)) {
+        hovered_settings_row_ = cur_reset_idx;
+        if (mouse_moved || mouse_clicked) {
+            settings_cursor_ = cur_reset_idx;
         }
-
-        for (int i = 0; i < kOptionCount; ++i) {
-            const Rectangle row_rect{
-                static_cast<float>(bx + 26),
-                static_cast<float>(by + 98 + i * 42),
-                static_cast<float>(box_w - 52),
-                35.0f
-            };
-            if (CheckCollisionPointRec(mouse, row_rect)) {
-                if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
-                    settings_cursor_ = i;
-                }
-                if (mouse_clicked) {
-                    const float mid_x = row_rect.x + row_rect.width * 0.65f;
-                        AdjustSettingValue(
-                            settings,
-                            settings_category_,
-                            i,
-                            (mouse.x < mid_x) ? -1 : +1);
-                }
-            }
+        if (mouse_clicked) {
+            ResetCategoryDefaults(settings, settings_category_);
+            TriggerSaveFeedback("Predefiniti della scheda ripristinati.");
+            return true;
         }
+    }
 
-        const Rectangle back_rect{
-            static_cast<float>(bx + 26),
-            static_cast<float>(by + box_h - 52),
-            240.0f,
-            36.0f
-        };
-        const int back_row_index =
-            (settings_category_ == SettingsCategory::Graphics && gpu_changed)
-                ? (kOptionCount + 1)
-                : kOptionCount;
-        if (CheckCollisionPointRec(mouse, back_rect)) {
-            if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
-                settings_cursor_ = back_row_index;
+    if (cur_gpu_changed) {
+        const Rectangle apply_rect = layout.ApplyGpuButtonRect();
+        if (CheckCollisionPointRec(mouse, apply_rect)) {
+            hovered_settings_row_ = cur_apply_idx;
+            if (mouse_moved || mouse_clicked) {
+                settings_cursor_ = cur_apply_idx;
             }
             if (mouse_clicked) {
-                PlayUiSfx(SfxId::UiClick, 0.55f, 0.94f);
-                if (opened_from_title_) {
-                    Close();
-                    return false;
+                (void)SaveGraphicsSettings(settings);
+                if (IsGameplayStateActive(ctx)) {
+                    (void)eco::SaveWorldToFile(ctx.world);
                 }
-                in_settings_ = false;
-            }
-        }
-
-        if (gpu_changed) {
-            const Rectangle apply_gpu_rect{
-                static_cast<float>(bx + 282),
-                static_cast<float>(by + box_h - 52),
-                275.0f,
-                36.0f
-            };
-            if (CheckCollisionPointRec(mouse, apply_gpu_rect)) {
-                if (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f || mouse_clicked) {
-                    settings_cursor_ = kOptionCount;
-                }
-                if (mouse_clicked) {
-                    (void)SaveGraphicsSettings(settings);
-                    if (IsGameplayStateActive(ctx)) {
-                        (void)eco::SaveWorldToFile(ctx.world);
-                    }
-                    ctx.relaunch_gpu_requested = true;
-                    return false;
-                }
+                ctx.relaunch_gpu_requested = true;
+                return false;
             }
         }
     }
@@ -827,11 +1186,11 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
         DrawTextShadow(fps_text, static_cast<int>(fps_box.x) + 8, 12, 13, pal::kAccentClean);
     }
 
-    // Toast di conferma salvataggio (visibile sia in pausa che in gioco)
+    // Toast di conferma salvataggio / predefiniti
     if (save_feedback_timer_ > 0.0f && !save_feedback_msg_.empty()) {
         const float alpha = std::clamp(save_feedback_timer_ * 1.4f, 0.0f, 1.0f);
         DrawBannerToast(
-            Rectangle{440.0f, 16.0f, 400.0f, 46.0f},
+            Rectangle{430.0f, 16.0f, 420.0f, 46.0f},
             "ARCHIVIO CONCA",
             save_feedback_msg_.c_str(),
             nullptr,
@@ -844,12 +1203,12 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
     }
 
     // 2. Oscuramento morbido dello sfondo di gioco in pausa
-    DrawRectangle(0, 0, eco::kWindowWidth, eco::kWindowHeight, Color{5, 10, 18, 198});
+    DrawRectangle(0, 0, eco::kWindowWidth, eco::kWindowHeight, Color{5, 10, 18, 202});
 
     if (!in_settings_) {
         // --- DISEGNO MENU DI PAUSA ---
-        const int box_w = 550;
-        const int box_h = 468;
+        const int box_w = 560;
+        const int box_h = 480;
         const int bx = (eco::kWindowWidth - box_w) / 2;
         const int by = (eco::kWindowHeight - box_h) / 2;
 
@@ -867,7 +1226,7 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             "Riprendi Esplorazione [ESC]",
             "Salva Partita Ora",
             "Diario: Cronologia & Codex [H / J]",
-            "Impostazioni Schermo, GPU & Audio",
+            "Impostazioni (Grafica, Ambiente & Audio)",
             "Ricomincia Viaggio (Reset Conca)",
             "Salva e Torna al Titolo",
             "Salva ed Esci dal Gioco"
@@ -875,193 +1234,245 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
 
         for (int i = 0; i < static_cast<int>(kLabels.size()); ++i) {
             const bool selected = (pause_cursor_ == i);
+            const bool hovered = (hovered_pause_row_ == i);
             const Rectangle btn{
                 static_cast<float>(bx + 36),
-                static_cast<float>(by + 68 + i * 50),
+                static_cast<float>(by + 68 + i * 52),
                 static_cast<float>(box_w - 72),
-                40.0f
+                42.0f
             };
             const Color accent = (i == 6)
                                      ? Color{236, 108, 76, 255}
                                      : ((i == 1) ? pal::kJadeGlow
                                                  : ((i == 2) ? pal::kBronzeBright : pal::kAccentClean));
-            DrawSectionCard(btn, selected ? accent : pal::kUiBorderBronze, selected);
-
-            const char* label = kLabels[static_cast<std::size_t>(i)];
-            const int tw = MeasureUiText(label, 16);
-            DrawTextShadow(
-                label,
-                bx + (box_w - tw) / 2,
-                static_cast<int>(btn.y) + 10,
-                16,
-                selected ? RAYWHITE : pal::kParchmentText);
+            DrawActionButton(btn, kLabels[static_cast<std::size_t>(i)], accent, selected, hovered, i == 0);
         }
 
-        const char* hint = "Usa [W/S], [Frecce] o Mouse | [INVIO] Conferma | [F11] Schermo Intero";
-        const int hw = MeasureUiText(hint, 13);
-        DrawTextShadow(hint, bx + (box_w - hw) / 2, by + box_h - 26, 13, Color{154, 192, 208, 225});
-    } else {
-        // --- DISEGNO SOTTOMENU IMPOSTAZIONI SCHERMO, GPU & AUDIO ---
-        const int box_w = 820;
-        const int box_h = 594;
-        const int bx = (eco::kWindowWidth - box_w) / 2;
-        const int by = (eco::kWindowHeight - box_h) / 2;
+        const char* hint = "[W/S] o Mouse Scegli  |  [INVIO] Conferma  |  [M] Muto  |  [F11] Schermo Intero";
+        const int hw = MeasureUiText(hint, 12);
+        DrawTextShadow(hint, bx + (box_w - hw) / 2, by + box_h - 24, 12, Color{154, 192, 208, 225});
+        return;
+    }
 
-        DrawPanelWithHeader(
-            Rectangle{
-                static_cast<float>(bx),
-                static_cast<float>(by),
-                static_cast<float>(box_w),
-                static_cast<float>(box_h)},
-            44,
-            "IMPOSTAZIONI",
+    // --- DISEGNO SOTTOMENU IMPOSTAZIONI A 4 SCHEDE ---
+    const SettingsPanelLayout layout{};
+    DrawPanelWithHeader(
+        layout.PanelRect(),
+        44,
+        "IMPOSTAZIONI  |  SCHERMO, AMBIENTE & AUDIO",
+        pal::kAccentClean);
+
+    const char* tab_labels[kCategoryCount] = {
+        "1. GIOCO",
+        "2. GRAFICA",
+        "3. AMBIENTE",
+        "4. AUDIO"
+    };
+    DrawCategoryTabs(
+        layout.TabsArea(),
+        tab_labels,
+        kCategoryCount,
+        static_cast<int>(settings_category_),
+        hovered_tab_,
+        pal::kAccentClean);
+
+    const int res_idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
+    const int fps_idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
+    const int dialogue_speed_idx = std::clamp(
+        settings.dialogue_speed_index,
+        0,
+        static_cast<int>(kDialogueSpeedOptions.size()) - 1);
+
+    const std::string monitor_str = FormatMonitorLabel(settings.monitor_index);
+    const std::string gpu_str = FormatGpuLabel(settings.gpu_preference);
+
+    auto draw_toggle = [&](int row, const char* label, bool enabled, const char* state_text, Color accent) {
+        DrawToggleRow(
+            layout.RowRect(row),
+            label,
+            enabled,
+            state_text,
+            accent,
+            settings_cursor_ == row,
+            hovered_settings_row_ == row);
+    };
+
+    auto draw_choice = [&](int row, const char* label, const char* val_text, Color accent) {
+        DrawChoiceRow(
+            layout.RowRect(row),
+            label,
+            val_text,
+            accent,
+            settings_cursor_ == row,
+            hovered_settings_row_ == row);
+    };
+
+    auto draw_slider = [&](int row, const char* label, float val01, Color accent) {
+        const std::string pct = FormatPercent(val01);
+        DrawSliderRow(
+            layout.RowRect(row),
+            label,
+            val01,
+            pct.c_str(),
+            accent,
+            settings_cursor_ == row,
+            hovered_settings_row_ == row || dragging_slider_row_ == row);
+    };
+
+    if (settings_category_ == SettingsCategory::Game) {
+        draw_toggle(
+            0,
+            "Avanzamento Rapido Dialoghi",
+            settings.compact_tutorial,
+            settings.compact_tutorial ? "Sintetico (3,2 s)" : "Manuale",
             pal::kAccentClean);
+        draw_toggle(
+            1,
+            "Contatore FPS in Sovrimpressione",
+            settings.show_fps,
+            settings.show_fps ? "Visibile" : "Nascosto",
+            pal::kAccentClean);
+        draw_choice(
+            2,
+            "Velocita' Scrittura Dialoghi",
+            kDialogueSpeedOptions[static_cast<std::size_t>(dialogue_speed_idx)].label,
+            pal::kBronzeBright);
 
-        const char* tab_labels[3] = {"GIOCO [A/D]", "GRAFICA [A/D]", "AUDIO [A/D]"};
-        for (int tab = 0; tab < 3; ++tab) {
-            const Rectangle tab_rect{
-                static_cast<float>(bx + 26 + tab * 258),
-                static_cast<float>(by + 50),
-                238.0f,
-                34.0f
-            };
-            const bool active = tab == static_cast<int>(settings_category_);
-            DrawSectionCard(tab_rect, active ? pal::kAccentClean : pal::kUiBorderBronze, active);
-            const int tw = MeasureUiText(tab_labels[tab], 14);
-            DrawTextShadow(
-                tab_labels[tab],
-                static_cast<int>(tab_rect.x + (tab_rect.width - tw) * 0.5f),
-                static_cast<int>(tab_rect.y) + 9,
-                14,
-                active ? RAYWHITE : pal::kParchmentText);
-        }
+        // Info leggera memoria zone separate (diagnostica utile)
+        const eco::MemoryMetrics mem = ctx.world.GetMemoryMetrics();
+        const char* mem_info = TextFormat(
+            "Memoria Mappe Residente: %zu B  (Risparmiati: %zu B  |  Cambi Zona: %d)",
+            mem.total_resident_map_bytes,
+            mem.saved_unloaded_bytes,
+            mem.zone_swaps_count);
+        DrawTextShadow(mem_info, layout.bx + 26, layout.by + layout.box_h - 104, 13, Color{146, 198, 212, 225});
+    } else if (settings_category_ == SettingsCategory::Graphics) {
+        draw_toggle(
+            0,
+            "Modalita' Schermo Intero [F11]",
+            settings.fullscreen,
+            settings.fullscreen ? "Schermo Intero" : "Finestra",
+            pal::kAccentClean);
+        draw_choice(1, "Monitor Schermo Intero", monitor_str.c_str(), pal::kBronzeBright);
+        draw_choice(2, "GPU / Scheda Grafica", gpu_str.c_str(), pal::kBronzeBright);
+        draw_choice(
+            3,
+            "Risoluzione Finestra",
+            kResolutions[static_cast<std::size_t>(res_idx)].label,
+            pal::kBronzeBright);
+        draw_choice(
+            4,
+            "Limite Fotogrammi (FPS)",
+            kFpsOptions[static_cast<std::size_t>(fps_idx)].label,
+            pal::kBronzeBright);
+        draw_toggle(
+            5,
+            "Font Interfaccia Nitido (TTF)",
+            settings.clean_ttf_font,
+            settings.clean_ttf_font ? "Noto Sans HD" : "Pixel Retro",
+            pal::kJadeGlow);
 
-        const int res_idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
-        const int fps_idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
-        const int vol_idx = std::clamp(settings.audio_volume_index, 0, static_cast<int>(kVolumeOptions.size()) - 1);
-        const int music_idx = std::clamp(settings.music_volume_index, 0, static_cast<int>(kVolumeOptions.size()) - 1);
-        const int effects_idx = std::clamp(settings.effects_volume_index, 0, static_cast<int>(kVolumeOptions.size()) - 1);
-
-        const std::string monitor_str = FormatMonitorLabel(settings.monitor_index);
-        const std::string gpu_str = FormatGpuLabel(settings.gpu_preference);
-
-        int row_count = 2;
-        std::array<const char*, 8> row_titles{};
-        std::array<const char*, 8> row_values{};
-        if (settings_category_ == SettingsCategory::Game) {
-            row_titles[0] = "Avanzamento Dialoghi";
-            row_values[0] = settings.compact_tutorial ? "< Sintetico (3,2 s) >" : "< Manuale / Automatico >";
-            row_titles[1] = "Contatore FPS";
-            row_values[1] = settings.show_fps ? "< Attivo >" : "< Disattivato >";
-        } else if (settings_category_ == SettingsCategory::Graphics) {
-            row_count = 8;
-            const std::array<const char*, 8> titles = {
-                "Modalita' Schermo [F11]", "Monitor Schermo Intero", "GPU / Scheda Grafica",
-                "Risoluzione Finestra", "Frequenza Fotogrammi (FPS)",
-                "Particelle & Effetti Atmosferici", "Stile Font Interfaccia",
-                "Contatore FPS a Schermo"
-            };
-            const std::array<const char*, 8> values = {
-                settings.fullscreen ? "< Schermo Intero >" : "< Finestra Ridimensionabile >",
-                monitor_str.c_str(), gpu_str.c_str(),
-                kResolutions[static_cast<std::size_t>(res_idx)].label,
-                kFpsOptions[static_cast<std::size_t>(fps_idx)].label,
-                ParticleQualityLabel(settings.particle_quality),
-                settings.clean_ttf_font ? "< Noto Sans HD (Nitido) >" : "< Pixel Bitmap (Retro) >",
-                settings.show_fps ? "< Attivo (Mostra FPS) >" : "< Disattivato >"
-            };
-            row_titles = titles;
-            row_values = values;
-        } else {
-            row_count = 4;
-            row_titles[0] = "Volume Generale [M Muto]";
-            row_values[0] = kVolumeOptions[static_cast<std::size_t>(vol_idx)].label;
-            row_titles[1] = "Musica & Ambiente";
-            row_values[1] = kVolumeOptions[static_cast<std::size_t>(music_idx)].label;
-            row_titles[2] = "Effetti di Gioco";
-            row_values[2] = kVolumeOptions[static_cast<std::size_t>(effects_idx)].label;
-            row_titles[3] = "Paesaggio Sonoro";
-            row_values[3] = settings.ambient_audio ? "< Ambiente + Interazioni >" : "< Solo Interazioni >";
-        }
-
-        for (int i = 0; i < row_count; ++i) {
-            const bool selected = (settings_cursor_ == i);
-            const Rectangle row_rect{
-                static_cast<float>(bx + 26),
-                static_cast<float>(by + 98 + i * 42),
-                static_cast<float>(box_w - 52),
-                35.0f
-            };
-
-            DrawSectionCard(row_rect, selected ? pal::kAccentClean : pal::kUiBorderBronze, selected);
-
-            DrawTextShadow(
-                row_titles[static_cast<std::size_t>(i)],
-                static_cast<int>(row_rect.x) + 14,
-                static_cast<int>(row_rect.y) + 8,
-                15,
-                selected ? RAYWHITE : pal::kParchmentText);
-
-            const char* val_text = row_values[static_cast<std::size_t>(i)];
-            const int vw = MeasureUiText(val_text, 14);
-            DrawTextShadow(
-                val_text,
-                static_cast<int>(row_rect.x + row_rect.width) - vw - 14,
-                static_cast<int>(row_rect.y) + 9,
-                14,
-                selected ? pal::kJadeGlow : pal::kBronzeBright);
-        }
-
-        // Riga informativa GPU OpenGL attualmente attiva
-        const bool gpu_changed =
-            settings_category_ == SettingsCategory::Graphics &&
-            settings.gpu_preference != settings.initial_gpu_preference;
+        const bool gpu_changed = settings.gpu_preference != settings.initial_gpu_preference;
         const std::string gpu_status =
             std::string("GPU Attiva Ora: ") +
             (settings.active_gpu_renderer.empty() ? std::string("OpenGL") : settings.active_gpu_renderer) +
-            (gpu_changed ? "   [Premi 'Applica GPU & Riavvia' per commutare]" : "");
+            (gpu_changed ? "  [Premi 'Applica GPU & Riavvia']" : "");
         DrawTextShadow(
             gpu_status.c_str(),
-            bx + 28,
-            by + box_h - 88,
+            layout.bx + 26,
+            layout.by + layout.box_h - 104,
             13,
             gpu_changed ? pal::kAmberGlow : Color{148, 206, 214, 230});
+    } else if (settings_category_ == SettingsCategory::Environment) {
+        draw_toggle(
+            0,
+            "Effetti Atmosferici Screen-Space",
+            settings.atmosphere_enabled,
+            settings.atmosphere_enabled ? "Attivi" : "Disattivati",
+            pal::kJadeGlow);
+        draw_slider(1, "Densita' Particelle Globali", settings.particle_density, pal::kAccentClean);
+        draw_slider(2, "Intensita' Foschia & Nebbia", settings.fog_haze_intensity, pal::kAmberGlow);
+        draw_slider(3, "Raggi Solari & Luce Volumetrica", settings.sun_rays_intensity, pal::kBronzeBright);
+        draw_slider(4, "Vignettatura Atmosferica", settings.vignette_intensity, pal::kAccentClean);
+        draw_slider(5, "Meteo & Effetti di Zona (Vento / Vapore)", settings.zone_weather_intensity, pal::kJadeGlow);
 
-        // Pulsanti in basso
-        const int back_row_index =
-            gpu_changed ? (row_count + 1) : row_count;
-        const bool back_selected = (settings_cursor_ == back_row_index);
-        const Rectangle back_rect{
-            static_cast<float>(bx + 26),
-            static_cast<float>(by + box_h - 52),
-            240.0f,
-            36.0f
-        };
-        DrawSectionCard(back_rect, back_selected ? pal::kAccentClean : pal::kUiBorderCyan, back_selected);
-        const char* back_label = IsTitleStateActive(ctx) ? "[ESC] Torna al Titolo" : "[ESC] Torna alla Pausa";
-        DrawTextShadow(back_label, static_cast<int>(back_rect.x) + 20, static_cast<int>(back_rect.y) + 9, 15, RAYWHITE);
+        DrawTextShadow(
+            "Le modifiche agli effetti ambientali si applicano in tempo reale sulla Conca di Meridia.",
+            layout.bx + 26,
+            layout.by + layout.box_h - 104,
+            13,
+            Color{154, 206, 214, 225});
+    } else {
+        draw_toggle(
+            0,
+            "Audio Silenziato [M]",
+            settings.audio_muted,
+            settings.audio_muted ? "Muto" : "Attivo",
+            settings.audio_muted ? Color{236, 114, 82, 255} : pal::kJadeGlow);
+        draw_slider(1, "Volume Generale", settings.master_volume, pal::kAccentClean);
+        draw_slider(2, "Volume Musica", settings.music_volume, pal::kBronzeBright);
+        draw_slider(3, "Volume Effetti & Meccaniche", settings.effects_volume, pal::kJadeGlow);
+        draw_slider(4, "Volume Ambiente & Natura", settings.ambient_volume, pal::kAccentClean);
+        draw_toggle(
+            5,
+            "Paesaggio Sonoro Ambientale",
+            settings.ambient_audio,
+            settings.ambient_audio ? "Attivo" : "Solo Effetti",
+            pal::kJadeGlow);
+        draw_toggle(
+            6,
+            "Suoni Interfaccia (UI)",
+            settings.ui_sounds_enabled,
+            settings.ui_sounds_enabled ? "Attivi" : "Silenziosi",
+            pal::kAccentClean);
 
-        if (gpu_changed) {
-            const bool apply_selected = (settings_cursor_ == row_count);
-            const Rectangle apply_rect{
-                static_cast<float>(bx + 282),
-                static_cast<float>(by + box_h - 52),
-                275.0f,
-                36.0f
-            };
-            DrawSectionCard(apply_rect, apply_selected ? pal::kJadeGlow : pal::kAmberGlow, apply_selected);
-            DrawTextShadow(
-                "Applica GPU & Riavvia",
-                static_cast<int>(apply_rect.x) + 34,
-                static_cast<int>(apply_rect.y) + 9,
-                15,
-                RAYWHITE);
-        }
-
-        const char* hint = "[A/D] o Click modifica | [M] Muto";
-        const int hw = MeasureUiText(hint, 13);
-        DrawTextShadow(hint, bx + box_w - hw - 26, by + box_h - 42, 13, Color{155, 195, 215, 225});
+        DrawTextShadow(
+            "Regola uno slider o clicca la barra per ascoltare un'anteprima sonora in tempo reale.",
+            layout.bx + 26,
+            layout.by + layout.box_h - 104,
+            13,
+            Color{154, 206, 214, 225});
     }
+
+    // Pulsanti in basso
+    const int option_count = OptionCountForCategory(settings_category_);
+    const bool gpu_changed =
+        settings_category_ == SettingsCategory::Graphics &&
+        settings.gpu_preference != settings.initial_gpu_preference;
+    const int back_row_index = option_count;
+    const int reset_row_index = option_count + 1;
+    const int apply_gpu_row_index = option_count + 2;
+
+    const char* back_label = IsTitleStateActive(ctx) ? "[ESC] Torna al Titolo" : "[ESC] Torna alla Pausa";
+    DrawActionButton(
+        layout.BackButtonRect(),
+        back_label,
+        pal::kAccentClean,
+        settings_cursor_ == back_row_index,
+        hovered_settings_row_ == back_row_index,
+        false);
+
+    DrawActionButton(
+        layout.ResetButtonRect(),
+        "Ripristina Predefiniti",
+        pal::kBronzeBright,
+        settings_cursor_ == reset_row_index,
+        hovered_settings_row_ == reset_row_index,
+        false);
+
+    if (gpu_changed) {
+        DrawActionButton(
+            layout.ApplyGpuButtonRect(),
+            "Applica GPU & Riavvia",
+            pal::kJadeGlow,
+            settings_cursor_ == apply_gpu_row_index,
+            hovered_settings_row_ == apply_gpu_row_index,
+            true);
+    }
+
+    const char* hint = "[Q/E] o [TAB] Scheda  |  [A/D] o Trascina Regola  |  [M] Muto  |  [ESC] Indietro";
+    const int hw = MeasureUiText(hint, 12);
+    DrawTextShadow(hint, layout.bx + (layout.box_w - hw) / 2, layout.by + layout.box_h - 24, 12, Color{155, 195, 215, 225});
 }
 
 } // namespace eco::app

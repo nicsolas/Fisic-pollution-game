@@ -113,6 +113,7 @@ int RunHeadlessE2E() {
     // Declare domain objects BEFORE state_manager so ~GameStateManager() runs OnExit()
     // while AppContext references remain valid.
     eco::WorldContext world;
+    world.instant_zone_transitions = true;
     eco::AllPlayersInput input{};
     eco::app::GameStateManager state_manager;
     eco::app::AppContext ctx{
@@ -133,9 +134,15 @@ int RunHeadlessE2E() {
         return 1;
     }
 
-    if (world.overworld.tilemap.Rows() != eco::Tilemap::kOverworldRows ||
-        world.overworld.tilemap.Cols() != eco::Tilemap::kOverworldCols) {
-        std::cerr << "[headless-e2e] Unexpected Overworld dimensions\n";
+    if (world.overworld.tilemap.Rows() != eco::Tilemap::kZoneRows ||
+        world.overworld.tilemap.Cols() != eco::Tilemap::kZoneCols) {
+        std::cerr << "[headless-e2e] Unexpected Overworld zone dimensions\n";
+        return 1;
+    }
+
+    const eco::MemoryMetrics init_mem = world.GetMemoryMetrics();
+    if (init_mem.active_zone_tilemap_bytes == 0 || init_mem.saved_unloaded_bytes == 0) {
+        std::cerr << "[headless-e2e] Separated zone memory metrics invalid\n";
         return 1;
     }
 
@@ -303,7 +310,13 @@ int RunHeadlessE2E() {
         return 1;
     }
 
-    // Recruit Clara Sereni -> unlocks Phase 3 (Trama Geodetica) and Ponte degli Archi
+    // Transition to CanalQuarter (instant in --headless-e2e) & recruit Clara Sereni -> unlocks Phase 3 and Ponte degli Archi
+    world.BeginZoneInterlude(eco::ZoneId::CanalQuarter, eco::Tilemap::DefaultZoneSpawnTile(eco::ZoneId::CanalQuarter));
+    if (world.current_zone != eco::ZoneId::CanalQuarter || world.interlude.active) {
+        std::cerr << "[headless-e2e] Instant zone interlude to CanalQuarter failed\n";
+        return 1;
+    }
+    mutable_p0 = world.players.GetPlayer(0);
     auto& clara = world.GetNpc(eco::NpcId::ClaraSereni);
     mutable_p0->pos = clara.pos;
     input = {};
@@ -324,6 +337,7 @@ int RunHeadlessE2E() {
     };
 
     for (eco::StructureId sid : all_structures) {
+        world.TeleportToZone(eco::OverworldSim::PortalZone(sid));
         const eco::PortalLink* link = world.overworld.FindPortal(sid);
         if (link == nullptr) {
             std::cerr << "[headless-e2e] Missing portal link for structure "
@@ -434,6 +448,7 @@ int RunHeadlessE2E() {
     }
 
     // Calibrate HarmonicResonator in HangingGardens -> unlocks CentralAstrolabe
+    world.TeleportToZone(eco::ZoneId::HangingGardens);
     auto& harmonic = world.GetMachine(eco::MachineType::HarmonicResonator);
     mutable_p0 = world.players.GetPlayer(0);
     mutable_p0->pos = harmonic.pos;
@@ -449,9 +464,11 @@ int RunHeadlessE2E() {
         return 1;
     }
 
-    // Collect all relics & activate CentralAstrolabe -> Epilogue (True Ending)
+    // Collect all relics & activate CentralAstrolabe in HarmonySanctuary -> Epilogue (True Ending)
+    world.TeleportToZone(eco::ZoneId::HarmonySanctuary);
     world.collectibles.CollectAll();
     auto& astrolabe = world.GetMachine(eco::MachineType::CentralAstrolabe);
+    mutable_p0 = world.players.GetPlayer(0);
     mutable_p0->pos = astrolabe.pos;
     input = {};
     input.players[0].interact_pressed = true;
@@ -471,7 +488,11 @@ int RunHeadlessE2E() {
         return 1;
     }
 
-    std::cout << "[headless-e2e] PASS: Conca di Meridia 36x50 Overworld (6 districts), "
+    const eco::MemoryMetrics final_mem = world.GetMemoryMetrics();
+    std::cout << "[headless-e2e] PASS: Conca di Meridia 6 separate zones (26x36, resident "
+              << final_mem.total_resident_map_bytes << " B, saved "
+              << final_mem.saved_unloaded_bytes << " B, swaps "
+              << final_mem.zone_swaps_count << "), "
               << "3 side-scrolling structures, 6 physical monuments, 4-player drop-in, "
               << "16 collectibles, Dialogue History (" << world.story.History().size()
               << " entries), Clara recruitment & Epilogo verified.\n";
@@ -512,7 +533,7 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
         graphics_settings.monitor_index = opt.monitor_override;
     }
     if (opt.mute) {
-        graphics_settings.audio_volume_index = 0;
+        graphics_settings.audio_muted = true;
     }
     graphics_settings.initial_gpu_preference = graphics_settings.gpu_preference;
 
@@ -671,7 +692,7 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
                 in_gameplay_state = (sname == "OverworldState" || sname == "StructureState");
             }
             const bool allow_journal_open =
-                !paused && in_gameplay_state && !world.calibration_modal.is_open;
+                !paused && in_gameplay_state && !world.calibration_modal.is_open && !world.interlude.active;
             const bool journal_open =
                 paused ? journal.IsOpen() : journal.UpdateAndHandleInput(ctx, allow_journal_open);
 
@@ -705,7 +726,7 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
             // Salvataggio automatico in gameplay reale (mai durante --smoke-frames)
             const bool now_in_gameplay =
                 (active_state_name == "OverworldState" || active_state_name == "StructureState");
-            if (smoke_frames < 0 && now_in_gameplay) {
+            if (smoke_frames < 0 && now_in_gameplay && !world.interlude.active) {
                 const int cur_monuments = world.ActivatedMonumentsCount();
                 const int cur_relics = world.collectibles.CollectedCount();
                 if (!autosave_primed) {

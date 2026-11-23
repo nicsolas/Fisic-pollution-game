@@ -504,4 +504,62 @@ inline constexpr StructurePalette kPalGeothermalChamber{
     }
 }
 
+// =============================================================================
+// Token Semantici per le 6 Meccaniche Top-Down di Zona
+// =============================================================================
+// 0. Terrazze dell'Alba (Specchi, Fasci Solari, Piastre Fotosensibili, SolarGate)
+inline constexpr Color kSolarBeamCore{255, 248, 206, 245};
+inline constexpr Color kSolarBeamGlow{255, 206, 84, 175};
+inline constexpr Color kSolarPlateIdle{138, 118, 86, 255};
+inline constexpr Color kSolarPlateLit{255, 226, 116, 255};
+inline constexpr Color kMirrorSilver{228, 240, 248, 255};
+inline constexpr Color kSolarGateGold{244, 184, 72, 255};
+
+// 1. Quartiere dei Canali (Correnti d'Acqua, Chiuse e Leve Idrauliche)
+inline constexpr Color kCurrentFoam{172, 244, 255, 225};
+inline constexpr Color kCurrentArrow{118, 232, 255, 215};
+inline constexpr Color kSluiceOpen{72, 232, 198, 255};
+inline constexpr Color kSluiceClosed{232, 152, 68, 255};
+
+// 2. Altopiano dei Venti (Raffiche, Telegraphing, Monoliti Frangivento)
+inline constexpr Color kWindStreak{214, 240, 255, 185};
+inline constexpr Color kWindTelegraph{250, 212, 118, 190};
+inline constexpr Color kWindbreakShelter{104, 224, 210, 145};
+inline constexpr Color kWindMonolithStone{126, 146, 172, 255};
+
+// 3. Giardini Sospesi (Piastre di Risonanza Armonica, Ponti di Giada)
+inline constexpr Color kResonancePadIdle{78, 114, 96, 255};
+inline constexpr Color kResonancePadActive{96, 252, 202, 255};
+inline constexpr Color kJadeBridgeGlow{88, 246, 196, 235};
+
+// 4. Caldera delle Fumarole (Geyser Termici, Telegraphing, Valvole di Sfogo)
+inline constexpr Color kFumaroleDormant{84, 68, 66, 255};
+inline constexpr Color kFumaroleTelegraph{252, 178, 64, 235};
+inline constexpr Color kFumaroleErupt{255, 112, 54, 245};
+inline constexpr Color kFumaroleCalmed{94, 204, 198, 220};
+inline constexpr Color kValveCopper{204, 134, 74, 255};
+
+[[nodiscard]] inline Color ResonanceOrderColor(int sequence_order) noexcept {
+    switch (sequence_order & 3) {
+        case 0: return Color{96, 244, 188, 255};  // Nota I: Giada
+        case 1: return Color{112, 226, 252, 255}; // Nota II: Acquamarina
+        case 2: return Color{252, 224, 112, 255}; // Nota III: Polline d'oro
+        default: return Color{252, 148, 186, 255}; // Nota IV: Fior di loto
+    }
+}
+
+[[nodiscard]] inline Color SanctuarySealColor(int seal_index) noexcept {
+    switch (seal_index % 5) {
+        case 0: return kPalDawnTerraces.ambient_accent;    // Alba
+        case 1: return kPalCanalQuarter.ambient_accent;    // Canali
+        case 2: return kPalWindPlateau.ambient_accent;     // Venti
+        case 3: return kPalHangingGardens.ambient_accent;  // Giardini
+        default: return kPalFumaroleCaldera.ambient_accent; // Caldera
+    }
+}
+
+[[nodiscard]] inline Color ZoneAccentColor(eco::ZoneId zone) noexcept {
+    return GetDistrictPalette(zone).ambient_accent;
+}
+
 } // namespace eco::app::pal

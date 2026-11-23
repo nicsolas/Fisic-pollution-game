@@ -554,13 +554,13 @@ void TitleState::Draw() {
         labels = {
             "Riprendi da dove hai lasciato",
             "Nuova Partita (Ricomincia)",
-            "Impostazioni (Schermo, GPU & Audio) [O]",
+            "Impostazioni (Grafica, Ambiente & Audio) [O]",
             "Esci dal Gioco"
         };
     } else {
         labels = {
             "Inizia il Viaggio nella Conca",
-            "Impostazioni (Schermo, GPU & Audio) [O]",
+            "Impostazioni (Grafica, Ambiente & Audio) [O]",
             "Esci dal Gioco"
         };
     }

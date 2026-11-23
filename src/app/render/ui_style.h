@@ -23,7 +23,49 @@ void DrawProgressBar(Rectangle r, float ratio, Color fill_col, Color border_col)
 void DrawKeyBadge(const char* key_label, int x, int y, Color accent);
 void DrawDivider(int x, int y, int width, Color accent);
 void DrawTabBar(Rectangle area, const char* const* labels, int count, int active_index, Color accent);
+void DrawCategoryTabs(
+    Rectangle area,
+    const char* const* labels,
+    int count,
+    int active_index,
+    int hovered_index,
+    Color accent);
 void DrawScrollbar(Rectangle track, float scroll_ratio, float visible_ratio, Color accent);
+
+// Controlli dedicati al Menu di Pausa / Impostazioni (slider, toggle, selettori, pulsanti).
+[[nodiscard]] Rectangle SliderTrackRect(Rectangle row_rect) noexcept;
+void DrawSettingSlider(Rectangle track, float value01, Color accent, bool focused, bool hovered = false);
+void DrawSettingToggle(Rectangle pill, bool enabled, Color accent, bool focused, bool hovered = false);
+void DrawSliderRow(
+    Rectangle r,
+    const char* label,
+    float ratio,
+    const char* value_text,
+    Color accent,
+    bool focused,
+    bool hovered = false);
+void DrawToggleRow(
+    Rectangle r,
+    const char* label,
+    bool enabled,
+    const char* state_text,
+    Color accent,
+    bool focused,
+    bool hovered = false);
+void DrawChoiceRow(
+    Rectangle r,
+    const char* label,
+    const char* value_text,
+    Color accent,
+    bool focused,
+    bool hovered = false);
+void DrawActionButton(
+    Rectangle r,
+    const char* label,
+    Color accent,
+    bool focused,
+    bool hovered = false,
+    bool primary = false);
 
 // Glifo vettoriale per le 5 tipologie di reliquie (0=Stele, 1=Astrolabio, 2=Prisma, 3=Cilindro, 4=Seme Fossile).
 void DrawRelicGlyph(

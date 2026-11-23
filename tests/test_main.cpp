@@ -344,47 +344,48 @@ void TestGameStateManager() {
 }
 
 void TestTilemapMultiZoneAndStructures() {
-    const eco::Tilemap map = eco::Tilemap::CreateOverworldMap();
-    CHECK(map.Rows() == eco::Tilemap::kOverworldRows);
-    CHECK(map.Cols() == eco::Tilemap::kOverworldCols);
-    CHECK(map.Rows() == 36);
-    CHECK(map.Cols() == 50);
-
-    // Perimeter walls & OOB solidity
-    CHECK(map.GetTile(0, 0) == eco::TileId::Wall);
-    CHECK(map.GetTile(35, 49) == eco::TileId::Wall);
-    CHECK(map.IsSolid(-1, -1));
-    CHECK(map.IsSolid(36, 50));
-
-    // Verify all 6 districts are reachable via DistrictAtTile and have non-empty DistrictBounds
-    CHECK(eco::Tilemap::DistrictAtTile(30, 10) == eco::ZoneId::DawnTerraces);
-    CHECK(eco::Tilemap::DistrictAtTile(18, 10) == eco::ZoneId::CanalQuarter);
-    CHECK(eco::Tilemap::DistrictAtTile(5, 10) == eco::ZoneId::WindPlateau);
-    CHECK(eco::Tilemap::DistrictAtTile(18, 35) == eco::ZoneId::HangingGardens);
-    CHECK(eco::Tilemap::DistrictAtTile(5, 35) == eco::ZoneId::FumaroleCaldera);
-    CHECK(eco::Tilemap::DistrictAtTile(30, 35) == eco::ZoneId::HarmonySanctuary);
-
+    // Verifica tutte e 6 le mappe dedicate di zona (26x36)
     for (int z = 0; z < static_cast<int>(eco::ZoneId::Count); ++z) {
-        const eco::Rect b = map.DistrictBounds(static_cast<eco::ZoneId>(z));
-        CHECK(b.width > 200.0f && b.height > 200.0f);
-        CHECK(map.DistrictAt(b.Center()) == static_cast<eco::ZoneId>(z));
+        const auto zid = static_cast<eco::ZoneId>(z);
+        const eco::Tilemap map = eco::Tilemap::CreateZoneMap(zid);
+        CHECK(map.Rows() == eco::Tilemap::kZoneRows);
+        CHECK(map.Cols() == eco::Tilemap::kZoneCols);
+        CHECK(map.Rows() == 26);
+        CHECK(map.Cols() == 36);
+        CHECK(map.GetTile(0, 0) == eco::TileId::Wall);
+        CHECK(map.GetTile(25, 35) == eco::TileId::Wall);
+        CHECK(map.IsSolid(-1, -1));
+        CHECK(map.IsSolid(26, 36));
+        CHECK(!map.FindTiles(eco::TileId::ZoneGateway).empty());
+        CHECK(!eco::Tilemap::ZoneGateways(zid).empty());
     }
 
-    // Verify enriched TileIds exist & have right solidity
-    CHECK(!map.FindTiles(eco::TileId::StructurePortal).empty());
-    CHECK(!map.FindTiles(eco::TileId::HiddenBridge).empty());
-    CHECK(!map.FindTiles(eco::TileId::Water).empty());
-    CHECK(!map.FindTiles(eco::TileId::PavedPath).empty());
-    CHECK(!map.FindTiles(eco::TileId::SanctuaryFloor).empty());
-    CHECK(!map.FindTiles(eco::TileId::GardenFloor).empty());
-
-    for (const auto& w : map.FindTiles(eco::TileId::Water)) {
-        CHECK(map.IsSolid(w.row, w.col, false));
-        CHECK(map.IsSolid(w.row, w.col, true));
+    // Verifica nuovi TileId specifici per zona e loro solidita'
+    const eco::Tilemap dawn = eco::Tilemap::CreateZoneMap(eco::ZoneId::DawnTerraces);
+    CHECK(!dawn.FindTiles(eco::TileId::SolarGate).empty());
+    for (const auto& sg : dawn.FindTiles(eco::TileId::SolarGate)) {
+        CHECK(dawn.IsSolid(sg.row, sg.col, false, false, false));
+        CHECK(!dawn.IsSolid(sg.row, sg.col, false, true, false));
     }
-    for (const auto& br : map.FindTiles(eco::TileId::HiddenBridge)) {
-        CHECK(map.IsSolid(br.row, br.col, false));
-        CHECK(!map.IsSolid(br.row, br.col, true));
+
+    const eco::Tilemap canal = eco::Tilemap::CreateZoneMap(eco::ZoneId::CanalQuarter);
+    CHECK(!canal.FindTiles(eco::TileId::ShallowChannel).empty());
+    CHECK(!canal.FindTiles(eco::TileId::HiddenBridge).empty());
+    CHECK(!canal.FindTiles(eco::TileId::StructurePortal).empty());
+    for (const auto& br : canal.FindTiles(eco::TileId::HiddenBridge)) {
+        CHECK(canal.IsSolid(br.row, br.col, false));
+        CHECK(!canal.IsSolid(br.row, br.col, true));
+    }
+    for (const auto& sc : canal.FindTiles(eco::TileId::ShallowChannel)) {
+        CHECK(!canal.IsSolid(sc.row, sc.col, false));
+    }
+
+    const eco::Tilemap gardens = eco::Tilemap::CreateZoneMap(eco::ZoneId::HangingGardens);
+    CHECK(!gardens.FindTiles(eco::TileId::JadeBridge).empty());
+    CHECK(!gardens.FindTiles(eco::TileId::GardenFloor).empty());
+    for (const auto& jb : gardens.FindTiles(eco::TileId::JadeBridge)) {
+        CHECK(gardens.IsSolid(jb.row, jb.col, true, true, false));
+        CHECK(!gardens.IsSolid(jb.row, jb.col, false, false, true));
     }
 
     // Verify all 3 internal structures have valid dimensions and ExitPortal tiles
@@ -662,7 +663,7 @@ void TestStoryHistoryAndFullCampaign() {
     auto calibrate_clean = [&](eco::MachineType mt) {
         auto& m = world.GetMachine(mt);
         if (m.location == eco::LocationId::Overworld) {
-            world.current_mode = eco::GameMode::Overworld;
+            world.TeleportToZone(eco::WorldContext::MachineZone(mt));
         } else {
             world.EnterStructure(eco::StructureFromLocation(m.location));
         }
@@ -682,7 +683,8 @@ void TestStoryHistoryAndFullCampaign() {
     calibrate_clean(eco::MachineType::SolarArray);
 
     // Recruit Clara Sereni -> unlocks Ponte degli Archi
-    world.current_mode = eco::GameMode::Overworld;
+    world.TeleportToZone(eco::ZoneId::CanalQuarter);
+    p0 = world.players.GetPlayer(0);
     p0->pos = world.GetNpc(eco::NpcId::ClaraSereni).pos;
     {
         eco::AllPlayersInput in{};
@@ -731,6 +733,17 @@ void TestSaveAndLoadPersistence() {
     (void)src.collectibles.Collect(eco::CollectibleId::Dawn_BrassGnomon);
     (void)src.collectibles.Collect(eco::CollectibleId::Waters_JadeTuningFork);
     src.TeleportToZone(eco::ZoneId::HangingGardens);
+    src.zone_mechanics.solar_gate_open = true;
+    src.zone_mechanics.jade_bridge_unlocked = true;
+    if (!src.zone_mechanics.sluice_levers.empty()) {
+        src.zone_mechanics.sluice_levers[0].pulled = true;
+    }
+    if (!src.zone_mechanics.relief_valves.empty()) {
+        src.zone_mechanics.relief_valves[0].open = true;
+    }
+    if (!src.zone_mechanics.sanctuary_seals.empty()) {
+        src.zone_mechanics.sanctuary_seals[0].attuned = true;
+    }
     src.story.Observe(src.BuildStorySnapshot());
     while (src.story.HasActiveDialogue()) {
         src.story.AdvanceDialogue();
@@ -759,6 +772,11 @@ void TestSaveAndLoadPersistence() {
     CHECK(dst.collectibles.IsCollected(eco::CollectibleId::Dawn_BrassGnomon));
     CHECK(dst.collectibles.IsCollected(eco::CollectibleId::Waters_JadeTuningFork));
     CHECK(dst.story.History().size() == saved_hist_count);
+    CHECK(dst.zone_mechanics.solar_gate_open);
+    CHECK(dst.zone_mechanics.jade_bridge_unlocked);
+    CHECK(!dst.zone_mechanics.sluice_levers.empty() && dst.zone_mechanics.sluice_levers[0].pulled);
+    CHECK(!dst.zone_mechanics.relief_valves.empty() && dst.zone_mechanics.relief_valves[0].open);
+    CHECK(!dst.zone_mechanics.sanctuary_seals.empty() && dst.zone_mechanics.sanctuary_seals[0].attuned);
 
     // Also verify saving/loading inside an internal Structure
     src.EnterStructure(eco::StructureId::PendulumTower);
@@ -779,69 +797,38 @@ void TestSaveAndLoadPersistence() {
 void TestZoneBordersFlatMemoryAndGuidance() {
     eco::WorldContext world;
     world.EnsureInitialized();
-    const eco::Tilemap& ow = world.overworld.tilemap;
 
-    // 1. Flat contiguous uint8_t tilemap storage
-    const std::size_t expected_ow_bytes =
-        static_cast<std::size_t>(eco::Tilemap::kOverworldRows * eco::Tilemap::kOverworldCols);
-    CHECK(ow.RawData().size() == expected_ow_bytes);
-    CHECK(ow.MemoryBytes() >= expected_ow_bytes);
-    CHECK(ow.MemoryBytes() <= expected_ow_bytes * 2); // 1 byte/tile contiguous buffer
-    for (int s = 0; s < static_cast<int>(eco::StructureId::Count); ++s) {
-        const auto& smap = world.structure.tilemaps[static_cast<std::size_t>(s)];
-        const std::size_t sz = static_cast<std::size_t>(smap.Rows() * smap.Cols());
-        CHECK(smap.RawData().size() == sz);
-        CHECK(smap.MemoryBytes() == sz);
-    }
+    // 1. Ottimizzazione memoria reale: solo la zona attiva residente in RAM
+    const std::size_t expected_zone_bytes =
+        static_cast<std::size_t>(eco::Tilemap::kZoneRows * eco::Tilemap::kZoneCols);
+    const eco::MemoryMetrics mem0 = world.GetMemoryMetrics();
+    CHECK(mem0.active_zone_tilemap_bytes == expected_zone_bytes);
+    CHECK(mem0.active_structure_tilemap_bytes == 0);
+    CHECK(mem0.total_resident_map_bytes == expected_zone_bytes);
+    CHECK(mem0.saved_unloaded_bytes > expected_zone_bytes * 4);
+    CHECK(mem0.zone_swaps_count == 0);
 
-    // 2. Verify 5 DistrictGateways metadata and solid border walls at rows 11..12 and 23..24
-    CHECK(world.overworld.gateways.size() == eco::Tilemap::kOverworldGatewayCount);
-    for (const auto& gw : world.overworld.gateways) {
-        CHECK(gw.signpost_label != nullptr && std::string_view(gw.signpost_label).size() > 0);
-        CHECK(gw.reverse_label != nullptr && std::string_view(gw.reverse_label).size() > 0);
-        CHECK(IsPureAsciiPrintable(gw.signpost_label));
-        CHECK(IsPureAsciiPrintable(gw.reverse_label));
-        if (gw.IsHorizontalWall()) {
-            CHECK(!gw.requires_bridge_unlock);
-            CHECK(gw.tile_max.col - gw.tile_min.col == 2); // 3 tiles wide
-            for (int r = gw.tile_min.row; r <= gw.tile_max.row; ++r) {
-                for (int c = gw.tile_min.col; c <= gw.tile_max.col; ++c) {
-                    CHECK(ow.GetTile(r, c) == eco::TileId::PavedPath);
-                    CHECK(!ow.IsSolid(r, c, false));
-                }
-            }
-        } else {
-            CHECK(gw.requires_bridge_unlock);
-            CHECK(gw.tile_min.col == eco::Tilemap::kBridgeDividerCol);
-            CHECK(gw.tile_max.row - gw.tile_min.row == 2); // 3 tiles tall
-            for (int r = gw.tile_min.row; r <= gw.tile_max.row; ++r) {
-                CHECK(ow.GetTile(r, gw.tile_min.col) == eco::TileId::HiddenBridge);
-                CHECK(ow.IsSolid(r, gw.tile_min.col, false));
-                CHECK(!ow.IsSolid(r, gw.tile_min.col, true));
-            }
-        }
-    }
+    // Entrando in una struttura, l'overworld viene scaricato e resta in RAM solo la struttura
+    world.EnterStructure(eco::StructureId::HypogeanCisterns);
+    const eco::MemoryMetrics mem_struct = world.GetMemoryMetrics();
+    CHECK(mem_struct.active_zone_tilemap_bytes == 0);
+    CHECK(mem_struct.active_structure_tilemap_bytes > 0);
+    CHECK(mem_struct.total_resident_map_bytes == mem_struct.active_structure_tilemap_bytes);
 
-    // Check every non-gateway cell on border rows 11..12 and 23..24 is solid
-    for (int r : {11, 12, 23, 24}) {
-        for (int c = 1; c < ow.Cols() - 1; ++c) {
-            const bool in_west_gate = (c >= 10 && c <= 12);
-            const bool in_east_gate = (c >= 35 && c <= 37);
-            if (!in_west_gate && !in_east_gate) {
-                CHECK(ow.IsSolid(r, c, true));
-            }
-        }
-    }
+    world.ExitToOverworld();
+    const eco::MemoryMetrics mem_back = world.GetMemoryMetrics();
+    CHECK(mem_back.active_zone_tilemap_bytes == expected_zone_bytes);
+    CHECK(mem_back.active_structure_tilemap_bytes == 0);
 
-    // 3. BFS reachability from initial spawn (both bridge locked and unlocked)
-    auto run_bfs = [&](bool bridge_unlocked) -> std::vector<bool> {
-        const int rows = ow.Rows();
-        const int cols = ow.Cols();
+    // 2. BFS Reachability per ciascuna delle 6 zone separate (entita', portali, varchi, reliquie)
+    auto run_bfs = [](const eco::Tilemap& map, eco::Vec2 start_pos,
+                      bool bridge_unlocked, bool solar_open, bool jade_open) -> std::vector<bool> {
+        const int rows = map.Rows();
+        const int cols = map.Cols();
         std::vector<bool> visited(static_cast<std::size_t>(rows * cols), false);
-        const eco::TileCoord start = ow.WorldToTile(
-            {world.overworld.spawn_point.x + eco::kPlayerWidth * 0.5f,
-             world.overworld.spawn_point.y + eco::kPlayerHeight * 0.5f});
-        if (!ow.InBounds(start.row, start.col) || ow.IsSolid(start.row, start.col, bridge_unlocked)) {
+        const eco::TileCoord start = map.WorldToTile(start_pos);
+        if (!map.InBounds(start.row, start.col) ||
+            map.IsSolid(start.row, start.col, bridge_unlocked, solar_open, jade_open)) {
             return visited;
         }
         std::queue<eco::TileCoord> q;
@@ -855,7 +842,8 @@ void TestZoneBordersFlatMemoryAndGuidance() {
             for (int d = 0; d < 4; ++d) {
                 const int nr = cur.row + kDr[d];
                 const int nc = cur.col + kDc[d];
-                if (!ow.InBounds(nr, nc) || ow.IsSolid(nr, nc, bridge_unlocked)) {
+                if (!map.InBounds(nr, nc) ||
+                    map.IsSolid(nr, nc, bridge_unlocked, solar_open, jade_open)) {
                     continue;
                 }
                 const std::size_t idx = static_cast<std::size_t>(nr * cols + nc);
@@ -868,140 +856,289 @@ void TestZoneBordersFlatMemoryAndGuidance() {
         return visited;
     };
 
-    auto is_reached = [&](const std::vector<bool>& vis, eco::Vec2 pos) -> bool {
-        const eco::TileCoord tc = ow.WorldToTile(pos);
-        if (!ow.InBounds(tc.row, tc.col)) {
+    auto is_reached = [](const eco::Tilemap& map, const std::vector<bool>& vis, eco::Vec2 pos) -> bool {
+        const eco::TileCoord tc = map.WorldToTile(pos);
+        if (!map.InBounds(tc.row, tc.col)) {
             return false;
         }
-        return vis[static_cast<std::size_t>(tc.row * ow.Cols() + tc.col)];
+        return vis[static_cast<std::size_t>(tc.row * map.Cols() + tc.col)];
     };
 
-    const std::vector<bool> vis_locked = run_bfs(false);
-    // West side reachable, East side blocked when bridge locked
-    CHECK(is_reached(vis_locked, world.GetMachine(eco::MachineType::SolarArray).pos));
-    CHECK(is_reached(vis_locked, world.GetNpc(eco::NpcId::ClaraSereni).pos));
-    CHECK(is_reached(vis_locked, world.overworld.FindPortal(eco::StructureId::HypogeanCisterns)->world_center));
-    CHECK(is_reached(vis_locked, world.overworld.FindPortal(eco::StructureId::PendulumTower)->world_center));
-    CHECK(!is_reached(vis_locked, world.GetMachine(eco::MachineType::HarmonicResonator).pos));
-    CHECK(!is_reached(vis_locked, world.GetMachine(eco::MachineType::CentralAstrolabe).pos));
+    for (int z = 0; z < static_cast<int>(eco::ZoneId::Count); ++z) {
+        const auto zid = static_cast<eco::ZoneId>(z);
+        world.TeleportToZone(zid);
+        const eco::Tilemap& map = world.overworld.tilemap;
+        const eco::TileCoord sp_tile = eco::Tilemap::DefaultZoneSpawnTile(zid);
+        const std::vector<bool> vis_all = run_bfs(map, map.TileCenter(sp_tile.row, sp_tile.col), true, true, true);
 
-    const std::vector<bool> vis_unlocked = run_bfs(true);
-    // All 6 districts reached when bridge unlocked
-    std::array<bool, static_cast<std::size_t>(eco::ZoneId::Count)> zones_reached{};
-    for (int r = 0; r < ow.Rows(); ++r) {
-        for (int c = 0; c < ow.Cols(); ++c) {
-            if (vis_unlocked[static_cast<std::size_t>(r * ow.Cols() + c)]) {
-                zones_reached[static_cast<std::size_t>(eco::Tilemap::DistrictAtTile(r, c))] = true;
+        // Tutti i varchi della zona devono essere raggiungibili
+        CHECK(!world.overworld.active_gateways.empty());
+        for (const auto& gw : world.overworld.active_gateways) {
+            CHECK(gw.signpost_label != nullptr && std::string_view(gw.signpost_label).size() > 0);
+            CHECK(IsPureAsciiPrintable(gw.signpost_label));
+            CHECK(is_reached(map, vis_all, gw.world_center));
+        }
+
+        // Tutti i monumenti, NPC, portali e reliquie di questa zona devono essere raggiungibili
+        for (const eco::Machine* m : world.MachinesInCurrentScene()) {
+            CHECK(is_reached(map, vis_all, m->pos));
+        }
+        for (const eco::WorldNpc* npc : world.NpcsInCurrentScene()) {
+            CHECK(is_reached(map, vis_all, npc->pos));
+        }
+        for (const auto& portal : world.overworld.portals) {
+            if (portal.source_zone == zid) {
+                CHECK(is_reached(map, vis_all, portal.world_center));
             }
         }
-    }
-    for (bool reached : zones_reached) {
-        CHECK(reached);
-    }
-
-    // All Overworld monuments, NPCs, portals, and collectibles reachable
-    for (const auto& m : world.machines) {
-        if (m.location == eco::LocationId::Overworld) {
-            CHECK(is_reached(vis_unlocked, m.pos));
-        } else {
-            const auto& smap = world.structure.tilemaps[static_cast<std::size_t>(
-                eco::StructureFromLocation(m.location))];
-            const eco::TileCoord tc = smap.WorldToTile(m.pos);
-            CHECK(smap.InBounds(tc.row, tc.col) && !smap.IsSolid(tc.row, tc.col, true));
-        }
-    }
-    for (const auto& npc : world.npcs) {
-        if (npc.location == eco::LocationId::Overworld) {
-            CHECK(is_reached(vis_unlocked, npc.pos));
-        } else {
-            const auto& smap = world.structure.tilemaps[static_cast<std::size_t>(
-                eco::StructureFromLocation(npc.location))];
-            const eco::TileCoord tc = smap.WorldToTile(npc.pos);
-            CHECK(smap.InBounds(tc.row, tc.col) && !smap.IsSolid(tc.row, tc.col, true));
-        }
-    }
-    for (const auto& portal : world.overworld.portals) {
-        CHECK(is_reached(vis_unlocked, portal.world_center));
-        CHECK(is_reached(vis_unlocked, {portal.exit_spawn.x + eco::kPlayerWidth * 0.5f,
-                                        portal.exit_spawn.y + eco::kPlayerHeight * 0.5f}));
-    }
-    for (const auto& item : world.collectibles.Items()) {
-        if (item.location == eco::LocationId::Overworld) {
-            CHECK(is_reached(vis_unlocked, item.pos));
-        } else {
-            const auto& smap = world.structure.tilemaps[static_cast<std::size_t>(
-                eco::StructureFromLocation(item.location))];
-            const eco::TileCoord tc = smap.WorldToTile(item.pos);
-            CHECK(smap.InBounds(tc.row, tc.col) && !smap.IsSolid(tc.row, tc.col, true));
+        for (const eco::CollectibleItem* item : world.CollectiblesInCurrentScene()) {
+            CHECK(is_reached(map, vis_all, item->pos));
         }
     }
 
-    // 4. CurrentObjectiveTarget() step-by-step guidance & zero-alloc scene helpers
-    int m_count = 0;
-    world.ForEachMachineInScene([&](const eco::Machine&) { ++m_count; });
-    CHECK(m_count == static_cast<int>(world.MachinesInCurrentScene().size()));
+    // 3. Reachability interna delle 3 strutture
+    for (int s = 0; s < static_cast<int>(eco::StructureId::Count); ++s) {
+        const auto sid = static_cast<eco::StructureId>(s);
+        world.EnterStructure(sid);
+        const eco::Tilemap& smap = world.structure.tilemap;
+        const eco::Vec2 sp = {
+            world.structure.spawn_point.x + eco::kPlayerWidth * 0.5f,
+            world.structure.spawn_point.y + eco::kPlayerHeight * 0.5f
+        };
+        const std::vector<bool> vis = run_bfs(smap, sp, true, true, true);
+        for (const eco::Machine* m : world.MachinesInCurrentScene()) {
+            CHECK(is_reached(smap, vis, m->pos));
+        }
+    }
 
-    int n_count = 0;
-    world.ForEachNpcInScene([&](const eco::WorldNpc&) { ++n_count; });
-    CHECK(n_count == static_cast<int>(world.NpcsInCurrentScene().size()));
-
+    // 4. CurrentObjectiveTarget() guida verso il varco se il target e' in altra zona
+    world.Reset();
+    world.EnsureInitialized();
     eco::ObjectiveTarget t = world.CurrentObjectiveTarget();
-    CHECK(t.valid);
-    CHECK(t.location == eco::LocationId::Overworld);
-    CHECK(t.zone == eco::ZoneId::DawnTerraces);
-    CHECK(!t.is_portal_step);
+    CHECK(t.valid && !t.is_portal_step && t.zone == eco::ZoneId::DawnTerraces);
     CHECK(t.world_pos == world.GetMachine(eco::MachineType::SolarArray).pos);
 
     world.GetMachine(eco::MachineType::SolarArray).state = eco::MachineState::CleanActive;
     t = world.CurrentObjectiveTarget();
-    CHECK(t.valid);
-    CHECK(t.is_portal_step);
-    CHECK(t.zone == eco::ZoneId::CanalQuarter);
-    CHECK(t.world_pos == world.overworld.FindPortal(eco::StructureId::HypogeanCisterns)->world_center);
+    CHECK(t.valid && t.is_portal_step && t.zone == eco::ZoneId::CanalQuarter);
 
-    // Entering the right structure points directly to HydroTurbine
     world.EnterStructure(eco::StructureId::HypogeanCisterns);
     t = world.CurrentObjectiveTarget();
-    CHECK(t.valid);
-    CHECK(!t.is_portal_step);
-    CHECK(t.location == eco::LocationId::HypogeanCisterns);
-    CHECK(t.world_pos == world.GetMachine(eco::MachineType::HydroTurbine).pos);
+    CHECK(t.valid && !t.is_portal_step && t.location == eco::LocationId::HypogeanCisterns);
 
-    // Entering the wrong structure points to ExitPortal
     world.EnterStructure(eco::StructureId::PendulumTower);
     t = world.CurrentObjectiveTarget();
-    CHECK(t.valid);
-    CHECK(t.is_portal_step);
-    CHECK(t.location == eco::LocationId::PendulumTower);
+    CHECK(t.valid && t.is_portal_step && t.location == eco::LocationId::PendulumTower);
+}
 
-    // Complete Hydro & Pendulum -> guides to Clara Sereni while bridge is locked
-    world.ExitToOverworld();
-    world.GetMachine(eco::MachineType::HydroTurbine).state = eco::MachineState::CleanActive;
-    t = world.CurrentObjectiveTarget();
-    CHECK(t.valid && t.is_portal_step && t.zone == eco::ZoneId::WindPlateau);
+void TestSixZoneTopDownMechanics() {
+    eco::WorldContext world;
+    world.EnsureInitialized();
+    world.overworld.OnEnter(world.players, false, false);
 
-    world.GetMachine(eco::MachineType::PendulumRegulator).state = eco::MachineState::CleanActive;
-    t = world.CurrentObjectiveTarget();
-    CHECK(t.valid && !t.is_portal_step);
-    CHECK(t.world_pos == world.GetNpc(eco::NpcId::ClaraSereni).pos);
+    // 1. Terrazze dell'Alba: Specchi Solari -> Fasci -> Piastre Fotosensibili -> SolarGate
+    CHECK(world.current_zone == eco::ZoneId::DawnTerraces);
+    CHECK(!world.zone_mechanics.solar_gate_open);
+    CHECK(!world.zone_mechanics.solar_beams.empty());
+    // Orienta specchio 0 a Sud (1), specchio 1 a Est (0), specchio 2 prima a Nord (3) poi a Sud (1)
+    auto rotate_mirror_to = [&](int mirror_idx, int target_dir) {
+        auto* p0 = world.players.GetPlayer(0);
+        p0->pos = world.zone_mechanics.solar_mirrors[static_cast<std::size_t>(mirror_idx)].pos;
+        for (int guard = 0; guard < 4; ++guard) {
+            if (world.zone_mechanics.solar_mirrors[static_cast<std::size_t>(mirror_idx)].dir_index == target_dir) {
+                break;
+            }
+            eco::AllPlayersInput in{};
+            in.players[0].interact_pressed = true;
+            const auto res = world.StepWorld(in, eco::kFixedDt);
+            CHECK(res.mechanics_events.mirror_rotated);
+        }
+        CHECK(world.zone_mechanics.solar_mirrors[static_cast<std::size_t>(mirror_idx)].dir_index == target_dir);
+    };
+    rotate_mirror_to(0, 1); // Sud -> colpisce specchio 1
+    rotate_mirror_to(1, 0); // Est -> colpisce specchio 2
+    rotate_mirror_to(2, 3); // Nord -> carica piastra 0
+    CHECK(world.zone_mechanics.solar_plates[0].charge >= 0.99f);
+    rotate_mirror_to(2, 1); // Sud -> carica piastra 1 e apre SolarGate!
+    CHECK(world.zone_mechanics.solar_plates[1].charge >= 0.99f);
+    CHECK(world.zone_mechanics.solar_gate_open);
 
-    // Recruit Clara -> guides to HarmonicResonator -> GeothermalChamber -> CentralAstrolabe -> Done
-    world.ecosystem.SetArchitectRecruited(true);
-    world.GetNpc(eco::NpcId::ClaraSereni).recruited = true;
-    t = world.CurrentObjectiveTarget();
-    CHECK(t.valid && !t.is_portal_step && t.zone == eco::ZoneId::HangingGardens);
+    // 2. Quartiere dei Canali: Correnti d'acqua fisiche + Leve Chiuse
+    world.TeleportToZone(eco::ZoneId::CanalQuarter);
+    auto* p0 = world.players.GetPlayer(0);
+    p0->pos = {
+        world.zone_mechanics.water_currents[0].bounds.Center().x - eco::kPlayerWidth * 0.5f,
+        world.zone_mechanics.water_currents[0].bounds.Center().y - eco::kPlayerHeight * 0.5f
+    };
+    const float x_before_current = p0->pos.x;
+    {
+        eco::AllPlayersInput in{};
+        for (int i = 0; i < 10; ++i) {
+            (void)world.StepWorld(in, eco::kFixedDt);
+        }
+    }
+    CHECK(p0->pos.x < x_before_current - 10.0f); // spinto dalla corrente verso Ovest!
+    // Tira la leva 0 -> disattiva corrente 0
+    p0->pos = world.zone_mechanics.sluice_levers[0].pos;
+    {
+        eco::AllPlayersInput in{};
+        in.players[0].interact_pressed = true;
+        const auto res = world.StepWorld(in, eco::kFixedDt);
+        CHECK(res.mechanics_events.sluice_toggled);
+    }
+    CHECK(world.zone_mechanics.sluice_levers[0].pulled);
+    CHECK(!world.zone_mechanics.water_currents[0].active);
 
-    world.GetMachine(eco::MachineType::HarmonicResonator).state = eco::MachineState::CleanActive;
-    t = world.CurrentObjectiveTarget();
-    CHECK(t.valid && t.is_portal_step && t.zone == eco::ZoneId::FumaroleCaldera);
+    // 3. Altopiano dei Venti: Raffiche cicliche & riparo dietro Monoliti Frangivento
+    world.TeleportToZone(eco::ZoneId::WindPlateau);
+    p0 = world.players.GetPlayer(0);
+    // Mettiamo il player allo scoperto sul viale centrale e portiamo il ciclo in raffica attiva
+    p0->pos = world.overworld.tilemap.TileCenter(20, 17);
+    world.zone_mechanics.wind.cycle_timer = 4.2f;
+    const float x_exposed_before = p0->pos.x;
+    {
+        eco::AllPlayersInput in{};
+        for (int i = 0; i < 12; ++i) {
+            (void)world.StepWorld(in, eco::kFixedDt);
+        }
+    }
+    CHECK(world.zone_mechanics.wind.gust_active);
+    CHECK(!world.zone_mechanics.wind.player_sheltered);
+    CHECK(p0->pos.x < x_exposed_before - 10.0f); // spinto dal vento!
+    // Ripariamoci sottovento dietro il monolite 0 (wind_dir punta a Ovest -> ovest del monolite!)
+    const auto& mono0 = world.zone_mechanics.windbreaks[0];
+    p0->pos = {
+        mono0.center.x - 64.0f - eco::kPlayerWidth * 0.5f,
+        mono0.center.y - eco::kPlayerHeight * 0.5f
+    };
+    world.zone_mechanics.wind.cycle_timer = 4.2f;
+    const float x_sheltered_before = p0->pos.x;
+    {
+        eco::AllPlayersInput in{};
+        for (int i = 0; i < 10; ++i) {
+            (void)world.StepWorld(in, eco::kFixedDt);
+        }
+    }
+    CHECK(world.zone_mechanics.wind.player_sheltered);
+    CHECK_NEAR(p0->pos.x, x_sheltered_before, 1.0f); // protetto dal monolite!
 
-    world.GetMachine(eco::MachineType::ThermalExchanger).state = eco::MachineState::CleanActive;
-    t = world.CurrentObjectiveTarget();
-    CHECK(t.valid && !t.is_portal_step && t.zone == eco::ZoneId::HarmonySanctuary);
+    // 4. Giardini Sospesi: Piastre di Risonanza Armonica -> Ponte di Giada
+    world.TeleportToZone(eco::ZoneId::HangingGardens);
+    p0 = world.players.GetPlayer(0);
+    CHECK(!world.zone_mechanics.jade_bridge_unlocked);
+    // Passo errato (pad 2 per primo) -> resonance_failed
+    p0->pos = {
+        world.zone_mechanics.resonance_pads[2].pos.x - eco::kPlayerWidth * 0.5f,
+        world.zone_mechanics.resonance_pads[2].pos.y - eco::kPlayerHeight * 0.5f
+    };
+    {
+        eco::AllPlayersInput in{};
+        const auto res = world.StepWorld(in, eco::kFixedDt);
+        CHECK(res.mechanics_events.resonance_failed);
+        CHECK(world.zone_mechanics.resonance_next_order == 0);
+    }
+    // Sequenza corretta 0 -> 1 -> 2 -> 3
+    for (int step = 0; step < 4; ++step) {
+        const auto& pad = world.zone_mechanics.resonance_pads[static_cast<std::size_t>(step)];
+        p0->pos = {pad.pos.x - eco::kPlayerWidth * 0.5f, pad.pos.y - eco::kPlayerHeight * 0.5f};
+        eco::AllPlayersInput in{};
+        const auto res = world.StepWorld(in, eco::kFixedDt);
+        CHECK(res.mechanics_events.resonance_pad_hit);
+        if (step == 3) {
+            CHECK(res.mechanics_events.resonance_solved);
+        }
+    }
+    CHECK(world.zone_mechanics.jade_bridge_unlocked);
 
-    world.GetMachine(eco::MachineType::CentralAstrolabe).state = eco::MachineState::CleanActive;
-    t = world.CurrentObjectiveTarget();
-    CHECK(!t.valid);
+    // 5. Caldera delle Fumarole: Geyser eruttivi + Valvole di Sfogo
+    world.TeleportToZone(eco::ZoneId::FumaroleCaldera);
+    p0 = world.players.GetPlayer(0);
+    // Porta sim_time in fase Erupting per geyser 0 (cycle_offset=0, period=4.6 -> erupting in 3.1..4.6)
+    world.sim_time = 3.5f;
+    p0->pos = {
+        world.zone_mechanics.geysers[0].pos.x + 8.0f - eco::kPlayerWidth * 0.5f,
+        world.zone_mechanics.geysers[0].pos.y - eco::kPlayerHeight * 0.5f
+    };
+    {
+        eco::AllPlayersInput in{};
+        const auto res = world.StepWorld(in, eco::kFixedDt);
+        CHECK(world.zone_mechanics.geysers[0].phase == eco::GeyserPhase::Erupting);
+        CHECK(res.mechanics_events.geyser_pushed_player);
+    }
+    // Apri valvola 0 -> calma il gruppo 0
+    p0->pos = world.zone_mechanics.relief_valves[0].pos;
+    {
+        eco::AllPlayersInput in{};
+        in.players[0].interact_pressed = true;
+        const auto res = world.StepWorld(in, eco::kFixedDt);
+        CHECK(res.mechanics_events.valve_opened);
+    }
+    CHECK(world.zone_mechanics.relief_valves[0].open);
+    CHECK(world.zone_mechanics.geysers[0].phase == eco::GeyserPhase::Calmed);
+
+    // 6. Santuario dell'Armonia: 5 Sigilli Elementali
+    world.TeleportToZone(eco::ZoneId::HarmonySanctuary);
+    p0 = world.players.GetPlayer(0);
+    CHECK(world.zone_mechanics.AttunedSealsCount() == 0);
+    for (const auto& seal : world.zone_mechanics.sanctuary_seals) {
+        p0->pos = {seal.pos.x - eco::kPlayerWidth * 0.5f, seal.pos.y - eco::kPlayerHeight * 0.5f};
+        eco::AllPlayersInput in{};
+        const auto res = world.StepWorld(in, eco::kFixedDt);
+        CHECK(res.mechanics_events.sanctuary_seal_attuned);
+    }
+    CHECK(world.zone_mechanics.AllSealsAttuned());
+}
+
+void TestZoneInterludesAndMemorySwap() {
+    eco::WorldContext world;
+    world.EnsureInitialized();
+    world.overworld.OnEnter(world.players, false, false);
+    CHECK(world.current_zone == eco::ZoneId::DawnTerraces);
+    CHECK(!world.IsInterludeActive());
+
+    // Porta il player sul varco Nord di DawnTerraces -> attiva intramezzo verso CanalQuarter
+    world.overworld.gateway_cooldown_timer = 0.0f;
+    world.overworld.gateway_reentry_locked = false;
+    auto* p0 = world.players.GetPlayer(0);
+    const auto& north_gw = world.overworld.active_gateways[0];
+    p0->pos = {
+        north_gw.world_center.x - eco::kPlayerWidth * 0.5f,
+        north_gw.world_center.y - eco::kPlayerHeight * 0.5f
+    };
+
+    eco::AllPlayersInput in{};
+    const auto start_res = world.StepWorld(in, eco::kFixedDt);
+    CHECK(start_res.interlude_started);
+    CHECK(world.IsInterludeActive());
+    CHECK(world.interlude.from_zone == eco::ZoneId::DawnTerraces);
+    CHECK(world.interlude.to_zone == eco::ZoneId::CanalQuarter);
+    CHECK(!world.interlude.swap_committed);
+
+    // Avanza fino al completamento dell'intramezzo: verifica swap memoria e cambio zona
+    bool saw_zone_changed = false;
+    bool saw_finished = false;
+    for (int i = 0; i < 200 && world.IsInterludeActive(); ++i) {
+        const auto r = world.StepWorld(in, eco::kFixedDt);
+        if (r.zone_changed) {
+            saw_zone_changed = true;
+        }
+        if (r.interlude_finished) {
+            saw_finished = true;
+        }
+    }
+    CHECK(saw_zone_changed);
+    CHECK(saw_finished);
+    CHECK(!world.IsInterludeActive());
+    CHECK(world.current_zone == eco::ZoneId::CanalQuarter);
+    CHECK(world.overworld.zone_swaps_count >= 1);
+
+    // Verifica SkipZoneInterlude() immediato
+    world.BeginZoneInterlude(eco::ZoneId::WindPlateau, {22, 17});
+    CHECK(world.IsInterludeActive());
+    world.SkipZoneInterlude();
+    CHECK(!world.IsInterludeActive());
+    CHECK(world.current_zone == eco::ZoneId::WindPlateau);
+    CHECK(world.overworld.zone_swaps_count >= 2);
 }
 
 } // namespace
@@ -1020,6 +1157,8 @@ int main() {
     TestStoryHistoryAndFullCampaign();
     TestSaveAndLoadPersistence();
     TestZoneBordersFlatMemoryAndGuidance();
+    TestSixZoneTopDownMechanics();
+    TestZoneInterludesAndMemorySwap();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test check(s) failed.\n";

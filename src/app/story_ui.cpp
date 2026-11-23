@@ -142,6 +142,21 @@ namespace {
     if (world.simulation_completed) {
         return {"Conca di Meridia risvegliata", "Esplora i distretti o apri [H] Diario / [J] Codex"};
     }
+    if (world.current_mode == eco::GameMode::Structure) {
+        if (world.GetMachine(eco::MachineType::SolarArray).state == eco::MachineState::Broken) {
+            return {"Esci verso Meridia", "Torna all'Uscita sulla sinistra e raggiungi prima l'Eliostato Solare"};
+        }
+        if (world.active_structure != eco::StructureId::HypogeanCisterns &&
+            world.GetMachine(eco::MachineType::SolarArray).state != eco::MachineState::Broken &&
+            world.GetMachine(eco::MachineType::HydroTurbine).state == eco::MachineState::Broken) {
+            return {"Esci verso Meridia", "Usa l'Uscita e raggiungi le Cisterne Ipogee"};
+        }
+        if (world.active_structure != eco::StructureId::PendulumTower &&
+            world.GetMachine(eco::MachineType::HydroTurbine).state != eco::MachineState::Broken &&
+            world.GetMachine(eco::MachineType::PendulumRegulator).state == eco::MachineState::Broken) {
+            return {"Esci verso Meridia", "Usa l'Uscita e raggiungi la Torre del Pendolo"};
+        }
+    }
     const auto& solar = world.GetMachine(eco::MachineType::SolarArray);
     if (!world.last_scan.active && solar.state == eco::MachineState::Broken) {
         return {"Misura l'Eliostato Solare", "Premi [F] vicino al monumento nelle Terrazze dell'Alba"};
@@ -156,6 +171,13 @@ namespace {
         return {"Riattiva le Cisterne Ipogee", "Entra nel portale delle Cisterne e calibra la Turbina"};
     }
     if (world.GetMachine(eco::MachineType::PendulumRegulator).state == eco::MachineState::Broken) {
+        if (world.current_mode == eco::GameMode::Structure &&
+            world.active_structure == eco::StructureId::PendulumTower) {
+            return {
+                "Calibra il Pendolo Isochronos",
+                "Vai a Destra e salta sul gradino centrale: il Pendolo e' sulla galleria davanti a te"
+            };
+        }
         return {"Regola il Pendolo Isochronos", "Sali sull'Altopiano dei Venti ed entra nella Torre del Pendolo"};
     }
     if (world.GetMachine(eco::MachineType::HarmonicResonator).state == eco::MachineState::Broken) {
@@ -449,7 +471,7 @@ void DrawStoryLayer(eco::WorldContext& world) {
     const float elapsed = std::max(0.0f, story.LineElapsed());
     const auto visible_chars = std::min<std::size_t>(
         line->text.size(),
-        static_cast<std::size_t>(elapsed * 58.0f) + 1);
+        static_cast<std::size_t>(elapsed * story.TypewriterCharactersPerSecond()) + 1);
     const auto wrapped = WrapTextToWidth(line->text, static_cast<int>(dlg_box.width) - 46, 16);
 
     std::size_t char_budget = visible_chars;

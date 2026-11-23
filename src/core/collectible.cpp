@@ -42,30 +42,30 @@ void CollectibleRegistry::ResetDefault() {
     items_.clear();
     items_.reserve(static_cast<std::size_t>(kTotalCollectibles));
 
-    // Era I - Alba delle Ombre (4 reliquie)
+    // Era I - Alba delle Ombre (4 reliquie — coordinate locali nelle zone 26x36)
     items_.push_back(MakeRelic(
         CollectibleId::Dawn_BrassGnomon, CollectibleEra::Era1_Dawn, CollectibleKind::Astrolabe,
-        LocationId::Overworld, ZoneId::DawnTerraces, 26, 18));
+        LocationId::Overworld, ZoneId::DawnTerraces, 19, 9));
     items_.push_back(MakeRelic(
         CollectibleId::Dawn_FirstMeasureStele, CollectibleEra::Era1_Dawn, CollectibleKind::Stele,
-        LocationId::Overworld, ZoneId::DawnTerraces, 33, 4));
+        LocationId::Overworld, ZoneId::DawnTerraces, 13, 31));
     items_.push_back(MakeRelic(
         CollectibleId::Dawn_SolsticeCylinder, CollectibleEra::Era1_Dawn, CollectibleKind::Cylinder,
-        LocationId::Overworld, ZoneId::WindPlateau, 8, 20));
+        LocationId::Overworld, ZoneId::WindPlateau, 12, 30));
     items_.push_back(MakeRelic(
         CollectibleId::Dawn_WhiteOliveSeed, CollectibleEra::Era1_Dawn, CollectibleKind::FossilSeed,
-        LocationId::Overworld, ZoneId::CanalQuarter, 21, 4));
+        LocationId::Overworld, ZoneId::CanalQuarter, 21, 5));
 
     // Era II - Secolo delle Acque e del Suono (4 reliquie)
     items_.push_back(MakeRelic(
         CollectibleId::Waters_HydraulicDiary, CollectibleEra::Era2_WatersAndSound, CollectibleKind::Cylinder,
-        LocationId::Overworld, ZoneId::CanalQuarter, 14, 15));
+        LocationId::Overworld, ZoneId::CanalQuarter, 6, 28));
     items_.push_back(MakeRelic(
         CollectibleId::Waters_SluiceStele, CollectibleEra::Era2_WatersAndSound, CollectibleKind::Stele,
         LocationId::HypogeanCisterns, ZoneId::CanalQuarter, 9, 10));
     items_.push_back(MakeRelic(
         CollectibleId::Waters_JadeTuningFork, CollectibleEra::Era2_WatersAndSound, CollectibleKind::Prism,
-        LocationId::Overworld, ZoneId::HangingGardens, 14, 44));
+        LocationId::Overworld, ZoneId::HangingGardens, 6, 30));
     items_.push_back(MakeRelic(
         CollectibleId::Waters_ThreadChronometer, CollectibleEra::Era2_WatersAndSound, CollectibleKind::Astrolabe,
         LocationId::PendulumTower, ZoneId::WindPlateau, 5, 5));
@@ -73,13 +73,13 @@ void CollectibleRegistry::ResetDefault() {
     // Era III - Inverno di Pece (4 reliquie)
     items_.push_back(MakeRelic(
         CollectibleId::Pitch_SchismMinutes, CollectibleEra::Era3_PitchWinter, CollectibleKind::Cylinder,
-        LocationId::Overworld, ZoneId::FumaroleCaldera, 4, 45));
+        LocationId::Overworld, ZoneId::FumaroleCaldera, 10, 30));
     items_.push_back(MakeRelic(
         CollectibleId::Pitch_EmberStele, CollectibleEra::Era3_PitchWinter, CollectibleKind::Stele,
         LocationId::GeothermalChamber, ZoneId::FumaroleCaldera, 13, 29));
     items_.push_back(MakeRelic(
         CollectibleId::Pitch_CharredSeed, CollectibleEra::Era3_PitchWinter, CollectibleKind::FossilSeed,
-        LocationId::Overworld, ZoneId::HangingGardens, 22, 42));
+        LocationId::Overworld, ZoneId::HangingGardens, 20, 4));
     items_.push_back(MakeRelic(
         CollectibleId::Pitch_BasaltThermometer, CollectibleEra::Era3_PitchWinter, CollectibleKind::Astrolabe,
         LocationId::GeothermalChamber, ZoneId::FumaroleCaldera, 5, 6));
@@ -93,10 +93,10 @@ void CollectibleRegistry::ResetDefault() {
         LocationId::PendulumTower, ZoneId::WindPlateau, 5, 25));
     items_.push_back(MakeRelic(
         CollectibleId::Harmony_AwakeningSeed, CollectibleEra::Era4_HarmonySeal, CollectibleKind::FossilSeed,
-        LocationId::Overworld, ZoneId::HarmonySanctuary, 32, 29));
+        LocationId::Overworld, ZoneId::HarmonySanctuary, 13, 4));
     items_.push_back(MakeRelic(
         CollectibleId::Harmony_AstrolabeStele, CollectibleEra::Era4_HarmonySeal, CollectibleKind::Stele,
-        LocationId::Overworld, ZoneId::HarmonySanctuary, 32, 45));
+        LocationId::Overworld, ZoneId::HarmonySanctuary, 22, 18));
 
     has_last_collected_ = false;
     last_collected_id_ = CollectibleId::Dawn_BrassGnomon;

@@ -38,9 +38,7 @@ void OverworldState::OnEnter() {
             false,
             ctx_.ecosystem.architect_recruited,
             ctx_.world.active_structure);
-        if (const eco::Player* p0 = ctx_.players.GetPlayer(0); p0 != nullptr && p0->active) {
-            ctx_.world.current_zone = ctx_.world.overworld.DistrictAt(p0->Center());
-        }
+        ctx_.world.current_zone = ctx_.world.overworld.active_zone;
         ctx_.world.UpdateProximityPrompts();
     }
 }
@@ -48,13 +46,26 @@ void OverworldState::OnEnter() {
 void OverworldState::OnExit() {}
 
 void OverworldState::Update(float dt) {
+    // Se e' attivo un intramezzo tra zone, consenti lo skip rapido con SPAZIO/INVIO/E
+    if (ctx_.world.interlude.active) {
+        const eco::PlayerInput& p0 = ctx_.input.Get(0);
+        const bool skip_requested =
+            p0.jump_pressed || p0.confirm_pressed || p0.interact_pressed ||
+            ctx_.input.advance_dialogue_pressed;
+        if (skip_requested && ctx_.world.interlude.CanSkip()) {
+            ctx_.world.SkipZoneInterlude();
+        }
+        (void)ctx_.world.StepWorld(ctx_.input, dt);
+        return;
+    }
+
     const eco::WorldStepResult step = ctx_.world.StepWorld(ctx_.input, dt);
 
     if (step.enter_structure_requested) {
         ctx_.world.active_structure = step.target_structure;
         ctx_.world.returning_from_structure = false;
         ctx_.state_manager.RequestTransition(std::make_unique<StructureState>(ctx_));
-    } else if (ctx_.input.toggle_state_pressed) {
+    } else if (ctx_.input.toggle_state_pressed && !ctx_.world.interlude.active) {
         ctx_.world.returning_from_structure = false;
         ctx_.state_manager.RequestTransition(std::make_unique<StructureState>(ctx_));
     }
@@ -85,14 +96,14 @@ void OverworldState::Draw() {
 
     BeginMode2D(camera);
 
-    // Sincronizza temporaneamente il target camera per il viewport culling della mappa 36x50
+    // Sincronizza temporaneamente il target camera per il viewport culling della mappa di zona
     // senza alterare lo stato della simulazione.
     ctx_.world.overworld.camera_target = eco::Vec2{cam_x, cam_y};
 
-    // 1. Mappa procedurale della Conca di Meridia (6 distretti, mosaici, canali, Ponte degli Archi, 3 portali)
+    // 1. Mappa procedurale della zona attiva (pavimentazione, canali, meccaniche a terra, varchi)
     DrawOverworldProceduralMap(ctx_.world);
 
-    // 2. Flora diversificata per bioma, colonne, lanterne e stele diegetiche
+    // 2. Flora diversificata per bioma, colonne, lanterne, affreschi e meccaniche 2D di zona
     DrawOverworldProceduralProps(ctx_.world);
 
     ctx_.world.overworld.camera_target = raw_cam;
@@ -107,7 +118,7 @@ void OverworldState::Draw() {
         }
     }
 
-    // 5. Particelle atmosferiche per distretto e burst luminosi delle reliquie
+    // 5. Particelle atmosferiche per distretto, reazione alle meccaniche e burst reliquie
     DrawWorldAtmosphericParticles(ctx_.world, eco::Vec2{cam_x, cam_y});
 
     EndMode2D();
@@ -115,10 +126,16 @@ void OverworldState::Draw() {
     // 6. Atmosfera in screen-space (raggi d'alba, foschia/cenere di pece, vignettatura)
     DrawScreenSpaceAtmosphere(ctx_.world);
 
-    // 7. Barra superiore HUD, Lente Empirica, Minimappa Overworld e Modal di calibrazione fisica
+    // 7. Se e' in corso un intramezzo tra zone, mostra la vignetta panoramica procedurale
+    if (ctx_.world.interlude.active) {
+        DrawZoneInterludeOverlay(ctx_.world);
+        return;
+    }
+
+    // 8. Barra superiore HUD, Lente Empirica, Minimappa Overworld e Modal di calibrazione fisica
     DrawHudAndCalibrationModalScreenSpace(ctx_.world);
 
-    // 8. Layer Narrativo (Obiettivo, Toast di Zona/Reliquia, Dialoghi, Diario [H] / Codex [J], Epilogo)
+    // 9. Layer Narrativo (Obiettivo, Toast di Zona/Reliquia, Dialoghi, Diario [H] / Codex [J], Epilogo)
     DrawStoryLayer(ctx_.world);
 }
 

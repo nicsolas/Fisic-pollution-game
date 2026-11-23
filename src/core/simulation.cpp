@@ -19,15 +19,18 @@ namespace {
     const Tilemap& tilemap,
     Vec2 top_left,
     Vec2 entity_size,
-    bool bridge_unlocked) noexcept {
+    bool bridge_unlocked,
+    bool solar_gate_open = false,
+    bool jade_bridge_unlocked = false) noexcept {
     if (!IsFiniteVec2(top_left) || !IsFiniteVec2(entity_size) ||
         entity_size.x <= 0.0f || entity_size.y <= 0.0f) {
         return false;
     }
     const Rect box{top_left.x, top_left.y, entity_size.x, entity_size.y};
-    return !tilemap.OverlapsSolid(box, bridge_unlocked) &&
+    return !tilemap.OverlapsSolid(box, bridge_unlocked, solar_gate_open, jade_bridge_unlocked) &&
            !tilemap.OverlapsTileId(box, TileId::StructurePortal) &&
-           !tilemap.OverlapsTileId(box, TileId::ExitPortal);
+           !tilemap.OverlapsTileId(box, TileId::ExitPortal) &&
+           !tilemap.OverlapsTileId(box, TileId::ZoneGateway);
 }
 
 [[nodiscard]] Vec2 CenteredTopLeftForTile(const Tilemap& tilemap, int row, int col) noexcept {
@@ -43,6 +46,13 @@ namespace {
     };
 }
 
+[[nodiscard]] Vec2 ZoneTileCenter(int row, int col, float tile_size = kTileSize) noexcept {
+    return {
+        (static_cast<float>(col) + 0.5f) * tile_size,
+        (static_cast<float>(row) + 0.5f) * tile_size
+    };
+}
+
 [[nodiscard]] Rect PortalLinkRect(const Tilemap& tilemap, const PortalLink& link) noexcept {
     const Rect rmin = tilemap.TileRect(link.tile_min.row, link.tile_min.col);
     const Rect rmax = tilemap.TileRect(link.tile_max.row, link.tile_max.col);
@@ -54,12 +64,15 @@ namespace {
     };
 }
 
-[[nodiscard]] std::size_t StructureIndex(StructureId id) noexcept {
-    const int idx = static_cast<int>(id);
-    if (idx < 0 || idx >= static_cast<int>(StructureId::Count)) {
-        return 0;
-    }
-    return static_cast<std::size_t>(idx);
+[[nodiscard]] Rect ZoneGatewayRect(const Tilemap& tilemap, const ZoneGateway& gw) noexcept {
+    const Rect rmin = tilemap.TileRect(gw.tile_min.row, gw.tile_min.col);
+    const Rect rmax = tilemap.TileRect(gw.tile_max.row, gw.tile_max.col);
+    return {
+        rmin.Left(),
+        rmin.Top(),
+        rmax.Right() - rmin.Left(),
+        rmax.Bottom() - rmin.Top()
+    };
 }
 
 [[nodiscard]] std::size_t MachineIndex(MachineType type) noexcept {
@@ -78,14 +91,304 @@ namespace {
     return static_cast<std::size_t>(idx);
 }
 
+[[nodiscard]] Vec2 DirectionFromIndex(int dir_index) noexcept {
+    switch ((dir_index % 4 + 4) % 4) {
+        case 0:
+            return {1.0f, 0.0f};  // Est
+        case 1:
+            return {0.0f, 1.0f};  // Sud
+        case 2:
+            return {-1.0f, 0.0f}; // Ovest
+        case 3:
+            return {0.0f, -1.0f}; // Nord
+        default:
+            return {1.0f, 0.0f};
+    }
+}
+
+[[nodiscard]] float PointToSegmentDistSq(Vec2 p, Vec2 a, Vec2 b) noexcept {
+    const Vec2 ab = b - a;
+    const float len_sq = ab.LengthSquared();
+    if (len_sq <= kEpsilon) {
+        return (p - a).LengthSquared();
+    }
+    const float t = Clamp((p - a).Dot(ab) / len_sq, 0.0f, 1.0f);
+    const Vec2 proj = a + ab * t;
+    return (p - proj).LengthSquared();
+}
+
+[[nodiscard]] Vec2 StructureSpawnFor(const Tilemap& map, StructureId id) noexcept {
+    switch (id) {
+        case StructureId::HypogeanCisterns:
+            return GroundedTopLeftForTile(map, 13, 5);
+        case StructureId::PendulumTower:
+            return GroundedTopLeftForTile(map, 15, 5);
+        case StructureId::GeothermalChamber:
+            return GroundedTopLeftForTile(map, 13, 5);
+        case StructureId::Count:
+            break;
+    }
+    return GroundedTopLeftForTile(map, 13, 5);
+}
+
 } // namespace
+
+// ============================================================================
+// ZoneMechanicState (6 Meccaniche Top-Down Uniche)
+// ============================================================================
+
+void ZoneMechanicState::ResetDefaults() {
+    // 1. Terrazze dell'Alba: Specchi Solari e Piastre Fotosensibili
+    solar_emitter_pos = ZoneTileCenter(6, 6);
+    solar_emitter_dir = {1.0f, 0.0f}; // Est verso specchio 0 a (6, 14)
+    solar_mirrors = {
+        SolarMirror{0, ZoneTileCenter(6, 14), 0, true, 64.0f},  // ruota a Sud (1) per colpire specchio 1
+        SolarMirror{1, ZoneTileCenter(14, 14), 2, true, 64.0f}, // ruota a Est (0) per colpire specchio 2
+        SolarMirror{2, ZoneTileCenter(14, 24), 0, true, 64.0f}  // ruota a Nord (3) o Sud (1) per le piastre
+    };
+    solar_plates = {
+        SolarPlate{0, ZoneTileCenter(6, 24), 30.0f, 0.0f, false, "Lastra dell'Equinozio: orienta il fascio a Nord."},
+        SolarPlate{1, ZoneTileCenter(20, 24), 30.0f, 0.0f, false, "Lastra del Solstizio: completa l'arco solare."}
+    };
+    solar_beams.clear();
+    solar_gate_open = false;
+
+    // 2. Quartiere dei Canali: Correnti Direzionali & Chiuse/Leve
+    water_currents = {
+        WaterCurrentZone{
+            Rect{4.0f * kTileSize, 11.0f * kTileSize, 11.0f * kTileSize, 3.0f * kTileSize},
+            {-1.0f, 0.0f},
+            155.0f,
+            0,
+            true
+        },
+        WaterCurrentZone{
+            Rect{20.0f * kTileSize, 11.0f * kTileSize, 8.0f * kTileSize, 3.0f * kTileSize},
+            {1.0f, 0.0f},
+            145.0f,
+            0,
+            true
+        },
+        WaterCurrentZone{
+            Rect{10.0f * kTileSize, 18.0f * kTileSize, 18.0f * kTileSize, 3.0f * kTileSize},
+            {-1.0f, 0.0f},
+            165.0f,
+            1,
+            true
+        }
+    };
+    sluice_levers = {
+        SluiceLever{0, ZoneTileCenter(10, 13), 0, false, 64.0f},
+        SluiceLever{1, ZoneTileCenter(17, 23), 1, false, 64.0f}
+    };
+
+    // 3. Altopiano dei Venti: Raffiche Periodiche & 5 Monoliti Frangivento
+    wind = WindState{};
+    wind.cycle_timer = 0.0f;
+    wind.cycle_period = 6.0f;
+    wind.wind_dir = Vec2{-1.0f, 0.12f}.Normalized();
+    wind.max_push_speed = 185.0f;
+
+    auto make_monolith = [](int r0, int r1, int col) noexcept -> WindbreakMonolith {
+        Rect r{
+            static_cast<float>(col) * kTileSize,
+            static_cast<float>(r0) * kTileSize,
+            kTileSize,
+            static_cast<float>(r1 - r0 + 1) * kTileSize
+        };
+        return WindbreakMonolith{r, r.Center(), 144.0f};
+    };
+    windbreaks = {
+        make_monolith(18, 20, 21),
+        make_monolith(15, 17, 13),
+        make_monolith(11, 13, 22),
+        make_monolith(8, 10, 12),
+        make_monolith(11, 13, 27)
+    };
+
+    // 4. Giardini Sospesi: 4 Piastre di Risonanza Armonica (Accordo di Do Maggiore)
+    resonance_pads = {
+        ResonancePad{0, ZoneTileCenter(9, 12), 34.0f, 0, 261.63f, false, 0.0f, false},
+        ResonancePad{1, ZoneTileCenter(9, 16), 34.0f, 1, 329.63f, false, 0.0f, false},
+        ResonancePad{2, ZoneTileCenter(16, 16), 34.0f, 2, 392.00f, false, 0.0f, false},
+        ResonancePad{3, ZoneTileCenter(16, 12), 34.0f, 3, 523.25f, false, 0.0f, false}
+    };
+    resonance_next_order = 0;
+    jade_bridge_unlocked = false;
+    jade_bridge_progress = 0.0f;
+
+    // 5. Caldera delle Fumarole: 6 Geyser Termici Ciclici & 2 Valvole di Sfogo
+    geysers = {
+        ThermalGeyser{0, ZoneTileCenter(18, 16), 42.0f, 0.0f, 4.6f, 0.0f, 0.0f, GeyserPhase::Dormant, 0},
+        ThermalGeyser{1, ZoneTileCenter(15, 14), 42.0f, 1.5f, 4.6f, 0.0f, 0.0f, GeyserPhase::Dormant, 0},
+        ThermalGeyser{2, ZoneTileCenter(15, 20), 42.0f, 2.8f, 4.6f, 0.0f, 0.0f, GeyserPhase::Dormant, 0},
+        ThermalGeyser{3, ZoneTileCenter(11, 17), 42.0f, 0.8f, 4.6f, 0.0f, 0.0f, GeyserPhase::Dormant, 1},
+        ThermalGeyser{4, ZoneTileCenter(10, 23), 42.0f, 2.1f, 4.6f, 0.0f, 0.0f, GeyserPhase::Dormant, 1},
+        ThermalGeyser{5, ZoneTileCenter(9, 13), 42.0f, 3.4f, 4.6f, 0.0f, 0.0f, GeyserPhase::Dormant, 1}
+    };
+    relief_valves = {
+        ReliefValve{0, ZoneTileCenter(15, 8), 0, false, 64.0f},
+        ReliefValve{1, ZoneTileCenter(11, 27), 1, false, 64.0f}
+    };
+
+    // 6. Santuario dell'Armonia: 5 Sigilli Elementali disposti a pentagono attorno all'Astrolabio (13, 18)
+    const Vec2 center = ZoneTileCenter(13, 18);
+    constexpr float kSealRadius = 216.0f;
+    static constexpr std::array<ZoneId, 5> kSealZones{{
+        ZoneId::DawnTerraces,
+        ZoneId::CanalQuarter,
+        ZoneId::WindPlateau,
+        ZoneId::HangingGardens,
+        ZoneId::FumaroleCaldera
+    }};
+    sanctuary_seals.clear();
+    sanctuary_seals.reserve(5);
+    for (int i = 0; i < 5; ++i) {
+        const float angle = -kPi * 0.5f + static_cast<float>(i) * (2.0f * kPi / 5.0f);
+        const Vec2 pos{
+            center.x + std::cos(angle) * kSealRadius,
+            center.y + std::sin(angle) * kSealRadius
+        };
+        sanctuary_seals.push_back(SanctuarySeal{i, kSealZones[static_cast<std::size_t>(i)], pos, 40.0f, false, 0.0f});
+    }
+}
+
+void ZoneMechanicState::RecomputeSolarBeams(const Tilemap& dawn_map) noexcept {
+    solar_beams.clear();
+    if (dawn_map.Empty()) {
+        return;
+    }
+
+    for (auto& plate : solar_plates) {
+        plate.lit = false;
+    }
+
+    Vec2 origin = solar_emitter_pos;
+    Vec2 dir = solar_emitter_dir.Normalized();
+    if (dir.LengthSquared() <= kEpsilon) {
+        dir = {1.0f, 0.0f};
+    }
+
+    constexpr int kMaxBounces = 6;
+    constexpr float kStepPx = 8.0f;
+    constexpr float kMaxDistPx = 1800.0f;
+    constexpr float kMirrorHitRadiusSq = 22.0f * 22.0f;
+
+    int last_mirror_id = -1;
+    for (int bounce = 0; bounce < kMaxBounces; ++bounce) {
+        Vec2 cur = origin;
+        bool hit_mirror = false;
+        int hit_mirror_idx = -1;
+        float traveled = 0.0f;
+
+        while (traveled < kMaxDistPx) {
+            cur += dir * kStepPx;
+            traveled += kStepPx;
+
+            const TileCoord tc = dawn_map.WorldToTile(cur);
+            if (!dawn_map.InBounds(tc.row, tc.col)) {
+                break;
+            }
+            const TileId tid = dawn_map.GetTile(tc.row, tc.col);
+            if (tid == TileId::Wall || tid == TileId::RuinsWall) {
+                break;
+            }
+
+            // Controlla impatto con uno specchio (diverso dall'ultimo rimbalzo)
+            for (std::size_t i = 0; i < solar_mirrors.size(); ++i) {
+                if (solar_mirrors[i].id == last_mirror_id) {
+                    continue;
+                }
+                if ((cur - solar_mirrors[i].pos).LengthSquared() <= kMirrorHitRadiusSq) {
+                    cur = solar_mirrors[i].pos;
+                    hit_mirror = true;
+                    hit_mirror_idx = static_cast<int>(i);
+                    break;
+                }
+            }
+            if (hit_mirror) {
+                break;
+            }
+        }
+
+        solar_beams.push_back(SolarBeamSegment{origin, cur, true});
+
+        // Verifica piastre fotosensibili illuminate da questo segmento
+        for (auto& plate : solar_plates) {
+            const float r_sq = plate.radius * plate.radius;
+            if (PointToSegmentDistSq(plate.pos, origin, cur) <= r_sq) {
+                plate.lit = true;
+                plate.charge = 1.0f;
+            }
+        }
+
+        if (!hit_mirror || hit_mirror_idx < 0) {
+            break;
+        }
+        const SolarMirror& m = solar_mirrors[static_cast<std::size_t>(hit_mirror_idx)];
+        last_mirror_id = m.id;
+        origin = m.pos;
+        dir = DirectionFromIndex(m.dir_index);
+    }
+
+    // Se almeno una piastra e' illuminata e tutte hanno charge >= 1.0 (o almeno tutte le piastre sono state caricate)
+    bool all_charged = !solar_plates.empty();
+    for (const auto& plate : solar_plates) {
+        if (plate.charge < 0.99f) {
+            all_charged = false;
+            break;
+        }
+    }
+    if (all_charged) {
+        solar_gate_open = true;
+    }
+}
+
+int ZoneMechanicState::AttunedSealsCount() const noexcept {
+    int count = 0;
+    for (const auto& seal : sanctuary_seals) {
+        if (seal.attuned) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool ZoneMechanicState::AllSealsAttuned() const noexcept {
+    return !sanctuary_seals.empty() &&
+           AttunedSealsCount() == static_cast<int>(sanctuary_seals.size());
+}
+
+bool ZoneMechanicState::IsWindSheltered(Vec2 point) const noexcept {
+    const Vec2 dir = wind.wind_dir.Normalized();
+    if (dir.LengthSquared() <= kEpsilon) {
+        return true;
+    }
+    const Vec2 perp{-dir.y, dir.x};
+    for (const auto& m : windbreaks) {
+        const Vec2 rel = point - m.center;
+        const float along = rel.Dot(dir);
+        const float across = std::fabs(rel.Dot(perp));
+        const float half_span = std::max(m.bounds.width, m.bounds.height) * 0.55f + 16.0f;
+        if (along >= 0.0f && along <= m.shelter_distance && across <= half_span) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// ============================================================================
+// FindSafeSpawnNear
+// ============================================================================
 
 Vec2 FindSafeSpawnNear(
     const Tilemap& tilemap,
     Vec2 anchor_pos,
     Vec2 entity_size,
     Vec2 fallback_pos,
-    bool bridge_unlocked) noexcept {
+    bool bridge_unlocked,
+    bool solar_gate_open,
+    bool jade_bridge_unlocked) noexcept {
     static constexpr std::array<Vec2, 13> kOffsets{{
         {0.0f, 0.0f},
         {36.0f, 0.0f},
@@ -105,7 +408,7 @@ Vec2 FindSafeSpawnNear(
     if (IsFiniteVec2(anchor_pos)) {
         for (const Vec2& offset : kOffsets) {
             const Vec2 candidate{anchor_pos.x + offset.x, anchor_pos.y + offset.y};
-            if (IsSafeSpawnBox(tilemap, candidate, entity_size, bridge_unlocked)) {
+            if (IsSafeSpawnBox(tilemap, candidate, entity_size, bridge_unlocked, solar_gate_open, jade_bridge_unlocked)) {
                 return candidate;
             }
         }
@@ -114,7 +417,7 @@ Vec2 FindSafeSpawnNear(
     if (IsFiniteVec2(fallback_pos)) {
         for (const Vec2& offset : kOffsets) {
             const Vec2 candidate{fallback_pos.x + offset.x, fallback_pos.y + offset.y};
-            if (IsSafeSpawnBox(tilemap, candidate, entity_size, bridge_unlocked)) {
+            if (IsSafeSpawnBox(tilemap, candidate, entity_size, bridge_unlocked, solar_gate_open, jade_bridge_unlocked)) {
                 return candidate;
             }
         }
@@ -126,66 +429,128 @@ Vec2 FindSafeSpawnNear(
     return IsFiniteVec2(fallback_pos) ? fallback_pos : Vec2{0.0f, 0.0f};
 }
 
-void OverworldSim::InitializeDefault() {
-    tilemap = Tilemap::CreateOverworldMap(kTileSize);
-    gateways = Tilemap::OverworldGateways(kTileSize);
-    // Initial spawn in Terrazze dell'Alba (row 30, col 5)
-    spawn_point = CenteredTopLeftForTile(tilemap, 30, 5);
+// ============================================================================
+// OverworldSim (Singola Zona Residente in RAM + Swap Pulito)
+// ============================================================================
 
+ZoneId OverworldSim::PortalZone(StructureId id) noexcept {
+    switch (id) {
+        case StructureId::HypogeanCisterns:
+            return ZoneId::CanalQuarter;
+        case StructureId::PendulumTower:
+            return ZoneId::WindPlateau;
+        case StructureId::GeothermalChamber:
+            return ZoneId::FumaroleCaldera;
+        case StructureId::Count:
+            break;
+    }
+    return ZoneId::CanalQuarter;
+}
+
+void OverworldSim::InitializeDefault() {
+    gateways = Tilemap::OverworldGateways(kTileSize);
+    zone_swaps_count = 0;
+
+    // Catalogo portali (coordinate locali nella rispettiva zona 26x36)
     portals.clear();
     portals.reserve(static_cast<std::size_t>(StructureId::Count));
-    // Portal 1: Cisterne Ipogee (Quartiere dei Canali, row 14, cols 5..6)
     {
         PortalLink link{};
         link.target_structure = StructureId::HypogeanCisterns;
         link.source_zone = ZoneId::CanalQuarter;
-        link.tile_min = {14, 5};
-        link.tile_max = {14, 6};
-        link.world_center = PortalLinkRect(tilemap, link).Center();
-        link.exit_spawn = CenteredTopLeftForTile(tilemap, 16, 5);
+        link.tile_min = {6, 7};
+        link.tile_max = {6, 8};
+        link.world_center = {(7.5f + 0.5f) * kTileSize, 6.5f * kTileSize};
+        link.exit_spawn = {
+            ZoneTileCenter(8, 7).x - kPlayerWidth * 0.5f,
+            ZoneTileCenter(8, 7).y - kPlayerHeight * 0.5f
+        };
         portals.push_back(link);
     }
-    // Portal 2: Torre del Pendolo (Altopiano dei Venti, row 3, cols 11..12)
     {
         PortalLink link{};
         link.target_structure = StructureId::PendulumTower;
         link.source_zone = ZoneId::WindPlateau;
-        link.tile_min = {3, 11};
-        link.tile_max = {3, 12};
-        link.world_center = PortalLinkRect(tilemap, link).Center();
-        link.exit_spawn = CenteredTopLeftForTile(tilemap, 5, 11);
+        link.tile_min = {5, 17};
+        link.tile_max = {5, 18};
+        link.world_center = {18.0f * kTileSize, 5.5f * kTileSize};
+        link.exit_spawn = {
+            ZoneTileCenter(7, 17).x - kPlayerWidth * 0.5f,
+            ZoneTileCenter(7, 17).y - kPlayerHeight * 0.5f
+        };
         portals.push_back(link);
     }
-    // Portal 3: Camera Geotermica (Caldera delle Fumarole, row 3, cols 37..38)
     {
         PortalLink link{};
         link.target_structure = StructureId::GeothermalChamber;
         link.source_zone = ZoneId::FumaroleCaldera;
-        link.tile_min = {3, 37};
-        link.tile_max = {3, 38};
-        link.world_center = PortalLinkRect(tilemap, link).Center();
-        link.exit_spawn = CenteredTopLeftForTile(tilemap, 5, 37);
+        link.tile_min = {5, 17};
+        link.tile_max = {5, 18};
+        link.world_center = {18.0f * kTileSize, 5.5f * kTileSize};
+        link.exit_spawn = {
+            ZoneTileCenter(7, 17).x - kPlayerWidth * 0.5f,
+            ZoneTileCenter(7, 17).y - kPlayerHeight * 0.5f
+        };
         portals.push_back(link);
     }
 
     last_used_structure = StructureId::HypogeanCisterns;
     portal_exit_spawn = portals[0].exit_spawn;
-    camera_target = {spawn_point.x + kPlayerWidth * 0.5f, spawn_point.y + kPlayerHeight * 0.5f};
     portal_cooldown_timer = 0.0f;
     portal_reentry_locked = false;
+    gateway_cooldown_timer = 0.0f;
+    gateway_reentry_locked = false;
+
+    // Carica SOLO la zona iniziale (DawnTerraces) in RAM
+    active_zone = ZoneId::DawnTerraces;
+    tilemap = Tilemap::CreateZoneMap(active_zone, kTileSize);
+    active_gateways = Tilemap::ZoneGateways(active_zone, kTileSize);
+    const TileCoord def_spawn = Tilemap::DefaultZoneSpawnTile(active_zone);
+    spawn_point = CenteredTopLeftForTile(tilemap, def_spawn.row, def_spawn.col);
+    camera_target = {spawn_point.x + kPlayerWidth * 0.5f, spawn_point.y + kPlayerHeight * 0.5f};
+    initialized = true;
+}
+
+void OverworldSim::UnloadZoneMemory() noexcept {
+    tilemap.ReleaseMemory();
+    active_gateways.clear();
+    active_gateways.shrink_to_fit();
+}
+
+void OverworldSim::LoadZone(ZoneId zone, std::optional<TileCoord> arrival_tile) {
+    const bool changing_zone = (!tilemap.Empty() && zone != active_zone);
+    // Libera fisicamente la memoria della zona precedente prima di allocare la nuova
+    tilemap.ReleaseMemory();
+    active_zone = zone;
+    tilemap = Tilemap::CreateZoneMap(zone, kTileSize);
+    active_gateways = Tilemap::ZoneGateways(zone, kTileSize);
+
+    const TileCoord target_tile = arrival_tile.value_or(Tilemap::DefaultZoneSpawnTile(zone));
+    spawn_point = CenteredTopLeftForTile(tilemap, target_tile.row, target_tile.col);
+    camera_target = {spawn_point.x + kPlayerWidth * 0.5f, spawn_point.y + kPlayerHeight * 0.5f};
+    gateway_cooldown_timer = kPortalCooldownSeconds;
+    gateway_reentry_locked = true;
+
+    if (changing_zone) {
+        ++zone_swaps_count;
+    }
     initialized = true;
 }
 
 ZoneId OverworldSim::DistrictAt(Vec2 world_pos) const noexcept {
-    return tilemap.DistrictAt(world_pos);
+    (void)world_pos;
+    return active_zone;
 }
 
 ZoneId OverworldSim::DistrictAtTile(int row, int col) const noexcept {
-    return Tilemap::DistrictAtTile(row, col);
+    (void)row;
+    (void)col;
+    return active_zone;
 }
 
 Rect OverworldSim::DistrictBounds(ZoneId zone) const noexcept {
-    return tilemap.DistrictBounds(zone);
+    (void)zone;
+    return {0.0f, 0.0f, tilemap.WorldWidth(), tilemap.WorldHeight()};
 }
 
 const PortalLink* OverworldSim::FindPortal(StructureId id) const noexcept {
@@ -198,31 +563,29 @@ const PortalLink* OverworldSim::FindPortal(StructureId id) const noexcept {
 }
 
 Vec2 OverworldSim::SafeSpawnInZone(ZoneId zone, bool bridge_unlocked) const noexcept {
-    TileCoord target{30, 5};
-    switch (zone) {
-        case ZoneId::DawnTerraces:
-            target = {30, 5};
-            break;
-        case ZoneId::CanalQuarter:
-            target = {17, 11};
-            break;
-        case ZoneId::WindPlateau:
-            target = {7, 11};
-            break;
-        case ZoneId::HangingGardens:
-            target = {17, 32};
-            break;
-        case ZoneId::FumaroleCaldera:
-            target = {8, 36};
-            break;
-        case ZoneId::HarmonySanctuary:
-            target = {29, 32};
-            break;
-        case ZoneId::Count:
-            break;
+    const TileCoord target = Tilemap::DefaultZoneSpawnTile(zone);
+    if (zone == active_zone && !tilemap.Empty()) {
+        const Vec2 anchor = CenteredTopLeftForTile(tilemap, target.row, target.col);
+        return FindSafeSpawnNear(tilemap, anchor, {kPlayerWidth, kPlayerHeight}, spawn_point, bridge_unlocked);
     }
-    const Vec2 anchor = CenteredTopLeftForTile(tilemap, target.row, target.col);
-    return FindSafeSpawnNear(tilemap, anchor, {kPlayerWidth, kPlayerHeight}, spawn_point, bridge_unlocked);
+    const Vec2 center = ZoneTileCenter(target.row, target.col, kTileSize);
+    return {center.x - kPlayerWidth * 0.5f, center.y - kPlayerHeight * 0.5f};
+}
+
+Vec2 OverworldSim::SafeSpawnAtTile(
+    TileCoord tile,
+    bool bridge_unlocked,
+    bool solar_gate_open,
+    bool jade_bridge_unlocked) const noexcept {
+    const Vec2 anchor = CenteredTopLeftForTile(tilemap, tile.row, tile.col);
+    return FindSafeSpawnNear(
+        tilemap,
+        anchor,
+        {kPlayerWidth, kPlayerHeight},
+        spawn_point,
+        bridge_unlocked,
+        solar_gate_open,
+        jade_bridge_unlocked);
 }
 
 void OverworldSim::OnEnter(
@@ -232,6 +595,15 @@ void OverworldSim::OnEnter(
     StructureId from_structure) {
     if (!initialized) {
         InitializeDefault();
+    }
+
+    if (returning_from_structure) {
+        const ZoneId target_zone = PortalZone(from_structure);
+        if (tilemap.Empty() || active_zone != target_zone) {
+            LoadZone(target_zone);
+        }
+    } else if (tilemap.Empty()) {
+        LoadZone(active_zone);
     }
 
     Vec2 anchor = spawn_point;
@@ -255,49 +627,27 @@ void OverworldSim::OnEnter(
 
     players.EnsureActive(0, anchor);
 
-    static constexpr std::array<Vec2, 8> kEntryOffsets{{
+    static constexpr std::array<Vec2, kMaxPlayers> kFormationOffsets{{
         {0.0f, 0.0f},
         {36.0f, 0.0f},
         {-36.0f, 0.0f},
-        {0.0f, 36.0f},
-        {0.0f, -36.0f},
-        {36.0f, 36.0f},
-        {-36.0f, 36.0f},
-        {36.0f, -36.0f}
+        {0.0f, 36.0f}
     }};
 
     int slot_idx = 0;
     for (Player* p : players.ActivePlayers()) {
-        Vec2 chosen = anchor;
-        bool found = false;
-        for (int attempt = 0; attempt < static_cast<int>(kEntryOffsets.size()); ++attempt) {
-            const int idx = (slot_idx + attempt) % static_cast<int>(kEntryOffsets.size());
-            const Vec2 candidate{
-                anchor.x + kEntryOffsets[static_cast<std::size_t>(idx)].x,
-                anchor.y + kEntryOffsets[static_cast<std::size_t>(idx)].y
-            };
-            if (IsSafeSpawnBox(tilemap, candidate, p->size, bridge_unlocked)) {
-                chosen = candidate;
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            chosen = FindSafeSpawnNear(tilemap, anchor, p->size, spawn_point, bridge_unlocked);
-        }
-        p->pos = chosen;
+        const Vec2 offset = kFormationOffsets[static_cast<std::size_t>(slot_idx % kMaxPlayers)];
+        const Vec2 desired{anchor.x + offset.x, anchor.y + offset.y};
+        p->pos = FindSafeSpawnNear(tilemap, desired, p->size, anchor, bridge_unlocked);
         p->vel = {0.0f, 0.0f};
         p->ResetVerticalState();
         ++slot_idx;
     }
 
-    if (returning_from_structure) {
-        portal_cooldown_timer = kPortalCooldownSeconds;
-        portal_reentry_locked = true;
-    } else {
-        portal_cooldown_timer = 0.0f;
-        portal_reentry_locked = false;
-    }
+    portal_cooldown_timer = returning_from_structure ? kPortalCooldownSeconds : 0.0f;
+    portal_reentry_locked = returning_from_structure;
+    gateway_cooldown_timer = kPortalCooldownSeconds;
+    gateway_reentry_locked = false;
 
     if (players.ActiveCount() > 0) {
         camera_target = players.AverageActivePosition();
@@ -310,8 +660,11 @@ OverworldStepResult OverworldSim::Step(
     PlayerManager& players,
     const AllPlayersInput& input,
     float dt,
-    bool bridge_unlocked) {
-    if (!initialized) {
+    bool bridge_unlocked,
+    bool solar_gate_open,
+    bool jade_bridge_unlocked,
+    Vec2 external_velocity) {
+    if (!initialized || tilemap.Empty()) {
         InitializeDefault();
     }
 
@@ -344,25 +697,9 @@ OverworldStepResult OverworldSim::Step(
             continue;
         }
         ++result.newly_joined_count;
-        static constexpr std::array<Vec2, 5> kJoinOffsets{{
-            {36.0f, 0.0f}, {-36.0f, 0.0f}, {0.0f, 36.0f}, {0.0f, -36.0f}, {0.0f, 0.0f}
-        }};
-        const std::size_t join_idx = static_cast<std::size_t>(result.newly_joined_count - 1);
-        bool placed = false;
-        if (found_anchor) {
-            for (std::size_t attempt = 0; attempt < kJoinOffsets.size(); ++attempt) {
-                const Vec2& off = kJoinOffsets[(join_idx + attempt) % kJoinOffsets.size()];
-                const Vec2 cand{drop_anchor.x + off.x, drop_anchor.y + off.y};
-                if (IsSafeSpawnBox(tilemap, cand, p->size, bridge_unlocked)) {
-                    p->pos = cand;
-                    placed = true;
-                    break;
-                }
-            }
-        }
-        if (!placed) {
-            p->pos = FindSafeSpawnNear(tilemap, drop_anchor, p->size, spawn_point, bridge_unlocked);
-        }
+        p->pos = FindSafeSpawnNear(
+            tilemap, drop_anchor, p->size, spawn_point,
+            bridge_unlocked, solar_gate_open, jade_bridge_unlocked);
         p->vel = {0.0f, 0.0f};
         p->ResetVerticalState();
     }
@@ -370,8 +707,17 @@ OverworldStepResult OverworldSim::Step(
     const float safe_dt = (std::isfinite(dt) && dt > 0.0f) ? dt : 0.0f;
 
     for (Player* p : players.ActivePlayers()) {
-        const Vec2 move_axis = input.Get(p->player_id).MoveAxis();
-        MovePlayerTopDown(*p, move_axis, safe_dt, tilemap, bridge_unlocked, kTopDownSpeed);
+        const PlayerInput& in = input.Get(p->player_id);
+        MovePlayerTopDown(
+            *p,
+            {in.move_x, in.move_y},
+            safe_dt,
+            tilemap,
+            bridge_unlocked,
+            kTopDownSpeed,
+            external_velocity,
+            solar_gate_open,
+            jade_bridge_unlocked);
     }
 
     camera_target = UpdateAverageCameraTarget(camera_target, players, safe_dt, kCameraLerpSpeed);
@@ -379,21 +725,26 @@ OverworldStepResult OverworldSim::Step(
     if (portal_cooldown_timer > 0.0f) {
         portal_cooldown_timer = std::max(0.0f, portal_cooldown_timer - safe_dt);
     }
+    if (gateway_cooldown_timer > 0.0f) {
+        gateway_cooldown_timer = std::max(0.0f, gateway_cooldown_timer - safe_dt);
+    }
 
+    // 1. Verifica portali verso strutture interne nella zona corrente
     bool any_on_portal = false;
-    StructureId hit_structure = last_used_structure;
+    StructureId matched_structure = last_used_structure;
     for (const Player* p : players.ActivePlayers()) {
-        if (tilemap.OverlapsTileId(p->Bounds(), TileId::StructurePortal)) {
-            any_on_portal = true;
-            // Match the exact portal link
-            for (const auto& link : portals) {
-                if (p->Bounds().Overlaps(PortalLinkRect(tilemap, link))) {
-                    hit_structure = link.target_structure;
-                    break;
-                }
-            }
-            break;
+        const Rect bounds = p->Bounds();
+        if (!tilemap.OverlapsTileId(bounds, TileId::StructurePortal)) {
+            continue;
         }
+        any_on_portal = true;
+        for (const auto& link : portals) {
+            if (link.source_zone == active_zone && bounds.Overlaps(PortalLinkRect(tilemap, link))) {
+                matched_structure = link.target_structure;
+                break;
+            }
+        }
+        break;
     }
 
     if (portal_reentry_locked) {
@@ -402,32 +753,59 @@ OverworldStepResult OverworldSim::Step(
         }
     } else if (portal_cooldown_timer <= 0.0f && any_on_portal) {
         result.enter_structure_requested = true;
-        result.target_structure = hit_structure;
-        last_used_structure = hit_structure;
+        result.target_structure = matched_structure;
+        last_used_structure = matched_structure;
+        if (const PortalLink* link = FindPortal(matched_structure); link != nullptr) {
+            portal_exit_spawn = link->exit_spawn;
+        }
+        return result;
+    }
+
+    // 2. Verifica varchi verso zone adiacenti (ZoneGateway)
+    bool any_on_gateway = false;
+    const ZoneGateway* matched_gw = nullptr;
+    for (const Player* p : players.ActivePlayers()) {
+        const Rect bounds = p->Bounds();
+        if (!tilemap.OverlapsTileId(bounds, TileId::ZoneGateway)) {
+            continue;
+        }
+        for (const auto& gw : active_gateways) {
+            if (gw.requires_bridge_unlock && !bridge_unlocked) {
+                continue;
+            }
+            if (bounds.Overlaps(ZoneGatewayRect(tilemap, gw))) {
+                any_on_gateway = true;
+                matched_gw = &gw;
+                break;
+            }
+        }
+        if (any_on_gateway) {
+            break;
+        }
+    }
+
+    if (gateway_reentry_locked) {
+        if (gateway_cooldown_timer <= 0.0f && !any_on_gateway) {
+            gateway_reentry_locked = false;
+        }
+    } else if (gateway_cooldown_timer <= 0.0f && any_on_gateway && matched_gw != nullptr) {
+        result.zone_gateway_triggered = true;
+        result.gateway_target_zone = matched_gw->to_zone;
+        result.gateway_arrival_tile = matched_gw->arrival_spawn_tile;
     }
 
     return result;
 }
 
+// ============================================================================
+// StructureSim (Caricamento On-Demand Singola Struttura)
+// ============================================================================
+
 void StructureSim::InitializeDefault() {
-    tilemaps[StructureIndex(StructureId::HypogeanCisterns)] =
-        Tilemap::CreateStructureMap(StructureId::HypogeanCisterns, kTileSize);
-    tilemaps[StructureIndex(StructureId::PendulumTower)] =
-        Tilemap::CreateStructureMap(StructureId::PendulumTower, kTileSize);
-    tilemaps[StructureIndex(StructureId::GeothermalChamber)] =
-        Tilemap::CreateStructureMap(StructureId::GeothermalChamber, kTileSize);
-
-    spawn_points[StructureIndex(StructureId::HypogeanCisterns)] =
-        GroundedTopLeftForTile(tilemaps[StructureIndex(StructureId::HypogeanCisterns)], 13, 6);
-    spawn_points[StructureIndex(StructureId::PendulumTower)] =
-        GroundedTopLeftForTile(tilemaps[StructureIndex(StructureId::PendulumTower)], 15, 6);
-    spawn_points[StructureIndex(StructureId::GeothermalChamber)] =
-        GroundedTopLeftForTile(tilemaps[StructureIndex(StructureId::GeothermalChamber)], 13, 6);
-
     active_structure = StructureId::HypogeanCisterns;
-    tilemap = tilemaps[0];
-    spawn_point = spawn_points[0];
-    camera_target = {spawn_point.x + kPlayerWidth * 0.5f, spawn_point.y + kPlayerHeight * 0.5f};
+    tilemap.ReleaseMemory();
+    spawn_point = {0.0f, 0.0f};
+    camera_target = {0.0f, 0.0f};
     portal_cooldown_timer = 0.0f;
     portal_reentry_locked = false;
     initialized = true;
@@ -437,10 +815,19 @@ void StructureSim::SelectStructure(StructureId id) {
     if (!initialized) {
         InitializeDefault();
     }
-    const std::size_t idx = StructureIndex(id);
-    active_structure = static_cast<StructureId>(idx);
-    tilemap = tilemaps[idx];
-    spawn_point = spawn_points[idx];
+    tilemap.ReleaseMemory();
+    active_structure = id;
+    tilemap = Tilemap::CreateStructureMap(id, kTileSize);
+    spawn_point = StructureSpawnFor(tilemap, id);
+    camera_target = {spawn_point.x + kPlayerWidth * 0.5f, spawn_point.y + kPlayerHeight * 0.5f};
+}
+
+void StructureSim::UnloadMemory() noexcept {
+    tilemap.ReleaseMemory();
+}
+
+void StructureSim::OnEnter(PlayerManager& players, bool bridge_unlocked) {
+    OnEnter(active_structure, players, bridge_unlocked);
 }
 
 void StructureSim::OnEnter(StructureId id, PlayerManager& players, bool bridge_unlocked) {
@@ -448,54 +835,25 @@ void StructureSim::OnEnter(StructureId id, PlayerManager& players, bool bridge_u
         InitializeDefault();
     }
     SelectStructure(id);
-    OnEnter(players, bridge_unlocked);
-}
-
-void StructureSim::OnEnter(PlayerManager& players, bool bridge_unlocked) {
-    if (!initialized) {
-        InitializeDefault();
-    }
 
     Vec2 anchor = spawn_point;
     if (!IsSafeSpawnBox(tilemap, anchor, {kPlayerWidth, kPlayerHeight}, bridge_unlocked)) {
-        bool found_cell = false;
-        for (int r = tilemap.Rows() - 1; r >= 0 && !found_cell; --r) {
-            for (int c = 0; c < tilemap.RowCols(r); ++c) {
-                const Vec2 cand = GroundedTopLeftForTile(tilemap, r, c);
-                if (IsSafeSpawnBox(tilemap, cand, {kPlayerWidth, kPlayerHeight}, bridge_unlocked)) {
-                    anchor = cand;
-                    found_cell = true;
-                    break;
-                }
-            }
-        }
+        anchor = FindSafeSpawnNear(
+            tilemap, anchor, {kPlayerWidth, kPlayerHeight}, spawn_point, bridge_unlocked);
     }
 
     players.EnsureActive(0, anchor);
 
-    static constexpr std::array<Vec2, 8> kHorizOffsets{{
-        {0.0f, 0.0f},
-        {38.0f, 0.0f},
-        {76.0f, 0.0f},
-        {114.0f, 0.0f},
-        {-38.0f, 0.0f},
-        {0.0f, -48.0f},
-        {38.0f, -48.0f},
-        {-38.0f, -48.0f}
-    }};
-
+    static constexpr std::array<float, kMaxPlayers> kHorizontalOffsets{{0.0f, 36.0f, -36.0f, 72.0f}};
     int slot_idx = 0;
     for (Player* p : players.ActivePlayers()) {
         Vec2 chosen = anchor;
         bool found = false;
-        for (int attempt = 0; attempt < static_cast<int>(kHorizOffsets.size()); ++attempt) {
-            const int idx = (slot_idx + attempt) % static_cast<int>(kHorizOffsets.size());
-            const Vec2 cand{
-                anchor.x + kHorizOffsets[static_cast<std::size_t>(idx)].x,
-                anchor.y + kHorizOffsets[static_cast<std::size_t>(idx)].y
-            };
-            if (IsSafeSpawnBox(tilemap, cand, p->size, bridge_unlocked)) {
-                chosen = cand;
+        for (int attempt = 0; attempt < kMaxPlayers; ++attempt) {
+            const float dx = kHorizontalOffsets[static_cast<std::size_t>((slot_idx + attempt) % kMaxPlayers)];
+            const Vec2 candidate{anchor.x + dx, anchor.y};
+            if (IsSafeSpawnBox(tilemap, candidate, p->size, bridge_unlocked)) {
+                chosen = candidate;
                 found = true;
                 break;
             }
@@ -528,8 +886,8 @@ StructureStepResult StructureSim::Step(
     const AllPlayersInput& input,
     float dt,
     bool bridge_unlocked) {
-    if (!initialized) {
-        InitializeDefault();
+    if (!initialized || tilemap.Empty()) {
+        SelectStructure(active_structure);
     }
 
     StructureStepResult result{};
@@ -610,8 +968,33 @@ StructureStepResult StructureSim::Step(
     return result;
 }
 
+// ============================================================================
+// WorldContext
+// ============================================================================
+
+ZoneId WorldContext::MachineZone(MachineType type) noexcept {
+    switch (type) {
+        case MachineType::SolarArray:
+            return ZoneId::DawnTerraces;
+        case MachineType::HydroTurbine:
+            return ZoneId::CanalQuarter;
+        case MachineType::PendulumRegulator:
+            return ZoneId::WindPlateau;
+        case MachineType::HarmonicResonator:
+            return ZoneId::HangingGardens;
+        case MachineType::ThermalExchanger:
+            return ZoneId::FumaroleCaldera;
+        case MachineType::CentralAstrolabe:
+            return ZoneId::HarmonySanctuary;
+        case MachineType::Count:
+            break;
+    }
+    return ZoneId::DawnTerraces;
+}
+
 void WorldContext::Reset() {
     const bool keep_demo = demo_mode;
+    const bool keep_instant = instant_zone_transitions;
     ecosystem.Reset();
     players = PlayerManager{};
     overworld = OverworldSim{};
@@ -619,28 +1002,40 @@ void WorldContext::Reset() {
     overworld.InitializeDefault();
     structure.InitializeDefault();
 
+    zone_mechanics.ResetDefaults();
+    zone_mechanics.RecomputeSolarBeams(overworld.tilemap);
+    interlude = ZoneInterludeState{};
+    interlude.instant_mode = keep_instant;
+
+    // 6 Monumenti (coordinate locali nella rispettiva zona 26x36 o struttura)
     machines[MachineIndex(MachineType::SolarArray)] =
-        Machine::CreateDefaultSolar(overworld.tilemap.TileCenter(29, 11));
+        Machine::CreateDefaultSolar(ZoneTileCenter(13, 18));
     machines[MachineIndex(MachineType::HydroTurbine)] =
-        Machine::CreateDefaultHydro(structure.tilemaps[StructureIndex(StructureId::HypogeanCisterns)].TileCenter(13, 13));
+        Machine::CreateDefaultHydro(ZoneTileCenter(13, 13));
     machines[MachineIndex(MachineType::PendulumRegulator)] =
-        Machine::CreateDefaultPendulum(structure.tilemaps[StructureIndex(StructureId::PendulumTower)].TileCenter(7, 15));
+        Machine::CreateDefaultPendulum(ZoneTileCenter(12, 15));
     machines[MachineIndex(MachineType::HarmonicResonator)] =
-        Machine::CreateDefaultHarmonic(overworld.tilemap.TileCenter(17, 36));
+        Machine::CreateDefaultHarmonic(ZoneTileCenter(12, 26));
     machines[MachineIndex(MachineType::ThermalExchanger)] =
-        Machine::CreateDefaultThermal(structure.tilemaps[StructureIndex(StructureId::GeothermalChamber)].TileCenter(9, 26));
+        Machine::CreateDefaultThermal(ZoneTileCenter(9, 26));
     machines[MachineIndex(MachineType::CentralAstrolabe)] =
-        Machine::CreateDefaultAstrolabe(overworld.tilemap.TileCenter(29, 37));
+        Machine::CreateDefaultAstrolabe(ZoneTileCenter(13, 18));
 
     modal_machine_type = MachineType::SolarArray;
     calibration_modal.Reset();
 
+    // 4 NPC (coordinate locali nelle mappe 26x36 per gli NPC overworld)
     npcs[NpcIndex(NpcId::ClaraSereni)] = WorldNpc::CreateDefault(NpcId::ClaraSereni);
+    npcs[NpcIndex(NpcId::ClaraSereni)].pos = ZoneTileCenter(12, 29);
     npcs[NpcIndex(NpcId::LorenzoAltieri)] = WorldNpc::CreateDefault(NpcId::LorenzoAltieri);
     npcs[NpcIndex(NpcId::MiriamFerro)] = WorldNpc::CreateDefault(NpcId::MiriamFerro);
+    npcs[NpcIndex(NpcId::MiriamFerro)].pos = ZoneTileCenter(15, 11);
     npcs[NpcIndex(NpcId::MatteoVerrini)] = WorldNpc::CreateDefault(NpcId::MatteoVerrini);
+    npcs[NpcIndex(NpcId::MatteoVerrini)].pos = ZoneTileCenter(17, 12);
 
+    // 16 Reliquie (coordinate autorevoli in CollectibleRegistry::ResetDefault)
     collectibles.ResetDefault();
+
     story.Reset();
 
     current_zone = ZoneId::DawnTerraces;
@@ -650,6 +1045,7 @@ void WorldContext::Reset() {
     banner_is_structure = false;
 
     demo_mode = keep_demo;
+    instant_zone_transitions = keep_instant;
     last_scan = EmpiricalScanReading{};
     sim_time = 0.0f;
     scan_pulse_timer = 0.0f;
@@ -664,6 +1060,25 @@ void WorldContext::EnsureInitialized() {
     if (!overworld.initialized || !structure.initialized || collectibles.TotalCount() == 0) {
         Reset();
     }
+}
+
+MemoryMetrics WorldContext::GetMemoryMetrics() const noexcept {
+    MemoryMetrics m{};
+    m.active_zone_tilemap_bytes = overworld.tilemap.MemoryBytes();
+    m.active_structure_tilemap_bytes = structure.tilemap.MemoryBytes();
+    m.total_resident_map_bytes = m.active_zone_tilemap_bytes + m.active_structure_tilemap_bytes;
+    constexpr std::size_t kFullSixZonesBytes =
+        static_cast<std::size_t>(ZoneId::Count) *
+        static_cast<std::size_t>(Tilemap::kZoneRows) *
+        static_cast<std::size_t>(Tilemap::kZoneCols);
+    constexpr std::size_t kAllThreeStructuresBytes = (16 * 34) + (18 * 30) + (16 * 34);
+    const std::size_t unoptimized_total = kFullSixZonesBytes + kAllThreeStructuresBytes;
+    m.saved_unloaded_bytes =
+        (unoptimized_total > m.total_resident_map_bytes)
+            ? (unoptimized_total - m.total_resident_map_bytes)
+            : 0;
+    m.zone_swaps_count = overworld.zone_swaps_count;
+    return m;
 }
 
 LocationId WorldContext::ActiveLocation() const noexcept {
@@ -709,6 +1124,9 @@ Machine& WorldContext::ActiveMachine() noexcept {
         if (m.location != loc) {
             continue;
         }
+        if (loc == LocationId::Overworld && MachineZone(m.type) != current_zone) {
+            continue;
+        }
         if (p0 != nullptr && p0->active) {
             const float d = m.DistanceToPlayer(*p0);
             if (best == nullptr || d < best_dist) {
@@ -731,6 +1149,9 @@ const Machine& WorldContext::ActiveMachine() const noexcept {
         if (m.location != loc) {
             continue;
         }
+        if (loc == LocationId::Overworld && MachineZone(m.type) != current_zone) {
+            continue;
+        }
         if (p0 != nullptr && p0->active) {
             const float d = m.DistanceToPlayer(*p0);
             if (best == nullptr || d < best_dist) {
@@ -748,9 +1169,13 @@ std::vector<const Machine*> WorldContext::MachinesInCurrentScene() const {
     std::vector<const Machine*> out;
     const LocationId loc = ActiveLocation();
     for (const auto& m : machines) {
-        if (m.location == loc) {
-            out.push_back(&m);
+        if (m.location != loc) {
+            continue;
         }
+        if (loc == LocationId::Overworld && MachineZone(m.type) != current_zone) {
+            continue;
+        }
+        out.push_back(&m);
     }
     return out;
 }
@@ -768,9 +1193,28 @@ std::vector<const WorldNpc*> WorldContext::NpcsInCurrentScene() const {
     out.reserve(npcs.size());
     const LocationId loc = ActiveLocation();
     for (const auto& npc : npcs) {
-        if (npc.location == loc) {
-            out.push_back(&npc);
+        if (npc.location != loc) {
+            continue;
         }
+        if (loc == LocationId::Overworld && npc.zone != current_zone) {
+            continue;
+        }
+        out.push_back(&npc);
+    }
+    return out;
+}
+
+std::vector<const CollectibleItem*> WorldContext::CollectiblesInCurrentScene() const {
+    std::vector<const CollectibleItem*> out;
+    const LocationId loc = ActiveLocation();
+    for (const auto& item : collectibles.Items()) {
+        if (item.location != loc) {
+            continue;
+        }
+        if (loc == LocationId::Overworld && item.zone != current_zone) {
+            continue;
+        }
+        out.push_back(&item);
     }
     return out;
 }
@@ -809,18 +1253,61 @@ ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
         return map.TileCenter(std::max(0, rows - 3), 2);
     };
 
+    // Trova il varco nella zona corrente verso la zona target (un passo lungo il grafo delle 6 zone)
+    auto next_hop_zone = [](ZoneId from, ZoneId to) noexcept -> ZoneId {
+        if (from == to) {
+            return to;
+        }
+        // Grafo ad albero:
+        // DawnTerraces - CanalQuarter - WindPlateau
+        //                     |
+        //              HangingGardens - FumaroleCaldera
+        //                     |
+        //             HarmonySanctuary
+        switch (from) {
+            case ZoneId::DawnTerraces:
+                return ZoneId::CanalQuarter;
+            case ZoneId::WindPlateau:
+                return ZoneId::CanalQuarter;
+            case ZoneId::FumaroleCaldera:
+                return ZoneId::HangingGardens;
+            case ZoneId::HarmonySanctuary:
+                return ZoneId::HangingGardens;
+            case ZoneId::CanalQuarter:
+                if (to == ZoneId::DawnTerraces) return ZoneId::DawnTerraces;
+                if (to == ZoneId::WindPlateau) return ZoneId::WindPlateau;
+                return ZoneId::HangingGardens;
+            case ZoneId::HangingGardens:
+                if (to == ZoneId::FumaroleCaldera) return ZoneId::FumaroleCaldera;
+                if (to == ZoneId::HarmonySanctuary) return ZoneId::HarmonySanctuary;
+                return ZoneId::CanalQuarter;
+            case ZoneId::Count:
+                break;
+        }
+        return to;
+    };
+
     auto guide_overworld = [&](ZoneId target_zone, Vec2 target_pos, const char* label) noexcept -> ObjectiveTarget {
-        if (current_mode == GameMode::Overworld) {
+        if (current_mode != GameMode::Overworld) {
+            return ObjectiveTarget{
+                true,
+                ActiveLocation(),
+                current_zone,
+                find_exit_portal_center(structure.tilemap),
+                "Uscita verso Meridia",
+                true
+            };
+        }
+        if (target_zone == current_zone) {
             return ObjectiveTarget{true, LocationId::Overworld, target_zone, target_pos, label, false};
         }
-        return ObjectiveTarget{
-            true,
-            ActiveLocation(),
-            current_zone,
-            find_exit_portal_center(structure.tilemap),
-            "Uscita verso Meridia",
-            true
-        };
+        const ZoneId hop = next_hop_zone(current_zone, target_zone);
+        for (const auto& gw : overworld.active_gateways) {
+            if (gw.to_zone == hop) {
+                return ObjectiveTarget{true, LocationId::Overworld, target_zone, gw.world_center, label, true};
+            }
+        }
+        return ObjectiveTarget{true, LocationId::Overworld, target_zone, target_pos, label, false};
     };
 
     auto guide_structure = [&](
@@ -829,7 +1316,7 @@ ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
         const char* interior_label,
         const char* portal_label) noexcept -> ObjectiveTarget {
         const PortalLink* link = overworld.FindPortal(target_struct);
-        const ZoneId portal_zone = (link != nullptr) ? link->source_zone : current_zone;
+        const ZoneId portal_zone = (link != nullptr) ? link->source_zone : OverworldSim::PortalZone(target_struct);
         if (current_mode == GameMode::Structure && active_structure == target_struct) {
             return ObjectiveTarget{
                 true,
@@ -842,7 +1329,7 @@ ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
         }
         if (current_mode == GameMode::Overworld) {
             const Vec2 p_pos = (link != nullptr) ? link->world_center : overworld.spawn_point;
-            return ObjectiveTarget{true, LocationId::Overworld, portal_zone, p_pos, portal_label, true};
+            return guide_overworld(portal_zone, p_pos, portal_label);
         }
         return ObjectiveTarget{
             true,
@@ -854,13 +1341,11 @@ ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
         };
     };
 
-    // 1. Eliostato Solare (Terrazze dell'Alba)
     const Machine& solar = GetMachine(MachineType::SolarArray);
     if (solar.state == MachineState::Broken) {
         return guide_overworld(ZoneId::DawnTerraces, solar.pos, "Eliostato Solare");
     }
 
-    // 2. Turbina Idrostatica (Cisterne Ipogee, Quartiere dei Canali)
     const Machine& hydro = GetMachine(MachineType::HydroTurbine);
     if (hydro.state == MachineState::Broken) {
         return guide_structure(
@@ -870,7 +1355,6 @@ ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
             "Cisterne Ipogee");
     }
 
-    // 3. Pendolo Isochronos (Torre del Pendolo, Altopiano dei Venti)
     const Machine& pendulum = GetMachine(MachineType::PendulumRegulator);
     if (pendulum.state == MachineState::Broken) {
         return guide_structure(
@@ -880,19 +1364,16 @@ ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
             "Torre del Pendolo");
     }
 
-    // 4. Clara Sereni (Ponte degli Archi) se il ponte verso Est e' ancora chiuso
     const WorldNpc& clara = GetNpc(NpcId::ClaraSereni);
     if (!ecosystem.architect_recruited && !clara.recruited) {
         return guide_overworld(ZoneId::CanalQuarter, clara.pos, "Clara Sereni (Ponte)");
     }
 
-    // 5. Risonatore Armonico (Giardini Sospesi)
     const Machine& harmonic = GetMachine(MachineType::HarmonicResonator);
     if (harmonic.state == MachineState::Broken) {
         return guide_overworld(ZoneId::HangingGardens, harmonic.pos, "Risonatore Armonico");
     }
 
-    // 6. Scambiatore di Carnot (Camera Geotermica, Caldera delle Fumarole)
     const Machine& thermal = GetMachine(MachineType::ThermalExchanger);
     if (thermal.state == MachineState::Broken) {
         return guide_structure(
@@ -902,7 +1383,6 @@ ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
             "Camera Geotermica");
     }
 
-    // 7. Astrolabio Centrale (Santuario dell'Armonia)
     const Machine& astrolabe = GetMachine(MachineType::CentralAstrolabe);
     return guide_overworld(ZoneId::HarmonySanctuary, astrolabe.pos, "Astrolabio Centrale");
 }
@@ -954,10 +1434,13 @@ void WorldContext::TriggerStructureBanner(StructureId id) noexcept {
 
 void WorldContext::EnterStructure(StructureId id) {
     EnsureInitialized();
+    interlude.active = false;
     active_structure = id;
     current_mode = GameMode::Structure;
     returning_from_structure = false;
     overworld.last_used_structure = id;
+    // Libera la tilemap overworld mentre siamo dentro la struttura (1 sola mappa in RAM)
+    overworld.UnloadZoneMemory();
     structure.OnEnter(id, players, ecosystem.architect_recruited);
     TriggerStructureBanner(id);
     UpdateProximityPrompts();
@@ -966,12 +1449,16 @@ void WorldContext::EnterStructure(StructureId id) {
 
 void WorldContext::ExitToOverworld() {
     EnsureInitialized();
+    interlude.active = false;
     const StructureId from_id = active_structure;
     current_mode = GameMode::Overworld;
     returning_from_structure = true;
+    // Libera la tilemap della struttura prima di ricaricare la zona overworld
+    structure.UnloadMemory();
     overworld.OnEnter(players, true, ecosystem.architect_recruited, from_id);
-    if (const Player* p0 = players.GetPlayer(0); p0 != nullptr && p0->active) {
-        current_zone = overworld.DistrictAt(p0->Center());
+    current_zone = overworld.active_zone;
+    if (current_zone == ZoneId::DawnTerraces) {
+        zone_mechanics.RecomputeSolarBeams(overworld.tilemap);
     }
     TriggerZoneBanner(current_zone);
     UpdateProximityPrompts();
@@ -980,8 +1467,11 @@ void WorldContext::ExitToOverworld() {
 
 void WorldContext::TeleportToZone(ZoneId zone) {
     EnsureInitialized();
+    interlude.active = false;
     current_mode = GameMode::Overworld;
     returning_from_structure = false;
+    structure.UnloadMemory();
+    overworld.LoadZone(zone);
     const Vec2 spawn = overworld.SafeSpawnInZone(zone, ecosystem.architect_recruited);
     players.EnsureActive(0, spawn);
     for (Player* p : players.ActivePlayers()) {
@@ -991,9 +1481,80 @@ void WorldContext::TeleportToZone(ZoneId zone) {
     }
     overworld.camera_target = players.AverageActivePosition();
     current_zone = zone;
+    if (current_zone == ZoneId::DawnTerraces) {
+        zone_mechanics.RecomputeSolarBeams(overworld.tilemap);
+    }
     TriggerZoneBanner(zone);
     UpdateProximityPrompts();
     story.Observe(BuildStorySnapshot());
+}
+
+void WorldContext::BeginZoneInterlude(ZoneId to_zone, TileCoord arrival_spawn_tile) {
+    EnsureInitialized();
+    interlude.active = true;
+    interlude.from_zone = current_zone;
+    interlude.to_zone = to_zone;
+    interlude.target_spawn_tile = arrival_spawn_tile;
+    interlude.elapsed = 0.0f;
+    interlude.duration = kZoneInterludeDuration;
+    interlude.min_skip_time = kZoneInterludeMinSkip;
+    interlude.swap_committed = false;
+    interlude.instant_mode = instant_zone_transitions;
+
+    if (instant_zone_transitions || interlude.instant_mode) {
+        SkipZoneInterlude();
+    }
+}
+
+void WorldContext::CommitZoneSwap() {
+    if (interlude.swap_committed) {
+        return;
+    }
+    overworld.LoadZone(interlude.to_zone, interlude.target_spawn_tile);
+    const Vec2 spawn = overworld.SafeSpawnAtTile(
+        interlude.target_spawn_tile,
+        ecosystem.architect_recruited,
+        zone_mechanics.solar_gate_open,
+        zone_mechanics.jade_bridge_unlocked);
+    players.EnsureActive(0, spawn);
+    static constexpr std::array<Vec2, kMaxPlayers> kOffsets{{
+        {0.0f, 0.0f}, {34.0f, 0.0f}, {-34.0f, 0.0f}, {0.0f, 34.0f}
+    }};
+    int idx = 0;
+    for (Player* p : players.ActivePlayers()) {
+        const Vec2 desired = spawn + kOffsets[static_cast<std::size_t>(idx % kMaxPlayers)];
+        p->pos = FindSafeSpawnNear(
+            overworld.tilemap,
+            desired,
+            p->size,
+            spawn,
+            ecosystem.architect_recruited,
+            zone_mechanics.solar_gate_open,
+            zone_mechanics.jade_bridge_unlocked);
+        p->vel = {0.0f, 0.0f};
+        p->ResetVerticalState();
+        ++idx;
+    }
+    overworld.camera_target = players.AverageActivePosition();
+    current_zone = interlude.to_zone;
+    if (current_zone == ZoneId::DawnTerraces) {
+        zone_mechanics.RecomputeSolarBeams(overworld.tilemap);
+    }
+    interlude.swap_committed = true;
+    UpdateProximityPrompts();
+    story.Observe(BuildStorySnapshot());
+}
+
+void WorldContext::SkipZoneInterlude() {
+    if (!interlude.active) {
+        return;
+    }
+    if (!interlude.swap_committed) {
+        CommitZoneSwap();
+    }
+    interlude.elapsed = interlude.duration;
+    interlude.active = false;
+    TriggerZoneBanner(current_zone);
 }
 
 StorySnapshot WorldContext::BuildStorySnapshot() const noexcept {
@@ -1023,20 +1584,42 @@ StorySnapshot WorldContext::BuildStorySnapshot() const noexcept {
 void WorldContext::UpdateProximityPrompts() noexcept {
     const LocationId loc = ActiveLocation();
     for (auto& m : machines) {
-        if (m.location == loc) {
+        const bool in_scene =
+            (m.location == loc) &&
+            (loc != LocationId::Overworld || MachineZone(m.type) == current_zone);
+        if (in_scene) {
             m.UpdateProximity(players);
         } else {
             m.prompt_visible = false;
         }
     }
     for (auto& npc : npcs) {
-        if (npc.location == loc) {
+        const bool in_scene =
+            (npc.location == loc) &&
+            (loc != LocationId::Overworld || npc.zone == current_zone);
+        if (in_scene) {
             npc.UpdateProximity(players);
         } else {
             npc.prompt_visible = false;
         }
     }
-    collectibles.UpdateProximity(loc, players);
+    // Aggiorna prossimita' reliquie filtrando anche per zona in Overworld
+    for (auto& item : collectibles.Items()) {
+        const bool in_scene =
+            !item.collected &&
+            item.location == loc &&
+            (loc != LocationId::Overworld || item.zone == current_zone);
+        bool near_interact = false;
+        if (in_scene) {
+            for (const Player* p : players.ActivePlayers()) {
+                if (p != nullptr && p->Center().DistanceTo(item.pos) <= item.interact_radius) {
+                    near_interact = true;
+                    break;
+                }
+            }
+        }
+        item.prompt_visible = near_interact;
+    }
 }
 
 EmpiricalScanReading WorldContext::TriggerScan(int player_id) noexcept {
@@ -1054,6 +1637,9 @@ EmpiricalScanReading WorldContext::TriggerScan(int player_id) noexcept {
     float best_dist = 1e9f;
     for (const auto& m : machines) {
         if (m.location != loc) {
+            continue;
+        }
+        if (loc == LocationId::Overworld && MachineZone(m.type) != current_zone) {
             continue;
         }
         const float d = m.DistanceToPlayer(*p);
@@ -1085,11 +1671,33 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
     }
     collectibles.Tick(safe_dt);
 
+    // 0. Gestione Intramezzo tra Zone (congela fisica, esegue swap pulito di memoria a 50% o su skip)
+    if (interlude.active) {
+        interlude.elapsed += safe_dt;
+        if (!interlude.swap_committed && interlude.Progress() >= 0.5f) {
+            CommitZoneSwap();
+            out.zone_changed = true;
+            out.new_zone = current_zone;
+        }
+        if (interlude.elapsed >= interlude.duration) {
+            if (!interlude.swap_committed) {
+                CommitZoneSwap();
+                out.zone_changed = true;
+                out.new_zone = current_zone;
+            }
+            interlude.active = false;
+            out.interlude_finished = true;
+            TriggerZoneBanner(current_zone);
+        }
+        story.Tick(safe_dt);
+        return out;
+    }
+
     if (input.advance_dialogue_pressed) {
         story.AdvanceDialogue();
     }
 
-    // 1. UI Phase cycling (Sguardo Empirico -> Rilievo Metrico -> Trama Geodetica)
+    // 1. UI Phase cycling
     bool wants_cycle_phase = input.toggle_ui_phase_pressed;
     for (const Player* p : players.ActivePlayers()) {
         if (p != nullptr && input.Get(p->player_id).toggle_overlay_pressed) {
@@ -1145,25 +1753,174 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         return out;
     }
 
-    // 4. Step active scene physics
+    // 4. Calcolo forze ambientali e aggiornamento delle 6 meccaniche top-down in Overworld
+    Vec2 external_velocity{0.0f, 0.0f};
     if (current_mode == GameMode::Overworld) {
-        const OverworldStepResult ow_res =
-            overworld.Step(players, input, dt, ecosystem.architect_recruited);
+        const Player* p0 = players.GetPlayer(0);
+        const Vec2 p0_center = (p0 != nullptr && p0->active) ? p0->Center() : overworld.camera_target;
+
+        // 4a. Quartiere dei Canali: Correnti d'acqua direzionali
+        if (current_zone == ZoneId::CanalQuarter) {
+            for (const auto& cur : zone_mechanics.water_currents) {
+                if (!cur.active) {
+                    continue;
+                }
+                if (p0_center.x >= cur.bounds.Left() && p0_center.x <= cur.bounds.Right() &&
+                    p0_center.y >= cur.bounds.Top() && p0_center.y <= cur.bounds.Bottom()) {
+                    external_velocity += cur.flow_dir.Normalized() * cur.strength;
+                }
+            }
+        }
+
+        // 4b. Altopiano dei Venti: Raffiche cicliche & riparo dietro i monoliti
+        if (current_zone == ZoneId::WindPlateau) {
+            auto& w = zone_mechanics.wind;
+            const bool was_gust = w.gust_active;
+            w.cycle_timer += safe_dt;
+            if (w.cycle_timer >= w.cycle_period) {
+                w.cycle_timer = std::fmod(w.cycle_timer, w.cycle_period);
+            }
+            // 0..2.8s calma, 2.8..3.8s telegraphing, 3.8..6.0s raffica forte
+            if (w.cycle_timer < 2.8f) {
+                w.telegraphing = false;
+                w.gust_active = false;
+                w.gust_intensity = std::max(0.0f, w.gust_intensity - safe_dt * 3.0f);
+            } else if (w.cycle_timer < 3.8f) {
+                w.telegraphing = true;
+                w.gust_active = false;
+                const float t = (w.cycle_timer - 2.8f) / 1.0f;
+                w.gust_intensity = 0.25f * t;
+            } else {
+                w.telegraphing = false;
+                w.gust_active = true;
+                const float t = (w.cycle_timer - 3.8f) / 2.2f;
+                w.gust_intensity = std::sin(Clamp(t, 0.0f, 1.0f) * kPi);
+                w.gust_intensity = std::max(0.35f, w.gust_intensity);
+            }
+            if (!was_gust && w.gust_active) {
+                out.mechanics_events.wind_gust_started = true;
+            }
+            w.player_sheltered = zone_mechanics.IsWindSheltered(p0_center);
+            if (w.gust_active && !w.player_sheltered) {
+                external_velocity += w.wind_dir.Normalized() * (w.max_push_speed * w.gust_intensity);
+            }
+        }
+
+        // 4c. Giardini Sospesi: Piastre di Risonanza Armonica & apertura Ponte di Giada
+        if (current_zone == ZoneId::HangingGardens) {
+            for (auto& pad : zone_mechanics.resonance_pads) {
+                if (pad.pulse_timer > 0.0f) {
+                    pad.pulse_timer = std::max(0.0f, pad.pulse_timer - safe_dt * 1.4f);
+                }
+                const bool inside = (p0 != nullptr && p0->active) &&
+                                    (p0_center.DistanceTo(pad.pos) <= pad.radius);
+                if (inside && !pad.player_was_inside && !zone_mechanics.jade_bridge_unlocked) {
+                    if (pad.sequence_order == zone_mechanics.resonance_next_order) {
+                        pad.activated = true;
+                        pad.pulse_timer = 1.0f;
+                        ++zone_mechanics.resonance_next_order;
+                        out.mechanics_events.resonance_pad_hit = true;
+                        out.mechanics_events.resonance_pad_index = pad.sequence_order;
+                        if (zone_mechanics.resonance_next_order >=
+                            static_cast<int>(zone_mechanics.resonance_pads.size())) {
+                            zone_mechanics.jade_bridge_unlocked = true;
+                            out.mechanics_events.resonance_solved = true;
+                        }
+                    } else if (!pad.activated) {
+                        // Ordine errato: resetta la sequenza
+                        for (auto& other : zone_mechanics.resonance_pads) {
+                            other.activated = false;
+                            other.pulse_timer = 0.0f;
+                        }
+                        pad.pulse_timer = 0.6f;
+                        zone_mechanics.resonance_next_order = 0;
+                        out.mechanics_events.resonance_failed = true;
+                    }
+                }
+                pad.player_was_inside = inside;
+            }
+            if (zone_mechanics.jade_bridge_unlocked && zone_mechanics.jade_bridge_progress < 1.0f) {
+                zone_mechanics.jade_bridge_progress =
+                    std::min(1.0f, zone_mechanics.jade_bridge_progress + safe_dt * 1.8f);
+            }
+        }
+
+        // 4d. Caldera delle Fumarole: Geyser Termici Ciclici (con telegraphing e spinta sicura)
+        if (current_zone == ZoneId::FumaroleCaldera) {
+            for (auto& g : zone_mechanics.geysers) {
+                if (g.phase == GeyserPhase::Calmed) {
+                    g.intensity = std::max(0.0f, g.intensity - safe_dt * 2.5f);
+                    continue;
+                }
+                const GeyserPhase prev_phase = g.phase;
+                g.phase_timer = std::fmod(sim_time + g.cycle_offset, g.cycle_period);
+                if (g.phase_timer < 2.0f) {
+                    g.phase = GeyserPhase::Dormant;
+                    g.intensity = 0.0f;
+                } else if (g.phase_timer < 3.1f) {
+                    g.phase = GeyserPhase::Telegraphing;
+                    g.intensity = (g.phase_timer - 2.0f) / 1.1f * 0.45f;
+                } else {
+                    g.phase = GeyserPhase::Erupting;
+                    g.intensity = 1.0f;
+                }
+                if (prev_phase != GeyserPhase::Erupting && g.phase == GeyserPhase::Erupting) {
+                    out.mechanics_events.geyser_erupted = true;
+                }
+                if (g.phase == GeyserPhase::Erupting && p0 != nullptr && p0->active) {
+                    const Vec2 delta = p0_center - g.pos;
+                    const float dist = delta.Length();
+                    if (dist <= g.radius) {
+                        const Vec2 push_dir = (dist > kEpsilon) ? (delta / dist) : Vec2{0.0f, 1.0f};
+                        external_velocity += push_dir * 340.0f;
+                        out.mechanics_events.geyser_pushed_player = true;
+                    }
+                }
+            }
+        }
+
+        // 4e. Santuario dell'Armonia: 5 Sigilli Elementali attorno all'Astrolabio
+        if (current_zone == ZoneId::HarmonySanctuary) {
+            for (auto& seal : zone_mechanics.sanctuary_seals) {
+                if (!seal.attuned && p0 != nullptr && p0->active &&
+                    p0_center.DistanceTo(seal.pos) <= seal.radius) {
+                    seal.attuned = true;
+                    out.mechanics_events.sanctuary_seal_attuned = true;
+                }
+                if (seal.attuned && seal.glow < 1.0f) {
+                    seal.glow = std::min(1.0f, seal.glow + safe_dt * 2.2f);
+                }
+            }
+        }
+    }
+
+    // 5. Step fisica scena attiva
+    if (current_mode == GameMode::Overworld) {
+        const OverworldStepResult ow_res = overworld.Step(
+            players,
+            input,
+            dt,
+            ecosystem.architect_recruited,
+            zone_mechanics.solar_gate_open,
+            zone_mechanics.jade_bridge_unlocked,
+            external_velocity);
         out.enter_structure_requested = ow_res.enter_structure_requested;
         out.target_structure = ow_res.target_structure;
         out.newly_joined_count = ow_res.newly_joined_count;
         if (ow_res.enter_structure_requested) {
             active_structure = ow_res.target_structure;
         }
-        // Detect Overworld district transitions
-        if (const Player* p0 = players.GetPlayer(0); p0 != nullptr && p0->active) {
-            const ZoneId next_zone = overworld.DistrictAt(p0->Center());
-            if (next_zone != current_zone) {
-                current_zone = next_zone;
+        if (ow_res.zone_gateway_triggered) {
+            BeginZoneInterlude(ow_res.gateway_target_zone, ow_res.gateway_arrival_tile);
+            if (interlude.active) {
+                out.interlude_started = true;
+            } else {
+                // Modalita' istantanea: swap gia' completato
                 out.zone_changed = true;
-                out.new_zone = next_zone;
-                TriggerZoneBanner(next_zone);
+                out.new_zone = current_zone;
+                out.interlude_finished = true;
             }
+            return out;
         }
     } else {
         const StructureStepResult st_res =
@@ -1172,10 +1929,10 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         out.newly_joined_count = st_res.newly_joined_count;
     }
 
-    // 5. Update proximity prompts
+    // 6. Update proximity prompts
     UpdateProximityPrompts();
 
-    // 6. Check if any active player pressed [E] interact
+    // 7. Check if any active player pressed [E] interact
     bool any_interact = false;
     for (const Player* p : players.ActivePlayers()) {
         if (p != nullptr && input.Get(p->player_id).interact_pressed) {
@@ -1184,37 +1941,129 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         }
     }
 
-    // 7. Collectibles pickup (auto-pickup on close touch OR [E] within interact radius)
-    if (const auto picked = collectibles.TryPickupNear(ActiveLocation(), players, any_interact);
-        picked.has_value()) {
-        out.collectible_picked_up = true;
-        out.picked_up_id = *picked;
-        const CollectibleMeta& meta = CollectibleMetadata(*picked);
-        if (!meta.pickup_line.empty()) {
-            story.PushAdHocLine(
-                meta.pickup_speaker.empty() ? "Elena Valli" : meta.pickup_speaker,
-                meta.pickup_line,
-                current_zone,
-                ActiveLocationName());
+    // 8. Collectibles pickup (filtrato per LocationId e ZoneId in Overworld!)
+    const LocationId loc = ActiveLocation();
+    for (auto& item : collectibles.Items()) {
+        if (item.collected || item.location != loc) {
+            continue;
+        }
+        if (loc == LocationId::Overworld && item.zone != current_zone) {
+            continue;
+        }
+        bool touch = false;
+        bool interact_hit = false;
+        for (const Player* p : players.ActivePlayers()) {
+            if (p == nullptr) {
+                continue;
+            }
+            const float dist = p->Center().DistanceTo(item.pos);
+            if (dist <= item.auto_pickup_radius) {
+                touch = true;
+            }
+            if (any_interact && dist <= item.interact_radius) {
+                interact_hit = true;
+            }
+        }
+        if (touch || interact_hit) {
+            (void)collectibles.Collect(item.id);
+            item.prompt_visible = false;
+            out.collectible_picked_up = true;
+            out.picked_up_id = item.id;
+            const CollectibleMeta& meta = CollectibleMetadata(item.id);
+            if (!meta.pickup_line.empty()) {
+                story.PushAdHocLine(
+                    meta.pickup_speaker.empty() ? "Elena Valli" : meta.pickup_speaker,
+                    meta.pickup_line,
+                    current_zone,
+                    ActiveLocationName());
+            }
+            break;
         }
     }
 
-    // 8. Unlock Central Astrolabe once all 5 district/structure monuments are activated
+    // 9. Unlock Central Astrolabe once all 5 district/structure monuments are activated
     if (AllFiveMonumentsActivated()) {
         GetMachine(MachineType::CentralAstrolabe).unlocked = true;
     }
 
-    // 9. Handle [E] interactions with Machines & NPCs
-    const LocationId loc = ActiveLocation();
+    // 10. Handle [E] interactions with Zone Mechanics, Machines & NPCs
     for (const Player* p : players.ActivePlayers()) {
         if (p == nullptr || !input.Get(p->player_id).interact_pressed) {
             continue;
         }
 
-        // 9a. Machines in current scene
         bool handled = false;
+        const Vec2 p_center = p->Center();
+
+        // 10a. Interazioni con le meccaniche top-down della zona corrente
+        if (current_mode == GameMode::Overworld) {
+            if (current_zone == ZoneId::DawnTerraces) {
+                for (auto& mirror : zone_mechanics.solar_mirrors) {
+                    if (mirror.rotatable && p_center.DistanceTo(mirror.pos) <= mirror.interact_radius) {
+                        const bool was_open = zone_mechanics.solar_gate_open;
+                        mirror.dir_index = (mirror.dir_index + 1) % 4;
+                        zone_mechanics.RecomputeSolarBeams(overworld.tilemap);
+                        out.mechanics_events.mirror_rotated = true;
+                        if (!was_open && zone_mechanics.solar_gate_open) {
+                            out.mechanics_events.solar_gate_unlocked = true;
+                        }
+                        handled = true;
+                        break;
+                    }
+                }
+            } else if (current_zone == ZoneId::CanalQuarter) {
+                for (auto& lever : zone_mechanics.sluice_levers) {
+                    if (p_center.DistanceTo(lever.pos) <= lever.interact_radius) {
+                        lever.pulled = !lever.pulled;
+                        for (auto& cur : zone_mechanics.water_currents) {
+                            if (cur.sluice_group == lever.sluice_group) {
+                                cur.active = !lever.pulled;
+                            }
+                        }
+                        out.mechanics_events.sluice_toggled = true;
+                        handled = true;
+                        break;
+                    }
+                }
+            } else if (current_zone == ZoneId::FumaroleCaldera) {
+                for (auto& valve : zone_mechanics.relief_valves) {
+                    if (!valve.open && p_center.DistanceTo(valve.pos) <= valve.interact_radius) {
+                        valve.open = true;
+                        for (auto& g : zone_mechanics.geysers) {
+                            if (g.valve_group == valve.valve_group) {
+                                g.phase = GeyserPhase::Calmed;
+                                g.intensity = 0.0f;
+                            }
+                        }
+                        out.mechanics_events.valve_opened = true;
+                        handled = true;
+                        break;
+                    }
+                }
+            } else if (current_zone == ZoneId::HarmonySanctuary) {
+                for (auto& seal : zone_mechanics.sanctuary_seals) {
+                    if (!seal.attuned && p_center.DistanceTo(seal.pos) <= seal.radius + 24.0f) {
+                        seal.attuned = true;
+                        out.mechanics_events.sanctuary_seal_attuned = true;
+                        handled = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (handled) {
+            break;
+        }
+
+        // 10b. Machines in current scene
         for (auto& m : machines) {
-            if (m.location != loc || !m.IsPlayerInRange(*p)) {
+            if (m.location != loc) {
+                continue;
+            }
+            if (loc == LocationId::Overworld && MachineZone(m.type) != current_zone) {
+                continue;
+            }
+            if (!m.IsPlayerInRange(*p)) {
                 continue;
             }
             if (!m.unlocked) {
@@ -1235,9 +2084,15 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
             break;
         }
 
-        // 9b. NPCs in current scene
+        // 10c. NPCs in current scene
         for (auto& npc : npcs) {
-            if (npc.location != loc || !npc.IsPlayerInRange(*p)) {
+            if (npc.location != loc) {
+                continue;
+            }
+            if (loc == LocationId::Overworld && npc.zone != current_zone) {
+                continue;
+            }
+            if (!npc.IsPlayerInRange(*p)) {
                 continue;
             }
             npc.met = true;
@@ -1275,7 +2130,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
                     }
                 } else {
                     npc.last_dialogue =
-                        "Riavvia prima la Turbina Idrostatica qui sotto: solo allora ti consegniero' le mappe dell'archivio.";
+                        "Riavvia prima la Turbina Idrostatica qui sotto: solo allora ti consegnero' le mappe dell'archivio.";
                     story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
                 }
             } else if (npc.id == NpcId::MiriamFerro) {
@@ -1285,7 +2140,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
                         "Senti il tremito della giada? I semi di Meridia stanno gia' rompendo la crosta di cenere.";
                 } else {
                     npc.last_dialogue =
-                        "Il Risonatore Armonico qui vicino attende i suoi 120 Hz. Accordalo e i Giardini Sospesi rinasceranno.";
+                        "Risveglia le quattro piastre armoniche per tendere il Ponte di Giada, poi accorda il Risonatore a 120 Hz.";
                 }
                 if (story.EventFired(StoryEvent::MiriamMet)) {
                     story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
@@ -1297,7 +2152,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
                         "Hai tenuto calda la valle senza bruciare una goccia di pece. Forse avevo torto a temere il tempo.";
                 } else {
                     npc.last_dialogue =
-                        "La Camera Geotermica e' qui dietro. Dimostra che Carnot regge il carico invernale e spegnero' le fornaci.";
+                        "Apri le valvole di sfogo per calmare le fumarole, poi dimostra nella Camera Geotermica che Carnot regge l'inverno.";
                 }
                 if (story.EventFired(StoryEvent::MatteoConfronted)) {
                     story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());

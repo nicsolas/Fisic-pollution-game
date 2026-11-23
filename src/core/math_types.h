@@ -56,7 +56,11 @@ enum class TileId : int {
     PavedPath = 6,
     SanctuaryFloor = 7,
     RuinsWall = 8,
-    GardenFloor = 9
+    GardenFloor = 9,
+    ZoneGateway = 10,     // Varco di passaggio verso una zona adiacente
+    ShallowChannel = 11,  // Canale guadabile con corrente direzionale (Quartiere dei Canali)
+    JadeBridge = 12,      // Ponte di giada sbloccabile con risonanza armonica (Giardini Sospesi)
+    SolarGate = 13        // Barriera solare sbloccabile illuminando le piastre (Terrazze dell'Alba)
 };
 
 enum class GameMode { Overworld, Structure };

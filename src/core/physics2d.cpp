@@ -46,7 +46,9 @@ SlideMoveResult MoveAndSlideTopDown(
     Vec2 velocity,
     float dt,
     const Tilemap& tilemap,
-    bool bridge_unlocked) noexcept {
+    bool bridge_unlocked,
+    bool solar_gate_open,
+    bool jade_bridge_unlocked) noexcept {
     SlideMoveResult result{};
     if (!IsFiniteVec2(start_pos)) {
         return {{0.0f, 0.0f}, {0.0f, 0.0f}, false, false};
@@ -116,7 +118,7 @@ SlideMoveResult MoveAndSlideTopDown(
                 if (!range.Empty()) {
                     for (int r = range.min_row; r <= range.max_row; ++r) {
                         for (int c = range.min_col; c <= range.max_col; ++c) {
-                            if (!tilemap.IsSolid(r, c, bridge_unlocked)) {
+                            if (!tilemap.IsSolid(r, c, bridge_unlocked, solar_gate_open, jade_bridge_unlocked)) {
                                 continue;
                             }
                             const Rect tr = tilemap.TileRect(r, c);
@@ -191,7 +193,7 @@ SlideMoveResult MoveAndSlideTopDown(
                 if (!range.Empty()) {
                     for (int r = range.min_row; r <= range.max_row; ++r) {
                         for (int c = range.min_col; c <= range.max_col; ++c) {
-                            if (!tilemap.IsSolid(r, c, bridge_unlocked)) {
+                            if (!tilemap.IsSolid(r, c, bridge_unlocked, solar_gate_open, jade_bridge_unlocked)) {
                                 continue;
                             }
                             const Rect tr = tilemap.TileRect(r, c);
@@ -262,10 +264,24 @@ SlideMoveResult MovePlayerTopDown(
     float dt,
     const Tilemap& tilemap,
     bool bridge_unlocked,
-    float speed) noexcept {
-    const Vec2 desired_vel = ComputeTopDownVelocity(move_axis, speed);
+    float speed,
+    Vec2 external_velocity,
+    bool solar_gate_open,
+    bool jade_bridge_unlocked) noexcept {
+    Vec2 desired_vel = ComputeTopDownVelocity(move_axis, speed);
+    if (IsFiniteVec2(external_velocity)) {
+        desired_vel.x += external_velocity.x;
+        desired_vel.y += external_velocity.y;
+    }
     const SlideMoveResult res = MoveAndSlideTopDown(
-        player.pos, player.size, desired_vel, dt, tilemap, bridge_unlocked);
+        player.pos,
+        player.size,
+        desired_vel,
+        dt,
+        tilemap,
+        bridge_unlocked,
+        solar_gate_open,
+        jade_bridge_unlocked);
     player.pos = res.position;
     player.vel = res.velocity;
     return res;
