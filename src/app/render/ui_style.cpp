@@ -818,4 +818,128 @@ void DrawBannerToast(
     }
 }
 
+void DrawControllerButtonIcon(
+    int controller_type,
+    int button_code,
+    Vector2 center,
+    float radius) {
+    const float r = std::max(8.0f, radius);
+    const bool is_ps = (controller_type == 2);
+    const bool is_switch = (controller_type == 3);
+
+    // Pulsanti frontali (0=FaceDown, 1=FaceRight, 2=FaceLeft, 3=FaceUp)
+    if (button_code >= 0 && button_code <= 3) {
+        if (is_ps) {
+            DrawCircleV(center, r, Color{24, 28, 38, 248});
+            DrawCircleLinesV(center, r, Color{138, 152, 176, 220});
+            const float s = r * 0.46f;
+            if (button_code == 0) {
+                // Croce blu (Cross)
+                const Color col{92, 176, 255, 255};
+                DrawLineEx({center.x - s, center.y - s}, {center.x + s, center.y + s}, 2.3f, col);
+                DrawLineEx({center.x + s, center.y - s}, {center.x - s, center.y + s}, 2.3f, col);
+            } else if (button_code == 1) {
+                // Cerchio rosso (Circle)
+                const Color col{246, 102, 102, 255};
+                DrawRingLines(center, s * 0.92f, s * 1.18f, 0.0f, 360.0f, 20, col);
+                DrawCircleLinesV(center, s * 1.05f, col);
+            } else if (button_code == 2) {
+                // Quadrato rosa (Square)
+                const Color col{236, 122, 214, 255};
+                DrawRectangleLinesEx(
+                    Rectangle{center.x - s, center.y - s, s * 2.0f, s * 2.0f},
+                    2.1f,
+                    col);
+            } else {
+                // Triangolo verde acqua (Triangle)
+                const Color col{72, 224, 178, 255};
+                const Vector2 p1{center.x, center.y - s * 1.08f};
+                const Vector2 p2{center.x - s * 1.04f, center.y + s * 0.86f};
+                const Vector2 p3{center.x + s * 1.04f, center.y + s * 0.86f};
+                DrawLineEx(p1, p2, 2.1f, col);
+                DrawLineEx(p2, p3, 2.1f, col);
+                DrawLineEx(p3, p1, 2.1f, col);
+            }
+            return;
+        }
+
+        if (is_switch) {
+            const char* letter = (button_code == 0) ? "B" : ((button_code == 1) ? "A" : ((button_code == 2) ? "Y" : "X"));
+            const Color fill = (button_code == 1) ? Color{178, 38, 48, 248} : Color{32, 36, 44, 248};
+            const Color border = (button_code == 1) ? Color{252, 126, 134, 255} : Color{186, 196, 210, 235};
+            DrawCircleV(center, r, fill);
+            DrawCircleLinesV(center, r, border);
+            const int tw = MeasureUiText(letter, 12);
+            DrawTextShadow(letter, static_cast<int>(center.x) - tw / 2, static_cast<int>(center.y) - 6, 12, RAYWHITE);
+            return;
+        }
+
+        // Xbox / Generic
+        const char* letter = (button_code == 0) ? "A" : ((button_code == 1) ? "B" : ((button_code == 2) ? "X" : "Y"));
+        const Color fill = (button_code == 0)
+                               ? Color{34, 138, 64, 250}
+                               : ((button_code == 1)
+                                      ? Color{186, 44, 48, 250}
+                                      : ((button_code == 2) ? Color{36, 108, 196, 250} : Color{196, 148, 28, 250}));
+        DrawCircleV(center, r, fill);
+        DrawCircleLinesV(center, r, Color{240, 244, 250, 220});
+        const int tw = MeasureUiText(letter, 12);
+        DrawTextShadow(letter, static_cast<int>(center.x) - tw / 2, static_cast<int>(center.y) - 6, 12, RAYWHITE);
+        return;
+    }
+
+    // Dorsali / Grilletti / Stick / Start-Options-+ / View-Share--
+    const char* pill_text = "?";
+    if (is_ps) {
+        switch (button_code) {
+            case 4: pill_text = "L1"; break;
+            case 5: pill_text = "R1"; break;
+            case 6: pill_text = "L2"; break;
+            case 7: pill_text = "R2"; break;
+            case 8: pill_text = "L3"; break;
+            case 9: pill_text = "R3"; break;
+            case 10: pill_text = "OPT"; break;
+            case 11: pill_text = "SHR"; break;
+            default: break;
+        }
+    } else if (is_switch) {
+        switch (button_code) {
+            case 4: pill_text = "L"; break;
+            case 5: pill_text = "R"; break;
+            case 6: pill_text = "ZL"; break;
+            case 7: pill_text = "ZR"; break;
+            case 8: pill_text = "LS"; break;
+            case 9: pill_text = "RS"; break;
+            case 10: pill_text = "+"; break;
+            case 11: pill_text = "-"; break;
+            default: break;
+        }
+    } else {
+        switch (button_code) {
+            case 4: pill_text = "LB"; break;
+            case 5: pill_text = "RB"; break;
+            case 6: pill_text = "LT"; break;
+            case 7: pill_text = "RT"; break;
+            case 8: pill_text = "LS"; break;
+            case 9: pill_text = "RS"; break;
+            case 10: pill_text = "STR"; break;
+            case 11: pill_text = "VIW"; break;
+            default: break;
+        }
+    }
+
+    const int tw = MeasureUiText(pill_text, 11);
+    const float pw = std::max(r * 2.2f, static_cast<float>(tw + 14));
+    const float ph = r * 1.65f;
+    const Rectangle pill{center.x - pw * 0.5f, center.y - ph * 0.5f, pw, ph};
+    DrawRectangleRounded(pill, 0.42f, 6, Color{24, 34, 48, 245});
+    DrawRectangleRoundedLinesEx(pill, 0.42f, 6, 1.3f, pal::kBronzeBright);
+    DrawTextShadow(
+        pill_text,
+        static_cast<int>(center.x) - tw / 2,
+        static_cast<int>(center.y) - 6,
+        11,
+        pal::kJadeGlow);
+}
+
 } // namespace eco::app

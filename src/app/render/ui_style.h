@@ -85,4 +85,11 @@ void DrawBannerToast(
     Color accent,
     float alpha);
 
+// Disegna il simbolo vettoriale del pulsante per Xbox (1), PlayStation (2) o Nintendo Switch (3).
+void DrawControllerButtonIcon(
+    int controller_type,
+    int button_code,
+    Vector2 center,
+    float radius);
+
 } // namespace eco::app

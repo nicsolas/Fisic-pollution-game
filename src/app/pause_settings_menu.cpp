@@ -1705,9 +1705,9 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             pal::kJadeGlow);
 
         static constexpr std::array<const char*, 3> kEditTargetLabels = {
-            "Xbox (A/B/X/Y)",
-            "PlayStation (X/O/Sq/Tri)",
-            "Nintendo Switch (B/A/Y/X)"
+            "Xbox (A / B / X / Y)",
+            "PlayStation (Croce / O / Quad / Tri)",
+            "Nintendo Switch (B / A / Y / X)"
         };
         const int edit_idx = std::clamp(controller_edit_profile_, 0, 2);
         draw_choice(
@@ -1748,15 +1748,22 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
                           0,
                           static_cast<int>(GamepadButtonCode::Count) - 1))
                     : rt_ctrl.profiles[static_cast<std::size_t>(edit_idx)].bindings[static_cast<std::size_t>(a)];
-            const char* btn_label =
-                listening ? "Premi un tasto..." : ControllerButtonLabel(edit_type, btn_code);
-            const int bw = MeasureUiText(btn_label, 14);
-            DrawTextShadow(
-                btn_label,
-                static_cast<int>(r.x + r.width) - bw - 12,
-                static_cast<int>(r.y) + 8,
-                14,
-                listening ? pal::kAmberGlow : pal::kJadeGlow);
+            if (listening) {
+                const char* wait_lbl = "Premi un tasto...";
+                const int bw = MeasureUiText(wait_lbl, 13);
+                DrawTextShadow(
+                    wait_lbl,
+                    static_cast<int>(r.x + r.width) - bw - 12,
+                    static_cast<int>(r.y) + 8,
+                    13,
+                    pal::kAmberGlow);
+            } else {
+                DrawControllerButtonIcon(
+                    static_cast<int>(edit_type),
+                    static_cast<int>(btn_code),
+                    Vector2{r.x + r.width - 28.0f, r.y + r.height * 0.5f},
+                    11.5f);
+            }
         }
 
         const int primary_gp = FindPrimaryGamepad();

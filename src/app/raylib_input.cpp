@@ -372,8 +372,8 @@ const char* ControllerButtonLabel(ControllerType type, GamepadButtonCode btn) no
         switch (btn) {
             case GamepadButtonCode::FaceDown:    return "[X]";
             case GamepadButtonCode::FaceRight:   return "[O]";
-            case GamepadButtonCode::FaceLeft:    return "[□]";
-            case GamepadButtonCode::FaceUp:      return "[△]";
+            case GamepadButtonCode::FaceLeft:    return "[Quad]";
+            case GamepadButtonCode::FaceUp:      return "[Tri]";
             case GamepadButtonCode::LB:          return "[L1]";
             case GamepadButtonCode::RB:          return "[R1]";
             case GamepadButtonCode::LT:          return "[L2]";
