@@ -2,9 +2,17 @@
 
 Videogioco 2D in **C++20 e Raylib 5.5** basato sulla fisica empirica, sulla matematica applicata, sull'ecologia e sull'archeologia di una civilta' perduta.
 
-Ambientato sull'altopiano monumentale de **La Conca di Meridia**, segue la naturalista e cartografa **Elena Valli** mentre esplora **6 distretti in superficie** e **3 strutture interne**, raccoglie **16 reliquie** distribuite in **4 Ere storiche** e riattiva **5 monumenti fisici + l'Astrolabio Centrale** (Ottica di Lambert, Idrostatica di Stevino, Pendolo Isocrono di Galileo, Risonanza Armonica Lorentziana, Termodinamica di Carnot e Interferenza di Fase), scegliendo se guarire la Conca con il calcolo o cedere alle fornaci a pece di Matteo Verrini.
+Ambientato sull'altopiano monumentale de **La Conca di Meridia**, segue la naturalista e cartografa **Elena Valli** mentre esplora **6 distretti separati in superficie** e **3 strutture interne**, raccoglie **16 reliquie** distribuite in **4 Ere storiche** e riattiva **5 monumenti fisici + l'Astrolabio Centrale** (Ottica di Lambert, Idrostatica di Stevino, Pendolo Isocrono di Galileo, Risonanza Armonica Lorentziana, Termodinamica di Carnot e Interferenza di Fase), scegliendo se guarire la Conca con il calcolo o cedere alle fornaci a pece di Matteo Verrini.
 
-Include **Cronologia dei Dialoghi (`[H]`)**, **Codex delle 16 Reliquie (`[J]`)**, **audio procedurale** (suoni ambientali e di interazione senza voci sui dialoghi), **salvataggio automatico/manuale con menu "Riprendi da dove hai lasciato" e sfondo ridisegnato della zona salvata**, **selezione del monitor per lo schermo intero** e **selezione della GPU** (NVIDIA / Intel / AMD).
+Include:
+- **6 Zone Separate a Mappa Dedicata (`26x36` tile)** caricate on-demand in memoria (una sola mappa residente in RAM alla volta per ottimizzazione footprint).
+- **6 Meccaniche Top-Down Uniche**: specchi e fasci solari con piastre fotosensibili, correnti d'acqua fisiche con chiuse a leva, raffiche di vento periodiche con monoliti frangivento, piastre acustiche di risonanza armonica con sblocco del Ponte di Giada, geyser termici ciclici con valvole di sfogo, e accordatura dei sigilli elementali dell'Astrolabio.
+- **Intramezzi Panoramici tra Zone**: transizioni visive e narrative dipinte proceduralmente ad ogni passaggio di soglia, con parallasse, versi storici dedicati e skip rapido (`SPAZIO`).
+- **Menu di Pausa & Impostazioni Riprogettato**: 4 schede intuitive (**Gioco**, **Grafica**, **Ambiente**, **Audio**), slider trascinabili col mouse, mute rapido `[M]`, reset predefiniti per scheda.
+- **Controlli Effetti Ambientali & Audio Granulari**: intensita' regolabile in tempo reale per atmosfera, particelle, foschia/nebbia, raggi solari, vignettatura e meteo di zona; volumi separati per Master, Musica, Effetti e Ambiente naturale con anteprima live.
+- **Cronologia dei Dialoghi (`[H]`)** e **Codex delle 16 Reliquie (`[J]`)** con riposizionamento lore-accurate in tutte le zone.
+- **Salvataggio automatico/manuale con "Riprendi da dove hai lasciato"** e sfondo ridisegnato dinamicamente per distretto e foschia.
+- **Selezione del Monitor** e **Selezione GPU OpenGL** (NVIDIA / Intel / AMD) su Linux e multi-schermo.
 
 ---
 
@@ -55,7 +63,7 @@ cd build && ctest --output-on-failure
 - `--open-pause` / `--open-settings`: apre direttamente il menu di pausa o le impostazioni.
 - `--collect-all` / `--clean-all` / `--epilogue`: preset utili per ispezionare archivio completo, monumenti calibrati o epilogo.
 - `--smoke-frames N` + `--screenshot FILE`: chiude dopo `N` frame salvando uno screenshot (supporta percorsi assoluti e relativi).
-- `--headless-e2e`: esegue la suite end-to-end deterministica senza finestra grafica.
+- `--headless-e2e`: esegue la suite end-to-end deterministica senza finestra grafica (include la validazione completa delle 6 zone separate, metriche di memoria residenti e swap intramezzi).
 
 ---
 
@@ -63,10 +71,10 @@ cd build && ctest --output-on-failure
 
 | Tasto / Input | Azione |
 |---|---|
-| `WASD` / `Frecce` / Stick Sinistro | Movimento (Top-Down nella Conca, Side-Scrolling nelle 3 Strutture) |
-| `SPAZIO` / `W` / `SU` | Salto nelle Strutture interne (con Coyote Time e Jump Buffer) |
-| `F` / `Q` / `.` | **Lente Empirica** (misura il parametro fisico del monumento piu' vicino) |
-| `E` / `INVIO` | **Interagisci** con monumenti, personaggi (Clara, Lorenzo, Miriam, Matteo), reliquie o conferma nei menu |
+| `WASD` / `Frecce` / Stick Sinistro | Movimento (Top-Down nelle 6 zone, Side-Scrolling nelle 3 Strutture) |
+| `SPAZIO` / `W` / `SU` | Salto nelle Strutture interne / **Salta Intramezzo** durante la transizione tra zone |
+| `F` / `Q` / `.` | **Lente Empirica** (misura il parametro fisico del monumento o dell'elemento piu' vicino) |
+| `E` / `INVIO` | **Interagisci** con monumenti, personaggi (Clara, Lorenzo, Miriam, Matteo), leve, specchi, valvole, reliquie o conferma menu |
 | `A`/`D` / `Frecce` / Mouse (nel modal) | Regola il parametro fisico del monumento |
 | `C` / `INVIO` (nel modal) | **Conferma Calibrazione Pulita** |
 | `B` (nel modal) | **Fornace a Pece di Emergenza** (energia immediata ma +Foschia; disabilitata sull'Astrolabio) |
@@ -75,29 +83,65 @@ cd build && ctest --output-on-failure
 | `J` | **Diario di Campo — Codex Reliquie** (16 reliquie divise per 4 Ere storiche dei Meridiani) |
 | `V` | Cambia **Fase Percettiva** (Fase 1 Sguardo Empirico -> Fase 2 Rilievo Metrico -> Fase 3 Trama Geodetica) |
 | `N` | **Avanza Dialogo** / Completa battuta |
-| `TAB` | Cambio rapido Overworld <-> Struttura attiva (o cambia tab dentro il Diario) |
-| `ESC` | Chiude Calibrazione -> Chiude Diario -> Apre **Menu di Pausa (Salva Partita & Impostazioni)** |
-| `O` (dal Titolo) | Apre direttamente le **Impostazioni (Schermo, GPU & Audio)** |
-| `M` | Attiva/Disattiva rapidamente **Audio (Muto)** |
+| `TAB` | Cambio rapido Overworld <-> Struttura attiva (o cambia tab dentro il Diario e nelle Impostazioni) |
+| `ESC` | Chiude Calibrazione -> Chiude Diario -> Apre/Chiude **Menu di Pausa & Impostazioni** |
+| `O` (dal Titolo) | Apre direttamente le **Impostazioni (Gioco, Grafica, Ambiente, Audio)** |
+| `M` | Attiva/Disattiva rapidamente **Audio (Muto)** preservando i livelli di volume |
 | `F11` / `Alt+INVIO` | Attiva/Disattiva **Schermo Intero** sul **Monitor selezionato** |
 
 ---
 
-## Funzionalita' Principali
+## Funzionalita' Principali e Novita'
 
-- **Salvataggio & Menu "Riprendi da dove hai lasciato"** (`saves/conca_di_meridia.sav`):
-  - Salvataggio automatico su traguardi, raccolta reliquie, cambi zona/struttura e chiusura, piu' pulsante **"Salva Partita Ora"** nel menu di pausa.
-  - Preserva posizione esatta, zona/struttura, ecosistema, 6 monumenti, 4 NPC, 16 reliquie e l'intera **Cronologia Dialoghi**.
-  - La schermata del Titolo mostra una scheda riepilogativa dell'ultima partita e **ridisegna dinamicamente lo sfondo** in base al distretto o alla struttura salvata e al suo livello reale di foschia.
-- **Selezione Monitor & Selezione GPU** (`saves/settings.cfg`):
-  - Elenca tutti i monitor connessi e forza lo schermo intero sul monitor scelto (`SetWindowMonitor`, risolvendo lo spostamento automatico sul secondo schermo su Wayland/X11).
-  - Rileva le GPU fisiche (`/sys/class/drm/card*`), mostra la `GPU Attiva Ora` (renderer OpenGL live) e permette di commutare tra NVIDIA dedicata e Intel/AMD integrata con pulsante **"Applica GPU & Riavvia"**.
-- **Audio Procedurale senza Voci sui Dialoghi**:
-  - 18 suoni fisici e di interazione (passi su pietra/erba, salto/atterraggio, Lente Empirica, reliquie, calibrazione pulita/fornace, portali, UI) + 5 paesaggi sonori continui (Overworld pulito/foschia, Cisterne, Torre del Pendolo, Camera Geotermica), regolabili in volume e commutabili tra `Ambiente + Interazioni` e `Solo Interazioni`.
-- **Mondo & Fisica**:
-  - **6 Distretti Overworld (`36x50` tile)** + **3 Strutture Interne Side-Scrolling** + **Minimappa (`MAPPA DI MERIDIA`)**.
-  - **6 Leggi Fisiche Calibrabili**: Lambert (`45 deg`), Stevino (`10 m` -> `98.100 Pa`), Pendolo di Galileo (`L = 2.00 m`), Risonanza Armonica Lorentziana (`f0 = 120 Hz`, `Q = 3`), Ciclo di Carnot (`Th = 600 K`, `eta = 50%`) e Interferenza di Fase dell'Astrolabio Centrale (`72 deg`).
-  - **16 Collezionabili in 4 Ere** e **3 Finali** (*L'Alba di Meridia*, *La Rinascita della Conca*, *Il Prezzo della Fretta*).
+### 1. Ridisegno Mappa & Architettura a Zone Separate
+- **6 Mappe Indipendenti (`26x36` tile)**:
+  - *Terrazze dell'Alba*: lastricati solari, meridiane in ottone e corridoi d'allineamento ottico.
+  - *Quartiere dei Canali*: banchine d'acqua, canali guadabili e il monumentale Ponte degli Archi.
+  - *Altopiano dei Venti*: costoni rocciosi battuti da folate violente e monoliti frangivento in basalto.
+  - *Giardini Sospesi*: terrazzamenti botanici con vasche d'acqua e piattaforme acustiche in giada.
+  - *Caldera delle Fumarole*: distese vulcaniche solcate da getti termici e condutture in rame.
+  - *Santuario dell'Armonia*: piazza cerimoniale ellittica che ospita l'Astrolabio Centrale e i 5 sigilli elementali.
+- **Ottimizzazione Memoria Reale**:
+  - Viene mantenuta residente in RAM **solo la mappa della zona attualmente attiva** (`936 B` di griglia per zona, oltre `6.3 KB` risparmiati rispetto al caricamento simultaneo).
+  - Al varco tra zone, la vecchia tilemap e le cache procedurali (affreschi e prop) vengono liberate con deallocazione esplicita (`ReleaseOverworldProceduralCache()`), rigenerando on-demand solo gli asset della nuova destinazione.
+  - Statistiche di memoria costantemente tracciate ed esposte via `WorldContext::GetMemoryMetrics()`.
+
+### 2. Meccaniche Top-Down Uniche per Zona
+Ogni livello 2D possiede ora un gameplay e una fisica propria:
+1. **Terrazze dell'Alba — Emettitore & Specchi Solari**:
+   - Fascio luminoso orientabile ruotando 3 specchi a prisma con `[E]`.
+   - Caricamento delle piastre fotosensibili all'incidenza del raggio per disattivare la barriera energetica (*SolarGate*) e sbloccare passaggi e reliquie.
+2. **Quartiere dei Canali — Correnti Idrauliche & Chiuse**:
+   - I canali bassi (`ShallowChannel`) esercitano una reale forza idrodinamica sul giocatore.
+   - Leve di manovra (`[E]`) deviano il flusso e abbassano le chiuse per rendere sicuro il transito.
+3. **Altopiano dei Venti — Raffiche Dinamiche & Monoliti Frangivento**:
+   - Cicli periodici di vento con telegraphing visivo e sonoro che spingono fisicamente Elena.
+   - 5 grandi monoliti in basalto creano aree d'ombra aerodinamica (*shelter zone*) dietro cui ripararsi durante la raffica.
+4. **Giardini Sospesi — Nodi di Risonanza Acustica**:
+   - 4 piastre armoniche intonate (accordo di Do Maggiore: C4, E4, G4, C5) che emettono onde sonore e particelle intonate.
+   - Calpestare la sequenza corretta materializza gradualmente il *Ponte di Giada* sospeso sulle acque.
+5. **Caldera delle Fumarole — Geyser Termici & Valvole di Sfogo**:
+   - 6 crateri geotermici ciclici a 4 fasi (*Dormant*, *Telegraphing*, *Erupting*, *Calmed*) che respingono in sicurezza chi si avvicina durante l'eruzione.
+   - 2 valvole di sfogo azionabili per canalizzare il vapore e raffreddare stabilmente i getti.
+6. **Santuario dell'Armonia — Sigilli Elementali dell'Astrolabio**:
+   - 5 sigilli radiali corrispondenti ai 5 distretti periferici, che si accordano e illuminano all'attivazione delle rispettive macchine.
+
+### 3. Intramezzi di Soglia Narrativi e Visivi
+- Attraversando uno dei 5 varchi monumentali tra zone si attiva una sequenza di intramezzo procedurale con dissolvenza, parallasse dello sfondo e polvere atmosferica.
+- Ogni passaggio propone un testo poetico e storico scritto per la specifica direzione del viaggio (`ZoneInterludeCopy()`).
+- Possibilita' di saltare istantaneamente la transizione premendo `SPAZIO`, `INVIO`, `E` o `ESC` (istantanea in test automatizzati `--headless-e2e`).
+
+### 4. Menu di Pausa, Regolazioni Ambientali e Audio
+- **Layout a 4 Schede** navigabile sia da tastiera (`[Q/E]`, `[TAB]`, `[1-4]`, frecce) sia interamente col mouse:
+  1. *Gioco*: velocita' dialoghi, tutorial compatto, mostra FPS.
+  2. *Grafica*: modalita' finestra/fullscreen, selettore monitor dedicato, risoluzione sicura, FPS target, selettore GPU fisica con riavvio automatico.
+  3. *Ambiente*: toggle generale atmosfera, densita' particelle (0..100%), intensita' foschia/nebbia, raggi solari volumetrici, intensita' vignetta cinematografica, intensita' effetti meteo di zona (raffiche, vapore, pollini).
+  4. *Audio*: toggle mute rapido, volume principale, volume musica procedurale, volume effetti/interazioni, volume atmosfera/natura, toggle ambiente, toggle suoni interfaccia, con campionamento sonoro in tempo reale durante la regolazione.
+- Salvataggio persistente e automatico in `saves/settings.cfg`.
+
+### 5. Collezionabili & Codex Storico
+- 16 reliquie archeologiche divise in 4 Ere storiche dei Meridiani, riposizionate nei nuovi scenari in modo organico e sicuro da raggiungere.
+- Consultabili in qualsiasi momento con il tasto `[J]` (Codex Reliquie) con analisi scientifiche, estratti di diario e contributi narrativi degli NPC.
 
 ---
 
