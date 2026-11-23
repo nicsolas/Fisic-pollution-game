@@ -118,17 +118,8 @@ namespace {
 }
 
 [[nodiscard]] Vec2 StructureSpawnFor(const Tilemap& map, StructureId id) noexcept {
-    switch (id) {
-        case StructureId::HypogeanCisterns:
-            return GroundedTopLeftForTile(map, 13, 5);
-        case StructureId::PendulumTower:
-            return GroundedTopLeftForTile(map, 15, 5);
-        case StructureId::GeothermalChamber:
-            return GroundedTopLeftForTile(map, 13, 5);
-        case StructureId::Count:
-            break;
-    }
-    return GroundedTopLeftForTile(map, 13, 5);
+    const StructureSpawnLayout layout = GetStructureLayout(id);
+    return GroundedTopLeftForTile(map, layout.spawn_tile.row, layout.spawn_tile.col);
 }
 
 } // namespace
@@ -663,7 +654,8 @@ OverworldStepResult OverworldSim::Step(
     bool bridge_unlocked,
     bool solar_gate_open,
     bool jade_bridge_unlocked,
-    Vec2 external_velocity) {
+    Vec2 external_velocity,
+    bool forward_gateway_unlocked) {
     if (!initialized || tilemap.Empty()) {
         InitializeDefault();
     }
@@ -770,10 +762,15 @@ OverworldStepResult OverworldSim::Step(
             continue;
         }
         for (const auto& gw : active_gateways) {
-            if (gw.requires_bridge_unlock && !bridge_unlocked) {
-                continue;
-            }
+            const bool is_forward = static_cast<int>(gw.to_zone) > static_cast<int>(gw.from_zone);
+            const bool gw_locked = (gw.requires_bridge_unlock && !bridge_unlocked) ||
+                                   (is_forward && !forward_gateway_unlocked);
             if (bounds.Overlaps(ZoneGatewayRect(tilemap, gw))) {
+                if (gw_locked) {
+                    result.blocked_gateway_touched = true;
+                    result.blocked_gateway_target = gw.to_zone;
+                    continue;
+                }
                 any_on_gateway = true;
                 matched_gw = &gw;
                 break;
@@ -804,6 +801,10 @@ OverworldStepResult OverworldSim::Step(
 void StructureSim::InitializeDefault() {
     active_structure = StructureId::HypogeanCisterns;
     tilemap.ReleaseMemory();
+    for (std::size_t i = 0; i < saved_puzzles.size(); ++i) {
+        saved_puzzles[i].ResetForStructure(static_cast<StructureId>(i), kTileSize);
+    }
+    puzzle = saved_puzzles[0];
     spawn_point = {0.0f, 0.0f};
     camera_target = {0.0f, 0.0f};
     portal_cooldown_timer = 0.0f;
@@ -811,18 +812,44 @@ void StructureSim::InitializeDefault() {
     initialized = true;
 }
 
+void StructureSim::SyncActivePuzzleToSaved() noexcept {
+    if (!initialized || puzzle.switches.empty()) {
+        return;
+    }
+    const int idx = static_cast<int>(puzzle.structure_id);
+    if (idx >= 0 && idx < static_cast<int>(saved_puzzles.size())) {
+        saved_puzzles[static_cast<std::size_t>(idx)] = puzzle;
+    }
+}
+
 void StructureSim::SelectStructure(StructureId id) {
     if (!initialized) {
         InitializeDefault();
+    } else {
+        SyncActivePuzzleToSaved();
     }
     tilemap.ReleaseMemory();
     active_structure = id;
     tilemap = Tilemap::CreateStructureMap(id, kTileSize);
+
+    const int idx = std::clamp(
+        static_cast<int>(id),
+        0,
+        static_cast<int>(saved_puzzles.size()) - 1);
+    StructurePuzzleState& stored = saved_puzzles[static_cast<std::size_t>(idx)];
+    if (stored.switches.empty() || stored.structure_id != id) {
+        stored.ResetForStructure(id, kTileSize);
+    }
+    puzzle = stored;
+    puzzle.EvaluateGates(tilemap);
+    stored = puzzle;
+
     spawn_point = StructureSpawnFor(tilemap, id);
     camera_target = {spawn_point.x + kPlayerWidth * 0.5f, spawn_point.y + kPlayerHeight * 0.5f};
 }
 
 void StructureSim::UnloadMemory() noexcept {
+    SyncActivePuzzleToSaved();
     tilemap.ReleaseMemory();
 }
 
@@ -1008,16 +1035,20 @@ void WorldContext::Reset() {
     interlude.instant_mode = keep_instant;
 
     // 6 Monumenti (coordinate locali nella rispettiva zona 26x36 o struttura)
+    const StructureSpawnLayout cistern_layout = GetStructureLayout(StructureId::HypogeanCisterns);
+    const StructureSpawnLayout tower_layout = GetStructureLayout(StructureId::PendulumTower);
+    const StructureSpawnLayout geo_layout = GetStructureLayout(StructureId::GeothermalChamber);
+
     machines[MachineIndex(MachineType::SolarArray)] =
         Machine::CreateDefaultSolar(ZoneTileCenter(13, 18));
     machines[MachineIndex(MachineType::HydroTurbine)] =
-        Machine::CreateDefaultHydro(ZoneTileCenter(13, 13));
+        Machine::CreateDefaultHydro(ZoneTileCenter(cistern_layout.machine_tile.row, cistern_layout.machine_tile.col));
     machines[MachineIndex(MachineType::PendulumRegulator)] =
-        Machine::CreateDefaultPendulum(ZoneTileCenter(12, 15));
+        Machine::CreateDefaultPendulum(ZoneTileCenter(tower_layout.machine_tile.row, tower_layout.machine_tile.col));
     machines[MachineIndex(MachineType::HarmonicResonator)] =
         Machine::CreateDefaultHarmonic(ZoneTileCenter(12, 26));
     machines[MachineIndex(MachineType::ThermalExchanger)] =
-        Machine::CreateDefaultThermal(ZoneTileCenter(9, 26));
+        Machine::CreateDefaultThermal(ZoneTileCenter(geo_layout.machine_tile.row, geo_layout.machine_tile.col));
     machines[MachineIndex(MachineType::CentralAstrolabe)] =
         Machine::CreateDefaultAstrolabe(ZoneTileCenter(13, 18));
 
@@ -1028,6 +1059,8 @@ void WorldContext::Reset() {
     npcs[NpcIndex(NpcId::ClaraSereni)] = WorldNpc::CreateDefault(NpcId::ClaraSereni);
     npcs[NpcIndex(NpcId::ClaraSereni)].pos = ZoneTileCenter(12, 29);
     npcs[NpcIndex(NpcId::LorenzoAltieri)] = WorldNpc::CreateDefault(NpcId::LorenzoAltieri);
+    npcs[NpcIndex(NpcId::LorenzoAltieri)].pos =
+        ZoneTileCenter(cistern_layout.npc_tile.row, cistern_layout.npc_tile.col);
     npcs[NpcIndex(NpcId::MiriamFerro)] = WorldNpc::CreateDefault(NpcId::MiriamFerro);
     npcs[NpcIndex(NpcId::MiriamFerro)].pos = ZoneTileCenter(15, 11);
     npcs[NpcIndex(NpcId::MatteoVerrini)] = WorldNpc::CreateDefault(NpcId::MatteoVerrini);
@@ -1040,6 +1073,7 @@ void WorldContext::Reset() {
 
     current_zone = ZoneId::DawnTerraces;
     zone_banner_timer = 0.0f;
+    locked_gateway_hint_timer = 0.0f;
     banner_zone = ZoneId::DawnTerraces;
     banner_structure = StructureId::HypogeanCisterns;
     banner_is_structure = false;
@@ -1071,7 +1105,7 @@ MemoryMetrics WorldContext::GetMemoryMetrics() const noexcept {
         static_cast<std::size_t>(ZoneId::Count) *
         static_cast<std::size_t>(Tilemap::kZoneRows) *
         static_cast<std::size_t>(Tilemap::kZoneCols);
-    constexpr std::size_t kAllThreeStructuresBytes = (16 * 34) + (18 * 30) + (16 * 34);
+    constexpr std::size_t kAllThreeStructuresBytes = (20 * 40) + (22 * 38) + (20 * 42);
     const std::size_t unoptimized_total = kFullSixZonesBytes + kAllThreeStructuresBytes;
     m.saved_unloaded_bytes =
         (unoptimized_total > m.total_resident_map_bytes)
@@ -1253,38 +1287,14 @@ ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
         return map.TileCenter(std::max(0, rows - 3), 2);
     };
 
-    // Trova il varco nella zona corrente verso la zona target (un passo lungo il grafo delle 6 zone)
+    // Trova il varco nella zona corrente verso la zona target (catena lineare 0 <-> 1 <-> 2 <-> 3 <-> 4 <-> 5)
     auto next_hop_zone = [](ZoneId from, ZoneId to) noexcept -> ZoneId {
         if (from == to) {
             return to;
         }
-        // Grafo ad albero:
-        // DawnTerraces - CanalQuarter - WindPlateau
-        //                     |
-        //              HangingGardens - FumaroleCaldera
-        //                     |
-        //             HarmonySanctuary
-        switch (from) {
-            case ZoneId::DawnTerraces:
-                return ZoneId::CanalQuarter;
-            case ZoneId::WindPlateau:
-                return ZoneId::CanalQuarter;
-            case ZoneId::FumaroleCaldera:
-                return ZoneId::HangingGardens;
-            case ZoneId::HarmonySanctuary:
-                return ZoneId::HangingGardens;
-            case ZoneId::CanalQuarter:
-                if (to == ZoneId::DawnTerraces) return ZoneId::DawnTerraces;
-                if (to == ZoneId::WindPlateau) return ZoneId::WindPlateau;
-                return ZoneId::HangingGardens;
-            case ZoneId::HangingGardens:
-                if (to == ZoneId::FumaroleCaldera) return ZoneId::FumaroleCaldera;
-                if (to == ZoneId::HarmonySanctuary) return ZoneId::HarmonySanctuary;
-                return ZoneId::CanalQuarter;
-            case ZoneId::Count:
-                break;
-        }
-        return to;
+        const int cur = static_cast<int>(from);
+        const int dst = static_cast<int>(to);
+        return static_cast<ZoneId>(cur + (dst > cur ? 1 : -1));
     };
 
     auto guide_overworld = [&](ZoneId target_zone, Vec2 target_pos, const char* label) noexcept -> ObjectiveTarget {
@@ -1355,6 +1365,11 @@ ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
             "Cisterne Ipogee");
     }
 
+    const WorldNpc& clara = GetNpc(NpcId::ClaraSereni);
+    if (!ecosystem.architect_recruited && !clara.recruited) {
+        return guide_overworld(ZoneId::CanalQuarter, clara.pos, "Clara Sereni (Ponte)");
+    }
+
     const Machine& pendulum = GetMachine(MachineType::PendulumRegulator);
     if (pendulum.state == MachineState::Broken) {
         return guide_structure(
@@ -1362,11 +1377,6 @@ ObjectiveTarget WorldContext::CurrentObjectiveTarget() const noexcept {
             pendulum.pos,
             "Pendolo Isochronos",
             "Torre del Pendolo");
-    }
-
-    const WorldNpc& clara = GetNpc(NpcId::ClaraSereni);
-    if (!ecosystem.architect_recruited && !clara.recruited) {
-        return guide_overworld(ZoneId::CanalQuarter, clara.pos, "Clara Sereni (Ponte)");
     }
 
     const Machine& harmonic = GetMachine(MachineType::HarmonicResonator);
@@ -1403,6 +1413,90 @@ int WorldContext::ActivatedMonumentsCount() const noexcept {
         }
     }
     return count;
+}
+
+bool WorldContext::IsZoneMainTaskCompleted(ZoneId zone) const noexcept {
+    switch (zone) {
+        case ZoneId::DawnTerraces:
+            return GetMachine(MachineType::SolarArray).state != MachineState::Broken;
+        case ZoneId::CanalQuarter:
+            return GetMachine(MachineType::HydroTurbine).state != MachineState::Broken &&
+                   ecosystem.architect_recruited;
+        case ZoneId::WindPlateau:
+            return GetMachine(MachineType::PendulumRegulator).state != MachineState::Broken;
+        case ZoneId::HangingGardens:
+            return GetMachine(MachineType::HarmonicResonator).state != MachineState::Broken;
+        case ZoneId::FumaroleCaldera:
+            return GetMachine(MachineType::ThermalExchanger).state != MachineState::Broken;
+        case ZoneId::HarmonySanctuary:
+            return GetMachine(MachineType::CentralAstrolabe).state != MachineState::Broken;
+        case ZoneId::Count:
+            break;
+    }
+    return false;
+}
+
+bool WorldContext::IsZoneGatewayUnlocked(const ZoneGateway& gw) const noexcept {
+    if (static_cast<int>(gw.to_zone) <= static_cast<int>(gw.from_zone)) {
+        return true;
+    }
+    if (gw.requires_bridge_unlock && !ecosystem.architect_recruited) {
+        return false;
+    }
+    return IsZoneMainTaskCompleted(gw.from_zone);
+}
+
+const char* WorldContext::ZoneGatewayLockReason(const ZoneGateway& gw) const noexcept {
+    switch (gw.from_zone) {
+        case ZoneId::DawnTerraces:
+            return "Varco sigillato: attiva prima l'Eliostato Solare sulle Terrazze dell'Alba.";
+        case ZoneId::CanalQuarter: {
+            const bool hydro_broken =
+                GetMachine(MachineType::HydroTurbine).state == MachineState::Broken;
+            if (hydro_broken && !ecosystem.architect_recruited) {
+                return "Varco sigillato: riattiva la Turbina nelle Cisterne Ipogee e parla con Clara Sereni.";
+            }
+            if (hydro_broken) {
+                return "Varco sigillato: riattiva prima la Turbina Idrostatica nelle Cisterne Ipogee.";
+            }
+            return "Ponte sigillato: parla con Clara Sereni per aprire il Ponte degli Archi.";
+        }
+        case ZoneId::WindPlateau:
+            return "Varco sigillato: calibra prima il Pendolo Isochronos nella Torre del Pendolo.";
+        case ZoneId::HangingGardens:
+            return "Varco sigillato: accorda prima il Risonatore Armonico nei Giardini Sospesi.";
+        case ZoneId::FumaroleCaldera:
+            return "Varco sigillato: calibra prima lo Scambiatore di Carnot nella Camera Geotermica.";
+        case ZoneId::HarmonySanctuary:
+        case ZoneId::Count:
+            break;
+    }
+    return "Varco sigillato: completa prima il monumento di questa zona.";
+}
+
+const char* WorldContext::ZoneGatewayLockedPlaque(const ZoneGateway& gw) const noexcept {
+    switch (gw.from_zone) {
+        case ZoneId::DawnTerraces:
+            return "SIGILLATO: ELIOSTATO";
+        case ZoneId::CanalQuarter: {
+            const bool hydro_broken =
+                GetMachine(MachineType::HydroTurbine).state == MachineState::Broken;
+            if (hydro_broken) {
+                return "SIGILLATO: TURBINA";
+            }
+            return "PONTE SIGILLATO";
+        }
+        case ZoneId::WindPlateau:
+            return "SIGILLATO: PENDOLO";
+        case ZoneId::HangingGardens:
+            return "SIGILLATO: RISONATORE";
+        case ZoneId::FumaroleCaldera:
+            return "SIGILLATO: CARNOT";
+        case ZoneId::HarmonySanctuary:
+        case ZoneId::Count:
+            break;
+    }
+    return "VARCO SIGILLATO";
 }
 
 Tilemap& WorldContext::ActiveTilemap() noexcept {
@@ -1669,6 +1763,9 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
     if (zone_banner_timer > 0.0f) {
         zone_banner_timer = std::max(0.0f, zone_banner_timer - safe_dt);
     }
+    if (locked_gateway_hint_timer > 0.0f) {
+        locked_gateway_hint_timer = std::max(0.0f, locked_gateway_hint_timer - safe_dt);
+    }
     collectibles.Tick(safe_dt);
 
     // 0. Gestione Intramezzo tra Zone (congela fisica, esegue swap pulito di memoria a 50% o su skip)
@@ -1903,12 +2000,26 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
             ecosystem.architect_recruited,
             zone_mechanics.solar_gate_open,
             zone_mechanics.jade_bridge_unlocked,
-            external_velocity);
+            external_velocity,
+            IsZoneMainTaskCompleted(current_zone));
         out.enter_structure_requested = ow_res.enter_structure_requested;
         out.target_structure = ow_res.target_structure;
         out.newly_joined_count = ow_res.newly_joined_count;
         if (ow_res.enter_structure_requested) {
             active_structure = ow_res.target_structure;
+        }
+        if (ow_res.blocked_gateway_touched && locked_gateway_hint_timer <= 0.0f) {
+            for (const auto& gw : overworld.active_gateways) {
+                if (gw.to_zone == ow_res.blocked_gateway_target) {
+                    story.PushAdHocLine(
+                        "Elena Valli",
+                        ZoneGatewayLockReason(gw),
+                        current_zone,
+                        ActiveLocationName());
+                    locked_gateway_hint_timer = 3.5f;
+                    break;
+                }
+            }
         }
         if (ow_res.zone_gateway_triggered) {
             BeginZoneInterlude(ow_res.gateway_target_zone, ow_res.gateway_arrival_tile);
@@ -1995,8 +2106,18 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         bool handled = false;
         const Vec2 p_center = p->Center();
 
-        // 10a. Interazioni con le meccaniche top-down della zona corrente
-        if (current_mode == GameMode::Overworld) {
+        // 10a. Interazioni con i puzzle interni o con le meccaniche top-down della zona corrente
+        if (current_mode == GameMode::Structure) {
+            if (const StructureSwitch* sw = structure.puzzle.FindNearestSwitch(p_center)) {
+                const StructurePuzzleEventFlags pev =
+                    structure.puzzle.ToggleSwitchById(sw->id, structure.tilemap);
+                if (pev.Any()) {
+                    structure.SyncActivePuzzleToSaved();
+                    out.structure_puzzle_events = pev;
+                    handled = true;
+                }
+            }
+        } else if (current_mode == GameMode::Overworld) {
             if (current_zone == ZoneId::DawnTerraces) {
                 for (auto& mirror : zone_mechanics.solar_mirrors) {
                     if (mirror.rotatable && p_center.DistanceTo(mirror.pos) <= mirror.interact_radius) {

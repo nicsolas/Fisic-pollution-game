@@ -21,7 +21,8 @@ namespace {
     LocationId location,
     ZoneId zone,
     int row,
-    int col) noexcept {
+    int col,
+    bool hidden = false) noexcept {
     CollectibleItem item{};
     item.id = id;
     item.era = era;
@@ -33,6 +34,7 @@ namespace {
     item.interact_radius = kDefaultRelicInteractRadius;
     item.collected = false;
     item.prompt_visible = false;
+    item.hidden = hidden;
     return item;
 }
 
@@ -42,61 +44,61 @@ void CollectibleRegistry::ResetDefault() {
     items_.clear();
     items_.reserve(static_cast<std::size_t>(kTotalCollectibles));
 
-    // Era I - Alba delle Ombre (4 reliquie — coordinate locali nelle zone 26x36)
+    // Era I - Alba delle Ombre (4 reliquie - coordinate locali nelle zone 26x36)
     items_.push_back(MakeRelic(
         CollectibleId::Dawn_BrassGnomon, CollectibleEra::Era1_Dawn, CollectibleKind::Astrolabe,
-        LocationId::Overworld, ZoneId::DawnTerraces, 19, 9));
+        LocationId::Overworld, ZoneId::DawnTerraces, 7, 5, false));
     items_.push_back(MakeRelic(
         CollectibleId::Dawn_FirstMeasureStele, CollectibleEra::Era1_Dawn, CollectibleKind::Stele,
-        LocationId::Overworld, ZoneId::DawnTerraces, 13, 31));
+        LocationId::Overworld, ZoneId::DawnTerraces, 13, 32, false));
     items_.push_back(MakeRelic(
         CollectibleId::Dawn_SolsticeCylinder, CollectibleEra::Era1_Dawn, CollectibleKind::Cylinder,
-        LocationId::Overworld, ZoneId::WindPlateau, 12, 30));
+        LocationId::Overworld, ZoneId::WindPlateau, 9, 11, true));
     items_.push_back(MakeRelic(
         CollectibleId::Dawn_WhiteOliveSeed, CollectibleEra::Era1_Dawn, CollectibleKind::FossilSeed,
-        LocationId::Overworld, ZoneId::CanalQuarter, 21, 5));
+        LocationId::Overworld, ZoneId::CanalQuarter, 2, 13, true));
 
     // Era II - Secolo delle Acque e del Suono (4 reliquie)
     items_.push_back(MakeRelic(
         CollectibleId::Waters_HydraulicDiary, CollectibleEra::Era2_WatersAndSound, CollectibleKind::Cylinder,
-        LocationId::Overworld, ZoneId::CanalQuarter, 6, 28));
+        LocationId::Overworld, ZoneId::CanalQuarter, 16, 29, false));
     items_.push_back(MakeRelic(
         CollectibleId::Waters_SluiceStele, CollectibleEra::Era2_WatersAndSound, CollectibleKind::Stele,
-        LocationId::HypogeanCisterns, ZoneId::CanalQuarter, 9, 10));
+        LocationId::HypogeanCisterns, ZoneId::CanalQuarter, 17, 25, false));
     items_.push_back(MakeRelic(
         CollectibleId::Waters_JadeTuningFork, CollectibleEra::Era2_WatersAndSound, CollectibleKind::Prism,
-        LocationId::Overworld, ZoneId::HangingGardens, 6, 30));
+        LocationId::Overworld, ZoneId::HangingGardens, 12, 29, false));
     items_.push_back(MakeRelic(
         CollectibleId::Waters_ThreadChronometer, CollectibleEra::Era2_WatersAndSound, CollectibleKind::Astrolabe,
-        LocationId::PendulumTower, ZoneId::WindPlateau, 5, 5));
+        LocationId::PendulumTower, ZoneId::WindPlateau, 6, 34, false));
 
     // Era III - Inverno di Pece (4 reliquie)
     items_.push_back(MakeRelic(
         CollectibleId::Pitch_SchismMinutes, CollectibleEra::Era3_PitchWinter, CollectibleKind::Cylinder,
-        LocationId::Overworld, ZoneId::FumaroleCaldera, 10, 30));
+        LocationId::Overworld, ZoneId::FumaroleCaldera, 2, 29, true));
     items_.push_back(MakeRelic(
         CollectibleId::Pitch_EmberStele, CollectibleEra::Era3_PitchWinter, CollectibleKind::Stele,
-        LocationId::GeothermalChamber, ZoneId::FumaroleCaldera, 13, 29));
+        LocationId::GeothermalChamber, ZoneId::FumaroleCaldera, 9, 25, true));
     items_.push_back(MakeRelic(
         CollectibleId::Pitch_CharredSeed, CollectibleEra::Era3_PitchWinter, CollectibleKind::FossilSeed,
-        LocationId::Overworld, ZoneId::HangingGardens, 20, 4));
+        LocationId::Overworld, ZoneId::HangingGardens, 21, 4, true));
     items_.push_back(MakeRelic(
         CollectibleId::Pitch_BasaltThermometer, CollectibleEra::Era3_PitchWinter, CollectibleKind::Astrolabe,
-        LocationId::GeothermalChamber, ZoneId::FumaroleCaldera, 5, 6));
+        LocationId::GeothermalChamber, ZoneId::FumaroleCaldera, 9, 36, false));
 
     // Era IV - Sigillo dell'Armonia (4 reliquie)
     items_.push_back(MakeRelic(
         CollectibleId::Harmony_FarewellPrism, CollectibleEra::Era4_HarmonySeal, CollectibleKind::Prism,
-        LocationId::HypogeanCisterns, ZoneId::CanalQuarter, 7, 31));
+        LocationId::HypogeanCisterns, ZoneId::CanalQuarter, 9, 3, true));
     items_.push_back(MakeRelic(
         CollectibleId::Harmony_CurrentsPrism, CollectibleEra::Era4_HarmonySeal, CollectibleKind::Prism,
-        LocationId::PendulumTower, ZoneId::WindPlateau, 5, 25));
+        LocationId::PendulumTower, ZoneId::WindPlateau, 4, 3, true));
     items_.push_back(MakeRelic(
         CollectibleId::Harmony_AwakeningSeed, CollectibleEra::Era4_HarmonySeal, CollectibleKind::FossilSeed,
-        LocationId::Overworld, ZoneId::HarmonySanctuary, 13, 4));
+        LocationId::Overworld, ZoneId::HarmonySanctuary, 13, 30, false));
     items_.push_back(MakeRelic(
         CollectibleId::Harmony_AstrolabeStele, CollectibleEra::Era4_HarmonySeal, CollectibleKind::Stele,
-        LocationId::Overworld, ZoneId::HarmonySanctuary, 22, 18));
+        LocationId::Overworld, ZoneId::HarmonySanctuary, 19, 18, false));
 
     has_last_collected_ = false;
     last_collected_id_ = CollectibleId::Dawn_BrassGnomon;

@@ -1,4 +1,5 @@
 #include "core/npc.h"
+#include "core/structure_puzzles.h"
 
 #include <cmath>
 
@@ -59,14 +60,17 @@ WorldNpc WorldNpc::CreateDefault(NpcId id) {
             npc.last_dialogue =
                 "Prima di aprire il Ponte degli Archi ho bisogno di una prova pulita. Intanto usa le leve delle chiuse [E] per domare le correnti nei canali.";
             break;
-        case NpcId::LorenzoAltieri:
+        case NpcId::LorenzoAltieri: {
+            const StructureSpawnLayout cistern_layout =
+                GetStructureLayout(StructureId::HypogeanCisterns);
             npc.location = LocationId::HypogeanCisterns;
             npc.zone = ZoneId::CanalQuarter;
-            npc.pos = TileCenterPos(7, 28); // (1368, 360) — Galleria alta Cisterne Ipogee
+            npc.pos = TileCenterPos(cistern_layout.npc_tile.row, cistern_layout.npc_tile.col);
             npc.trigger_radius = 96.0f;
             npc.last_dialogue =
                 "Qui in alto custodisco le memorie delle quattro ere. Riattiva la Turbina idrostatica e ti apriro' gli appunti antichi.";
             break;
+        }
         case NpcId::MiriamFerro:
             npc.location = LocationId::Overworld;
             npc.zone = ZoneId::HangingGardens;

@@ -469,10 +469,10 @@ void DrawZoneMechanicParticles(
 
 enum class InterludeSceneKind : int {
     DawnArch = 0,          // DawnTerraces <-> CanalQuarter (Arco dell'Alba)
-    BasaltStair = 1,       // CanalQuarter <-> WindPlateau (Scalinata di Basalto)
-    SluiceBridge = 2,      // CanalQuarter <-> HangingGardens (Ponte delle Chiuse / Ponte degli Archi)
+    BasaltStair = 1,       // WindPlateau <-> HangingGardens (Scalinata di Basalto)
+    SluiceBridge = 2,      // CanalQuarter <-> WindPlateau (Ponte delle Chiuse / Ponte degli Archi)
     ObsidianThreshold = 3, // HangingGardens <-> FumaroleCaldera (Soglia d'Ossidiana)
-    SanctuaryColonnade = 4,// HangingGardens <-> HarmonySanctuary (Colonnato del Santuario)
+    SanctuaryColonnade = 4,// FumaroleCaldera <-> HarmonySanctuary (Colonnato del Santuario)
     GenericMeridia = 5     // Fallback elegante
 };
 
@@ -484,15 +484,15 @@ enum class InterludeSceneKind : int {
         return InterludeSceneKind::DawnArch;
     }
     if (is_pair(eco::ZoneId::CanalQuarter, eco::ZoneId::WindPlateau)) {
-        return InterludeSceneKind::BasaltStair;
-    }
-    if (is_pair(eco::ZoneId::CanalQuarter, eco::ZoneId::HangingGardens)) {
         return InterludeSceneKind::SluiceBridge;
+    }
+    if (is_pair(eco::ZoneId::WindPlateau, eco::ZoneId::HangingGardens)) {
+        return InterludeSceneKind::BasaltStair;
     }
     if (is_pair(eco::ZoneId::HangingGardens, eco::ZoneId::FumaroleCaldera)) {
         return InterludeSceneKind::ObsidianThreshold;
     }
-    if (is_pair(eco::ZoneId::HangingGardens, eco::ZoneId::HarmonySanctuary)) {
+    if (is_pair(eco::ZoneId::FumaroleCaldera, eco::ZoneId::HarmonySanctuary)) {
         return InterludeSceneKind::SanctuaryColonnade;
     }
     return InterludeSceneKind::GenericMeridia;

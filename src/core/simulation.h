@@ -14,6 +14,7 @@
 #include "core/npc.h"
 #include "core/player.h"
 #include "core/story.h"
+#include "core/structure_puzzles.h"
 #include "core/tilemap.h"
 
 namespace eco {
@@ -247,6 +248,8 @@ struct OverworldStepResult {
     bool zone_gateway_triggered = false;
     ZoneId gateway_target_zone = ZoneId::DawnTerraces;
     TileCoord gateway_arrival_tile{13, 18};
+    bool blocked_gateway_touched = false;
+    ZoneId blocked_gateway_target = ZoneId::DawnTerraces;
     int newly_joined_count = 0;
 };
 
@@ -267,6 +270,7 @@ struct WorldStepResult {
     bool collectible_picked_up = false;
     CollectibleId picked_up_id = CollectibleId::Dawn_BrassGnomon;
     MechanicEventFlags mechanics_events{};
+    StructurePuzzleEventFlags structure_puzzle_events{};
 };
 
 struct OverworldSim {
@@ -315,12 +319,15 @@ struct OverworldSim {
         bool bridge_unlocked = false,
         bool solar_gate_open = false,
         bool jade_bridge_unlocked = false,
-        Vec2 external_velocity = {0.0f, 0.0f});
+        Vec2 external_velocity = {0.0f, 0.0f},
+        bool forward_gateway_unlocked = true);
 };
 
 struct StructureSim {
     StructureId active_structure = StructureId::HypogeanCisterns;
     Tilemap tilemap{};
+    StructurePuzzleState puzzle{};
+    std::array<StructurePuzzleState, static_cast<std::size_t>(StructureId::Count)> saved_puzzles{};
     Vec2 spawn_point{0.0f, 0.0f};
     Vec2 camera_target{0.0f, 0.0f};
     float portal_cooldown_timer = 0.0f;
@@ -328,6 +335,7 @@ struct StructureSim {
     bool initialized = false;
 
     void InitializeDefault();
+    void SyncActivePuzzleToSaved() noexcept;
     void SelectStructure(StructureId id);
     void UnloadMemory() noexcept;
     void OnEnter(PlayerManager& players, bool bridge_unlocked = false);
@@ -356,6 +364,7 @@ struct WorldContext {
 
     ZoneId current_zone = ZoneId::DawnTerraces;
     float zone_banner_timer = 0.0f;
+    float locked_gateway_hint_timer = 0.0f;
     ZoneId banner_zone = ZoneId::DawnTerraces;
     StructureId banner_structure = StructureId::HypogeanCisterns;
     bool banner_is_structure = false;
@@ -426,6 +435,11 @@ struct WorldContext {
 
     [[nodiscard]] bool AllFiveMonumentsActivated() const noexcept;
     [[nodiscard]] int ActivatedMonumentsCount() const noexcept;
+
+    [[nodiscard]] bool IsZoneMainTaskCompleted(ZoneId zone) const noexcept;
+    [[nodiscard]] bool IsZoneGatewayUnlocked(const ZoneGateway& gw) const noexcept;
+    [[nodiscard]] const char* ZoneGatewayLockReason(const ZoneGateway& gw) const noexcept;
+    [[nodiscard]] const char* ZoneGatewayLockedPlaque(const ZoneGateway& gw) const noexcept;
 
     [[nodiscard]] Tilemap& ActiveTilemap() noexcept;
     [[nodiscard]] const Tilemap& ActiveTilemap() const noexcept;

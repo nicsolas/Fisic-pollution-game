@@ -8,10 +8,13 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <queue>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "core/physics2d.h"
 
 namespace eco {
 
@@ -114,6 +117,51 @@ constexpr int kSaveFormatVersion = 1;
     return count;
 }
 
+[[nodiscard]] bool IsTileReachableFromSpawn(
+    const Tilemap& map,
+    Vec2 spawn_pos,
+    Vec2 target_pos,
+    bool bridge_unlocked) {
+    const int rows = map.Rows();
+    const int cols = map.Cols();
+    if (rows <= 0 || cols <= 0) {
+        return false;
+    }
+    const TileCoord start = map.WorldToTile(spawn_pos);
+    const TileCoord goal = map.WorldToTile(target_pos);
+    if (!map.InBounds(start.row, start.col) || !map.InBounds(goal.row, goal.col) ||
+        map.IsSolid(start.row, start.col, bridge_unlocked) ||
+        map.IsSolid(goal.row, goal.col, bridge_unlocked)) {
+        return false;
+    }
+    std::vector<bool> visited(static_cast<std::size_t>(rows * cols), false);
+    std::queue<TileCoord> q;
+    visited[static_cast<std::size_t>(start.row * cols + start.col)] = true;
+    q.push(start);
+    static constexpr int kDr[4] = {-1, 1, 0, 0};
+    static constexpr int kDc[4] = {0, 0, -1, 1};
+    while (!q.empty()) {
+        const TileCoord cur = q.front();
+        q.pop();
+        if (cur == goal) {
+            return true;
+        }
+        for (int d = 0; d < 4; ++d) {
+            const int nr = cur.row + kDr[d];
+            const int nc = cur.col + kDc[d];
+            if (!map.InBounds(nr, nc) || map.IsSolid(nr, nc, bridge_unlocked)) {
+                continue;
+            }
+            const std::size_t idx = static_cast<std::size_t>(nr * cols + nc);
+            if (!visited[idx]) {
+                visited[idx] = true;
+                q.push({nr, nc});
+            }
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 bool SaveWorldToFile(
@@ -204,6 +252,13 @@ bool SaveWorldToFile(
     // Stato delle 6 meccaniche top-down di zona
     out << "mech_solar_gate=" << (world.zone_mechanics.solar_gate_open ? 1 : 0) << "\n";
     {
+        std::string plate_bits;
+        for (const auto& p : world.zone_mechanics.solar_plates) {
+            plate_bits.push_back((p.charge >= 0.99f) ? '1' : '0');
+        }
+        out << "mech_solar_plates=" << plate_bits << "\n";
+    }
+    {
         std::string mirror_dirs;
         for (const auto& m : world.zone_mechanics.solar_mirrors) {
             mirror_dirs.push_back(static_cast<char>('0' + ((m.dir_index % 4 + 4) % 4)));
@@ -218,6 +273,7 @@ bool SaveWorldToFile(
         out << "mech_sluices=" << sluice_bits << "\n";
     }
     out << "mech_jade_bridge=" << (world.zone_mechanics.jade_bridge_unlocked ? 1 : 0) << "\n";
+    out << "mech_resonance_next=" << world.zone_mechanics.resonance_next_order << "\n";
     {
         std::string valve_bits;
         for (const auto& v : world.zone_mechanics.relief_valves) {
@@ -231,6 +287,33 @@ bool SaveWorldToFile(
             seal_bits.push_back(s.attuned ? '1' : '0');
         }
         out << "mech_seals=" << seal_bits << "\n";
+    }
+
+    // Stato delle leve/interruttori e sequenze nei 3 livelli dei portali (strutture interne)
+    for (int s = 0; s < static_cast<int>(StructureId::Count); ++s) {
+        const auto sid = static_cast<StructureId>(s);
+        const bool use_live =
+            (world.current_mode == GameMode::Structure &&
+             world.active_structure == sid &&
+             !world.structure.puzzle.switches.empty());
+        const StructurePuzzleState& pz =
+            use_live ? world.structure.puzzle
+                     : world.structure.saved_puzzles[static_cast<std::size_t>(s)];
+        std::string sw_bits;
+        sw_bits.reserve(pz.switches.size());
+        for (const auto& sw : pz.switches) {
+            sw_bits.push_back(sw.active ? '1' : '0');
+        }
+        out << "struct_switches_" << s << "=" << sw_bits << "\n";
+
+        out << "struct_seq_" << s << "=";
+        for (std::size_t k = 0; k < pz.current_sequence.size(); ++k) {
+            if (k > 0) {
+                out << ",";
+            }
+            out << pz.current_sequence[k];
+        }
+        out << "\n";
     }
 
     // Cronologia Dialoghi
@@ -374,11 +457,16 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
     std::string relics_mask{};
     std::string story_fired_mask{};
     bool mech_solar_gate = false;
+    std::string mech_solar_plates{};
     std::string mech_mirrors{};
     std::string mech_sluices{};
     bool mech_jade_bridge = false;
+    int mech_resonance_next = 0;
     std::string mech_valves{};
     std::string mech_seals{};
+    std::array<std::string, static_cast<std::size_t>(StructureId::Count)> struct_switches{};
+    std::array<bool, static_cast<std::size_t>(StructureId::Count)> has_struct_switches{};
+    std::array<std::string, static_cast<std::size_t>(StructureId::Count)> struct_seqs{};
     std::vector<DialogueHistoryEntry> history{};
 
     std::string line;
@@ -431,16 +519,31 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
             story_fired_mask = val;
         } else if (key == "mech_solar_gate") {
             mech_solar_gate = (ParseIntSafe(val, 0) != 0);
+        } else if (key == "mech_solar_plates") {
+            mech_solar_plates = val;
         } else if (key == "mech_mirrors") {
             mech_mirrors = val;
         } else if (key == "mech_sluices") {
             mech_sluices = val;
         } else if (key == "mech_jade_bridge") {
             mech_jade_bridge = (ParseIntSafe(val, 0) != 0);
+        } else if (key == "mech_resonance_next") {
+            mech_resonance_next = std::max(0, ParseIntSafe(val, 0));
         } else if (key == "mech_valves") {
             mech_valves = val;
         } else if (key == "mech_seals") {
             mech_seals = val;
+        } else if (key.rfind("struct_switches_", 0) == 0) {
+            const int idx = ParseIntSafe(key.substr(16), -1);
+            if (idx >= 0 && idx < static_cast<int>(StructureId::Count)) {
+                struct_switches[static_cast<std::size_t>(idx)] = val;
+                has_struct_switches[static_cast<std::size_t>(idx)] = true;
+            }
+        } else if (key.rfind("struct_seq_", 0) == 0) {
+            const int idx = ParseIntSafe(key.substr(11), -1);
+            if (idx >= 0 && idx < static_cast<int>(StructureId::Count)) {
+                struct_seqs[static_cast<std::size_t>(idx)] = val;
+            }
         } else if (key.rfind("machine_", 0) == 0) {
             const int idx = ParseIntSafe(key.substr(8), -1);
             if (idx >= 0 && idx < 6) {
@@ -525,6 +628,11 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
 
     // Ripristina stato delle 6 meccaniche top-down di zona
     world.zone_mechanics.solar_gate_open = mech_solar_gate;
+    for (std::size_t i = 0; i < mech_solar_plates.size() && i < world.zone_mechanics.solar_plates.size(); ++i) {
+        if (mech_solar_plates[i] == '1') {
+            world.zone_mechanics.solar_plates[i].charge = 1.0f;
+        }
+    }
     for (std::size_t i = 0; i < mech_mirrors.size() && i < world.zone_mechanics.solar_mirrors.size(); ++i) {
         if (mech_mirrors[i] >= '0' && mech_mirrors[i] <= '3') {
             world.zone_mechanics.solar_mirrors[i].dir_index = static_cast<int>(mech_mirrors[i] - '0');
@@ -548,6 +656,14 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
         for (auto& pad : world.zone_mechanics.resonance_pads) {
             pad.activated = true;
         }
+    } else if (mech_resonance_next > 0) {
+        const int clamped_next = std::min(
+            mech_resonance_next,
+            static_cast<int>(world.zone_mechanics.resonance_pads.size()));
+        world.zone_mechanics.resonance_next_order = clamped_next;
+        for (auto& pad : world.zone_mechanics.resonance_pads) {
+            pad.activated = (pad.sequence_order < clamped_next);
+        }
     }
     for (std::size_t i = 0; i < mech_valves.size() && i < world.zone_mechanics.relief_valves.size(); ++i) {
         const bool open = (mech_valves[i] == '1');
@@ -568,6 +684,49 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
         world.zone_mechanics.sanctuary_seals[i].glow = attuned ? 1.0f : 0.0f;
     }
 
+    // Ripristina stato delle leve/interruttori e sequenze nei 3 livelli dei portali
+    for (int s = 0; s < static_cast<int>(StructureId::Count); ++s) {
+        const auto idx = static_cast<std::size_t>(s);
+        StructurePuzzleState& pz = world.structure.saved_puzzles[idx];
+        pz.ResetForStructure(static_cast<StructureId>(s), kTileSize);
+        if (has_struct_switches[idx]) {
+            const std::string& bits = struct_switches[idx];
+            for (std::size_t i = 0; i < bits.size() && i < pz.switches.size(); ++i) {
+                pz.switches[i].active = (bits[i] == '1');
+            }
+        }
+        if (!struct_seqs[idx].empty()) {
+            std::stringstream ss(struct_seqs[idx]);
+            std::string tok;
+            while (std::getline(ss, tok, ',')) {
+                if (tok.empty()) {
+                    continue;
+                }
+                const int sw_id = ParseIntSafe(tok, -1);
+                if (pz.GetSwitch(sw_id) != nullptr) {
+                    pz.current_sequence.push_back(sw_id);
+                }
+            }
+            // Allinea gli switch attivi con la sequenza salvata nei puzzle a sequenza
+            if (!pz.expected_sequence.empty()) {
+                for (auto& sw : pz.switches) {
+                    sw.active = false;
+                }
+                for (const int sw_id : pz.current_sequence) {
+                    for (auto& sw : pz.switches) {
+                        if (sw.id == sw_id) {
+                            sw.active = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Evita che SelectStructure/UnloadMemory sovrascrivano saved_puzzles con il puzzle di default
+    world.structure.puzzle.switches.clear();
+
     world.current_mode = saved_mode;
     world.current_zone = saved_zone;
     world.active_structure = saved_structure;
@@ -587,18 +746,39 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
     if (has_p0_x && has_p0_y) {
         if (Player* p0 = world.players.GetPlayer(0); p0 != nullptr) {
             const Tilemap& map = world.ActiveTilemap();
+            const Vec2 fallback_spawn =
+                (saved_mode == GameMode::Structure)
+                    ? world.structure.spawn_point
+                    : world.overworld.SafeSpawnInZone(saved_zone, architect_recruited);
+            Vec2 target_p0 = saved_p0;
+            // Protezione anti-softlock per salvataggi legacy senza stato leve di struttura
+            if (saved_mode == GameMode::Structure &&
+                !has_struct_switches[static_cast<std::size_t>(saved_structure)]) {
+                const Vec2 sp_center{
+                    world.structure.spawn_point.x + p0->size.x * 0.5f,
+                    world.structure.spawn_point.y + p0->size.y * 0.5f
+                };
+                const Vec2 p0_center{
+                    saved_p0.x + p0->size.x * 0.5f,
+                    saved_p0.y + p0->size.y * 0.5f
+                };
+                if (!IsTileReachableFromSpawn(map, sp_center, p0_center, architect_recruited)) {
+                    target_p0 = fallback_spawn;
+                }
+            }
             const Vec2 safe_pos = FindSafeSpawnNear(
                 map,
-                saved_p0,
+                target_p0,
                 p0->size,
-                (saved_mode == GameMode::Structure) ? world.structure.spawn_point
-                                                    : world.overworld.SafeSpawnInZone(saved_zone, architect_recruited),
+                fallback_spawn,
                 architect_recruited,
                 world.zone_mechanics.solar_gate_open,
                 world.zone_mechanics.jade_bridge_unlocked);
             p0->pos = safe_pos;
             p0->y_velocity = 0.0f;
             if (saved_mode == GameMode::Structure) {
+                p0->isGrounded = IsSupportedByFloor(p0->pos, p0->size, map, architect_recruited);
+                p0->coyote_timer = p0->isGrounded ? kCoyoteTimeDuration : 0.0f;
                 world.structure.camera_target = p0->Center();
             } else {
                 world.overworld.camera_target = p0->Center();

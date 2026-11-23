@@ -119,6 +119,7 @@ struct CollectibleItem {
     float interact_radius = kDefaultRelicInteractRadius;
     bool collected = false;
     bool prompt_visible = false;
+    bool hidden = false;
 };
 
 class CollectibleRegistry {

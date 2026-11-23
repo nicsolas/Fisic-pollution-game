@@ -720,36 +720,78 @@ void DrawWorldNpcCharacter(const eco::WorldNpc& npc, const eco::WorldContext& wo
 // =============================================================================
 void DrawCollectiblesInScene(const eco::WorldContext& world) {
     const eco::LocationId loc = world.ActiveLocation();
+    const bool geodesic_vision =
+        (world.ecosystem.ui_phase == eco::UiPhase::Phase3_EngineOverlay);
+
     for (const eco::CollectibleItem& item : world.collectibles.Items()) {
         if (item.collected || item.location != loc) {
             continue;
         }
+        if (loc == eco::LocationId::Overworld && item.zone != world.current_zone) {
+            continue;
+        }
+
         const Color era_col = EraAccentColor(item.era);
         const float phase = static_cast<float>(item.id) * 0.9f;
         const float bob = std::sin(world.sim_time * 3.1f + phase) * 4.0f;
         const float pulse = 0.5f + 0.5f * std::sin(world.sim_time * 3.8f + phase);
         const Vector2 center{item.pos.x, item.pos.y - 4.0f + bob};
 
+        float reveal = 1.0f;
+        if (item.hidden) {
+            float nearest_dist = 1e9f;
+            for (const eco::Player* ap : world.players.ActivePlayers()) {
+                if (ap != nullptr && ap->active) {
+                    nearest_dist = std::min(nearest_dist, ap->Center().DistanceTo(item.pos));
+                }
+            }
+            reveal = eco::Clamp((190.0f - nearest_dist) / 110.0f, 0.0f, 1.0f);
+            if (geodesic_vision) {
+                reveal = std::max(reveal, 0.55f);
+            }
+            if (reveal < 0.08f) {
+                // Luccichio discreto nella nicchia segreta finche' Elena non si avvicina
+                const unsigned char glint_a =
+                    static_cast<unsigned char>(30.0f + 36.0f * pulse);
+                DrawCircleV(center, 2.2f + pulse * 1.6f, pal::WithAlpha(era_col, glint_a));
+                DrawCircleV(center, 1.1f, pal::WithAlpha(RAYWHITE, static_cast<unsigned char>(glint_a + 18)));
+                continue;
+            }
+        }
+
+        const auto scale_a = [reveal](float base_alpha) noexcept -> unsigned char {
+            return static_cast<unsigned char>(eco::Clamp(base_alpha * reveal, 0.0f, 255.0f));
+        };
+
         // Ombra morbida e fascio luminoso verticale sottile
-        DrawEllipse(static_cast<int>(item.pos.x), static_cast<int>(item.pos.y + 13.0f), 14.0f, 5.2f, Color{0, 0, 0, 115});
-        DrawRectangleGradientV(
-            static_cast<int>(item.pos.x - 10.0f),
-            static_cast<int>(item.pos.y - 42.0f),
-            20,
-            52,
-            pal::WithAlpha(era_col, 0),
-            pal::WithAlpha(era_col, static_cast<unsigned char>(32 + 24 * pulse)));
+        DrawEllipse(
+            static_cast<int>(item.pos.x),
+            static_cast<int>(item.pos.y + 13.0f),
+            14.0f,
+            5.2f,
+            Color{0, 0, 0, scale_a(115.0f)});
+        if (!item.hidden || reveal > 0.35f) {
+            const float beam_scale = item.hidden ? eco::Clamp((reveal - 0.35f) / 0.65f, 0.0f, 1.0f) : 1.0f;
+            DrawRectangleGradientV(
+                static_cast<int>(item.pos.x - 10.0f),
+                static_cast<int>(item.pos.y - 42.0f),
+                20,
+                52,
+                pal::WithAlpha(era_col, 0),
+                pal::WithAlpha(era_col, static_cast<unsigned char>((32.0f + 24.0f * pulse) * beam_scale)));
+        }
 
         // Aureola pulsante a due anelli
-        DrawCircleV(center, 22.0f + pulse * 4.0f, pal::WithAlpha(era_col, static_cast<unsigned char>(30 + 24 * pulse)));
+        DrawCircleV(center, 22.0f + pulse * 4.0f, pal::WithAlpha(era_col, scale_a(30.0f + 24.0f * pulse)));
         DrawCircleLines(
             static_cast<int>(center.x),
             static_cast<int>(center.y),
             18.5f + pulse * 3.0f,
-            pal::WithAlpha(era_col, static_cast<unsigned char>(135 + 80 * pulse)));
+            pal::WithAlpha(era_col, scale_a(135.0f + 80.0f * pulse)));
 
         // Glifo procedurale della reliquia (Stele, Astrolabio, Prisma, Cilindro, Seme Fossile)
-        DrawRelicGlyph(static_cast<int>(item.kind), center, 13.5f, era_col, true, world.sim_time + phase);
+        const Color glyph_col = pal::WithAlpha(era_col, scale_a(255.0f));
+        DrawRelicGlyph(static_cast<int>(item.kind), center, 13.5f, glyph_col, true, world.sim_time + phase);
 
         // 3 scintille orbitali dedicate
         for (int s = 0; s < 3; ++s) {
@@ -758,7 +800,7 @@ void DrawCollectiblesInScene(const eco::WorldContext& world) {
                 center.x + std::cos(a) * 19.0f,
                 center.y + std::sin(a) * 11.0f
             };
-            DrawCircleV(orb, 2.1f, pal::WithAlpha(RAYWHITE, 220));
+            DrawCircleV(orb, 2.1f, pal::WithAlpha(RAYWHITE, scale_a(220.0f)));
         }
 
         // Prompt diegetico quando il giocatore si avvicina
@@ -800,45 +842,45 @@ void DrawOverworldMinimap(const eco::WorldContext& world) {
         };
     };
 
-    // 1. I 6 distretti colorati secondo la palette della Conca
-    for (int z = 0; z < static_cast<int>(eco::ZoneId::Count); ++z) {
-        const auto zone = static_cast<eco::ZoneId>(z);
-        const eco::Rect zb = world.overworld.DistrictBounds(zone);
-        const pal::DistrictPalette& dp = pal::DistrictPaletteByIndex(z);
+    // 1. Sfondo del distretto attivo secondo la palette della Conca
+    {
+        const pal::DistrictPalette& dp = pal::GetDistrictPalette(world.current_zone);
         const Color col = pal::WorldColor(dp.ground_sick, dp.ground_healthy, poll);
-        const Rectangle zr{
-            map_r.x + (zb.x / world_w) * map_r.width,
-            map_r.y + (zb.y / world_h) * map_r.height,
-            (zb.width / world_w) * map_r.width,
-            (zb.height / world_h) * map_r.height
-        };
-        DrawRectangleRec(zr, pal::WithAlpha(col, (zone == world.current_zone) ? 205 : 135));
-        DrawRectangleLinesEx(zr, 0.8f, pal::WithAlpha(pal::kBronze, 95));
+        DrawRectangleRec(map_r, pal::WithAlpha(col, 205));
     }
 
-    // 2. Canale centrale (col 24) e stato del Ponte degli Archi
-    const float bridge_x = map_r.x + (static_cast<float>(eco::Tilemap::kBridgeDividerCol) + 0.5f) /
-                                         static_cast<float>(std::max(1, tm.Cols())) * map_r.width;
-    const Color water_c = pal::WorldColor(pal::kSickWater, pal::kHealthyWater, poll);
-    DrawLineEx({bridge_x, map_r.y}, {bridge_x, map_r.y + map_r.height}, 3.6f, water_c);
-    const float bridge_y = map_r.y + (17.5f / static_cast<float>(std::max(1, tm.Rows()))) * map_r.height;
-    DrawRectangle(
-        static_cast<int>(bridge_x - 4.0f),
-        static_cast<int>(bridge_y - 3.0f),
-        8,
-        6,
-        world.ecosystem.architect_recruited ? pal::kJadeGlow : pal::kAccentDirty);
+    // 2. Canale orientale e stato del Ponte degli Archi (solo nel Quartiere dei Canali)
+    if (world.current_zone == eco::ZoneId::CanalQuarter) {
+        const float bridge_x = map_r.x + (32.5f / static_cast<float>(std::max(1, tm.Cols()))) * map_r.width;
+        const Color water_c = pal::WorldColor(pal::kSickWater, pal::kHealthyWater, poll);
+        DrawLineEx({bridge_x, map_r.y}, {bridge_x, map_r.y + map_r.height}, 3.6f, water_c);
+        const float bridge_y = map_r.y + (12.5f / static_cast<float>(std::max(1, tm.Rows()))) * map_r.height;
+        DrawRectangle(
+            static_cast<int>(bridge_x - 4.0f),
+            static_cast<int>(bridge_y - 3.0f),
+            8,
+            6,
+            world.ecosystem.architect_recruited ? pal::kJadeGlow : pal::kAccentDirty);
+    }
 
-    // 3. Portali delle 3 strutture interne (losanghe azzurre/dorate)
+    // 3. Portali delle strutture interne nella zona attiva (losanghe azzurre/dorate)
     for (const eco::PortalLink& portal : world.overworld.portals) {
+        if (portal.source_zone != world.current_zone) {
+            continue;
+        }
         const Vector2 mp = to_mini(portal.world_center);
         DrawPoly(mp, 4, 4.2f, 0.0f, Color{96, 212, 245, 245});
         DrawPolyLines(mp, 4, 4.5f, 0.0f, RAYWHITE);
     }
 
-    // 4. Reliquie collezionabili dell'Overworld (anello tenue se da trovare, punto d'oro se trovata)
+    // 4. Reliquie collezionabili della zona attiva (nascoste finche' non scoperte o in Fase 3)
+    const bool geodesic_vision =
+        (world.ecosystem.ui_phase == eco::UiPhase::Phase3_EngineOverlay);
     for (const eco::CollectibleItem& item : world.collectibles.Items()) {
-        if (item.location != eco::LocationId::Overworld) {
+        if (item.location != eco::LocationId::Overworld || item.zone != world.current_zone) {
+            continue;
+        }
+        if (item.hidden && !item.collected && !geodesic_vision) {
             continue;
         }
         const Vector2 mp = to_mini(item.pos);
@@ -849,9 +891,9 @@ void DrawOverworldMinimap(const eco::WorldContext& world) {
         }
     }
 
-    // 5. Monumenti fisici dell'Overworld
+    // 5. Monumenti fisici della zona attiva
     for (const eco::Machine& m : world.machines) {
-        if (m.location != eco::LocationId::Overworld) {
+        if (m.location != eco::LocationId::Overworld || m.zone != world.current_zone) {
             continue;
         }
         const Vector2 mp = to_mini(m.pos);
@@ -864,10 +906,10 @@ void DrawOverworldMinimap(const eco::WorldContext& world) {
         DrawCircleV(mp, 2.9f, mc);
     }
 
-    // 5b. Varchi monumentali tra distretti (archi in bronzo) e contorno del distretto attivo
-    for (const eco::DistrictGateway& gw : world.overworld.gateways) {
+    // 5b. Varchi monumentali della zona attiva (archi in bronzo) e contorno della zona
+    for (const eco::ZoneGateway& gw : world.overworld.active_gateways) {
         const Vector2 gp = to_mini(gw.world_center);
-        const bool locked = gw.requires_bridge_unlock && !world.ecosystem.architect_recruited;
+        const bool locked = !world.IsZoneGatewayUnlocked(gw);
         const Color gc = locked ? pal::kAccentWarn : pal::kBronzeBright;
         if (gw.IsHorizontalWall()) {
             DrawRectangle(static_cast<int>(gp.x) - 5, static_cast<int>(gp.y) - 2, 10, 4, gc);
@@ -877,15 +919,7 @@ void DrawOverworldMinimap(const eco::WorldContext& world) {
             DrawRectangle(static_cast<int>(gp.x) - 2, static_cast<int>(gp.y) - 5, 4, 10, gc);
         }
     }
-    {
-        const eco::Rect zb = world.overworld.DistrictBounds(world.current_zone);
-        const Rectangle zr{
-            map_r.x + (zb.x / world_w) * map_r.width,
-            map_r.y + (zb.y / world_h) * map_r.height,
-            (zb.width / world_w) * map_r.width,
-            (zb.height / world_h) * map_r.height};
-        DrawRectangleLinesEx(zr, 1.6f, pal::WithAlpha(pal::kJadeGlow, 235));
-    }
+    DrawRectangleLinesEx(map_r, 1.6f, pal::WithAlpha(pal::kJadeGlow, 235));
 
     // 5c. Faro pulsante sull'obiettivo corrente
     const eco::ObjectiveTarget objective = world.CurrentObjectiveTarget();

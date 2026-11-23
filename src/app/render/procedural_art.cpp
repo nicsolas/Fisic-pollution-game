@@ -1715,9 +1715,10 @@ void DrawZoneGatewayArch(const eco::ZoneGateway& gw, const eco::WorldContext& wo
     const float tile = world.overworld.tilemap.TileSize();
     const float pulse = 0.78f + 0.22f * std::sin(world.sim_time * 2.6f + gw.world_center.x * 0.01f);
     const pal::DistrictPalette& to_pal = pal::GetDistrictPalette(gw.to_zone);
-    const bool locked = gw.requires_bridge_unlock && !world.ecosystem.architect_recruited;
+    const bool locked = !world.IsZoneGatewayUnlocked(gw);
     const Color acc = locked ? pal::kAccentWarn : to_pal.ambient_accent;
     const Color stone = pal::WorldColor(to_pal.wall_top_sick, to_pal.wall_top_healthy, poll);
+    const char* plaque_text = locked ? world.ZoneGatewayLockedPlaque(gw) : gw.signpost_label;
 
     const float x0 = static_cast<float>(gw.tile_min.col) * tile;
     const float x1 = static_cast<float>(gw.tile_max.col + 1) * tile;
@@ -1742,14 +1743,14 @@ void DrawZoneGatewayArch(const eco::ZoneGateway& gw, const eco::WorldContext& wo
                       static_cast<int>(x1 - x0), 5, pal::WithAlpha(acc, 215));
 
         const float plaque_y = is_north_edge ? (y1 + 14.0f) : (y0 - 30.0f);
-        DrawGatewayPlaque(mid_x, plaque_y, gw.signpost_label, acc);
+        DrawGatewayPlaque(mid_x, plaque_y, plaque_text, acc);
     } else {
         const bool is_west_edge = (gw.tile_min.col <= 2);
         const float px = is_west_edge ? (x1 + 8.0f) : (x0 - 8.0f);
         DrawGatewayPillar(px, y0 - 4.0f, 48.0f, stone, acc, pulse);
         DrawGatewayPillar(px, y1 + 22.0f, 48.0f, stone, acc, pulse);
         const float plaque_x = is_west_edge ? (x1 + 66.0f) : (x0 - 66.0f);
-        DrawGatewayPlaque(plaque_x, mid_y - 9.0f, locked ? "PONTE SIGILLATO" : gw.signpost_label, acc);
+        DrawGatewayPlaque(plaque_x, mid_y - 9.0f, plaque_text, acc);
     }
 }
 
@@ -2009,16 +2010,52 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
             } else if (id == eco::TileId::ZoneGateway) {
                 // Soglia monumentale di passaggio verso una zona adiacente
                 const eco::ZoneGateway* gw = FindZoneGatewayAtTile(world.overworld, r, c);
-                const bool locked = (gw != nullptr && gw->requires_bridge_unlock && !bridge_unlocked);
+                const bool locked = (gw != nullptr && !world.IsZoneGatewayUnlocked(*gw));
                 const Color dest_acc = (gw != nullptr) ? pal::GetDistrictPalette(gw->to_zone).ambient_accent : dp.ambient_accent;
                 const Color acc = locked ? pal::kAccentWarn : dest_acc;
                 const float pulse = 0.65f + 0.35f * std::sin(sim_time * 3.0f + static_cast<float>(r + c));
                 const Color slab = pal::WorldColor(dp.sanctuary_sick, dp.sanctuary_healthy, poll);
 
                 DrawRectangle(rx, ry, tile_px, tile_px, slab);
-                DrawRectangle(rx + 3, ry + 3, tile_px - 6, tile_px - 6, pal::WithAlpha(acc, static_cast<unsigned char>(42.0f * pulse)));
-                DrawRectangleLines(rx + 2, ry + 2, tile_px - 4, tile_px - 4, pal::WithAlpha(pal::kBronze, 215));
-                DrawPolyLines({tr.x + 24.0f, tr.y + 24.0f}, 4, 11.0f, 0.0f, pal::WithAlpha(acc, static_cast<unsigned char>(190.0f * pulse)));
+                if (locked) {
+                    const float lock_pulse = 0.68f + 0.32f * std::sin(sim_time * 4.4f + static_cast<float>(r + c) * 0.6f);
+                    const Color barrier_bg = pal::WithAlpha(pal::kAccentWarn, static_cast<unsigned char>(78.0f * lock_pulse));
+                    const Color barrier_bar = pal::WithAlpha(pal::kSolarGateGold, static_cast<unsigned char>(225.0f * lock_pulse));
+                    const Color barrier_core = pal::WithAlpha(pal::kSolarBeamCore, static_cast<unsigned char>(235.0f * lock_pulse));
+
+                    DrawRectangle(rx + 2, ry + 2, tile_px - 4, tile_px - 4, barrier_bg);
+                    DrawRectangleLines(rx + 2, ry + 2, tile_px - 4, tile_px - 4, pal::WithAlpha(pal::kBronzeBright, 225));
+
+                    const bool horiz = (gw != nullptr) ? gw->IsHorizontalWall() : true;
+                    static constexpr std::array<float, 3> kBarOffsets{{11.0f, 24.0f, 37.0f}};
+                    for (float offset : kBarOffsets) {
+                        if (horiz) {
+                            DrawLineEx({tr.x + 4.0f, tr.y + offset},
+                                       {tr.x + tr.width - 4.0f, tr.y + offset},
+                                       2.8f, barrier_bar);
+                            DrawLineEx({tr.x + 6.0f, tr.y + offset},
+                                       {tr.x + tr.width - 6.0f, tr.y + offset},
+                                       1.2f, barrier_core);
+                        } else {
+                            DrawLineEx({tr.x + offset, tr.y + 4.0f},
+                                       {tr.x + offset, tr.y + tr.height - 4.0f},
+                                       2.8f, barrier_bar);
+                            DrawLineEx({tr.x + offset, tr.y + 6.0f},
+                                       {tr.x + offset, tr.y + tr.height - 6.0f},
+                                       1.2f, barrier_core);
+                        }
+                    }
+
+                    const Vector2 ctr{tr.x + tr.width * 0.5f, tr.y + tr.height * 0.5f};
+                    DrawPoly(ctr, 4, 11.0f, 0.0f, Color{24, 18, 14, 220});
+                    DrawPoly(ctr, 4, 8.5f, 0.0f, barrier_bar);
+                    DrawPolyLines(ctr, 4, 11.0f, 0.0f, pal::kBronzeBright);
+                    DrawCircleV(ctr, 3.0f, barrier_core);
+                } else {
+                    DrawRectangle(rx + 3, ry + 3, tile_px - 6, tile_px - 6, pal::WithAlpha(acc, static_cast<unsigned char>(42.0f * pulse)));
+                    DrawRectangleLines(rx + 2, ry + 2, tile_px - 4, tile_px - 4, pal::WithAlpha(pal::kBronze, 215));
+                    DrawPolyLines({tr.x + 24.0f, tr.y + 24.0f}, 4, 11.0f, 0.0f, pal::WithAlpha(acc, static_cast<unsigned char>(190.0f * pulse)));
+                }
             } else if (id == eco::TileId::ShallowChannel) {
                 // Canale guadabile con letto di ciottoli visibile e acqua turchese traslucida
                 const Color bed = pal::ShiftBrightness(pal::WorldColor(dp.path_sick, dp.path_healthy, poll), -18);
@@ -2588,8 +2625,9 @@ void DrawStructureProceduralBackdropAndMap(
             const eco::TileId id = tilemap.GetTile(r, c);
             const std::uint32_t h = Hash2(c, r, 557);
 
-            if (IsWallLike(id)) {
-                const bool is_perimeter = (r == 0 || r >= tilemap.Rows() - 2 || c == 0 || c == row_cols - 1);
+            if (id == eco::TileId::Wall) {
+                const bool is_perimeter =
+                    (r <= 1 || r >= tilemap.Rows() - 2 || c <= 1 || c >= row_cols - 2);
                 if (!is_perimeter) {
                     DrawRectangle(rx + 2, ry + tile_px, tile_px - 2, 8, Color{0, 0, 0, 88});
                     DrawRectangle(rx, ry, tile_px, 13, plat_top);
@@ -2638,6 +2676,25 @@ void DrawStructureProceduralBackdropAndMap(
                         DrawLineEx({tr.x, tr.y + 1.5f}, {tr.x + tr.width, tr.y + 1.5f}, 2.5f, pal::WithAlpha(accent, 215));
                     }
                 }
+            } else if (id == eco::TileId::SolarGate) {
+                // Barriera energetica / paratoia dorata bloccata
+                const float pulse = 0.65f + 0.35f * std::sin(sim_time * 4.2f + static_cast<float>(r + c));
+                DrawRectangle(rx + 2, ry + 2, tile_px - 4, tile_px - 4,
+                              pal::WithAlpha(pal::kSolarGateGold, static_cast<unsigned char>(92.0f * pulse)));
+                DrawRectangle(rx, ry, 7, tile_px, pal::kBronzeDark);
+                DrawRectangle(rx + tile_px - 7, ry, 7, tile_px, pal::kBronzeDark);
+                DrawLine(rx + 7, ry, rx + 7, ry + tile_px, pal::WithAlpha(pal::kBronzeBright, 175));
+                DrawLine(rx + tile_px - 7, ry, rx + tile_px - 7, ry + tile_px, pal::WithAlpha(pal::kBronzeBright, 175));
+                for (int bar = 10; bar < tile_px; bar += 12) {
+                    DrawLineEx(
+                        {tr.x + 6.0f, tr.y + static_cast<float>(bar)},
+                        {tr.x + tr.width - 6.0f, tr.y + static_cast<float>(bar)},
+                        2.6f,
+                        pal::WithAlpha(pal::kSolarBeamCore, static_cast<unsigned char>(215.0f * pulse)));
+                }
+                const Vector2 center{tr.x + tr.width * 0.5f, tr.y + tr.height * 0.5f};
+                DrawPoly(center, 4, 8.5f, 0.0f, pal::kSolarGateGold);
+                DrawCircleV(center, 3.4f, pal::kSolarBeamCore);
             } else if (id == eco::TileId::ExitPortal) {
                 const float pulse = 0.5f + 0.5f * std::sin(sim_time * 3.6f);
                 const Color glow = pal::LerpColor(pal::kBronze, pal::kAmberGlow, pulse);
@@ -2647,6 +2704,122 @@ void DrawStructureProceduralBackdropAndMap(
                 DrawTextShadow("USCITA", rx + 5, ry + 18, 10, pal::kParchmentText);
             }
         }
+    }
+
+    // Ponti retrattili / passerelle dei puzzle interni
+    const eco::StructurePuzzleState& puzzle = world.structure.puzzle;
+    for (const eco::StructureGate& gate : puzzle.gates) {
+        if (!gate.is_bridge) {
+            continue;
+        }
+        for (const eco::TileCoord& coord : gate.tiles) {
+            if (coord.row < s_min_row || coord.row > s_max_row ||
+                coord.col < s_min_col || coord.col > s_max_col) {
+                continue;
+            }
+            const eco::Rect tr = tilemap.TileRect(coord.row, coord.col);
+            const int rx = static_cast<int>(tr.x);
+            const int ry = static_cast<int>(tr.y);
+            if (gate.open) {
+                const float pulse = 0.72f + 0.28f * std::sin(sim_time * 3.4f + static_cast<float>(coord.col) * 0.6f);
+                DrawRectangle(rx, ry + 4, tile_px, tile_px - 8, Color{26, 62, 58, 240});
+                DrawRectangle(rx, ry, tile_px, 11, pal::LerpColor(pal::kJade, pal::kBronzeBright, 0.35f));
+                DrawRectangle(rx + 3, ry + 13, tile_px - 6, tile_px - 20, pal::WithAlpha(pal::kJadeBridgeGlow, static_cast<unsigned char>(130.0f * pulse)));
+                DrawLineEx({tr.x + 1.0f, tr.y + 2.5f}, {tr.x + tr.width - 1.0f, tr.y + 2.5f}, 2.6f, pal::kJadeGlow);
+                DrawLineEx({tr.x + 2.0f, tr.y + tr.height - 4.0f}, {tr.x + tr.width - 2.0f, tr.y + tr.height - 4.0f}, 2.0f, pal::kBronzeBright);
+                DrawCircle(rx + 8, ry + 7, 2.2f, pal::kBronzeDark);
+                DrawCircle(rx + tile_px - 8, ry + 7, 2.2f, pal::kBronzeDark);
+                DrawRectangleLines(rx, ry, tile_px, tile_px - 2, pal::kBronze);
+            } else {
+                const float ghost_pulse = 0.45f + 0.35f * std::sin(sim_time * 2.6f + static_cast<float>(coord.col) * 0.5f);
+                const Color ghost_col = pal::WithAlpha(pal::kJadeGlow, static_cast<unsigned char>(115.0f * ghost_pulse));
+                DrawRectangle(rx + 2, ry + 6, tile_px - 4, tile_px - 18, pal::WithAlpha(pal::kJade, static_cast<unsigned char>(28.0f * ghost_pulse)));
+                for (int dx = 2; dx < tile_px - 4; dx += 10) {
+                    const int seg_end = std::min(rx + dx + 6, rx + tile_px - 2);
+                    DrawLine(rx + dx, ry + 5, seg_end, ry + 5, ghost_col);
+                    DrawLine(rx + dx, ry + tile_px - 12, seg_end, ry + tile_px - 12, ghost_col);
+                }
+                DrawLine(rx + 2, ry + 5, rx + 2, ry + tile_px - 12, pal::WithAlpha(pal::kBronzeBright, 85));
+                DrawLine(rx + tile_px - 2, ry + 5, rx + tile_px - 2, ry + tile_px - 12, pal::WithAlpha(pal::kBronzeBright, 85));
+            }
+        }
+    }
+
+    // Interruttori / leve / campane / valvole dei puzzle interni
+    for (const eco::StructureSwitch& sw : puzzle.switches) {
+        const float sx = sw.pos.x;
+        const float sy = sw.pos.y;
+        const float floor_y = sy + ts * 0.5f;
+        const float pulse = 0.65f + 0.35f * std::sin(sim_time * 4.0f + static_cast<float>(sw.id) * 1.1f);
+
+        bool player_near = false;
+        for (const eco::Player* p : world.players.ActivePlayers()) {
+            if (p != nullptr && p->Center().DistanceTo(sw.pos) <= sw.interact_radius) {
+                player_near = true;
+                break;
+            }
+        }
+
+        // Piedistallo in basalto e bronzo
+        DrawRectangle(static_cast<int>(sx - 14.0f), static_cast<int>(floor_y - 10.0f), 28, 10, Color{44, 42, 46, 255});
+        DrawRectangleLines(static_cast<int>(sx - 14.0f), static_cast<int>(floor_y - 10.0f), 28, 10, pal::kBronze);
+        DrawRectangle(static_cast<int>(sx - 8.0f), static_cast<int>(floor_y - 24.0f), 16, 15, pal::kBronzeDark);
+        DrawRectangleLines(static_cast<int>(sx - 8.0f), static_cast<int>(floor_y - 24.0f), 16, 15, pal::kBronzeBright);
+
+        // Leva e cristallo luminoso
+        const Color crystal_col = sw.active ? pal::kJadeGlow : pal::kAmberGlow;
+        const Color glow_col = sw.active
+            ? pal::WithAlpha(pal::kJade, static_cast<unsigned char>(95.0f * pulse))
+            : pal::WithAlpha(pal::kAmberGlow, static_cast<unsigned char>(48.0f * pulse));
+        const float lever_tip_x = sw.active ? (sx + 10.0f) : (sx - 10.0f);
+        const float lever_tip_y = floor_y - 34.0f;
+        DrawLineEx({sx, floor_y - 21.0f}, {lever_tip_x, lever_tip_y}, 3.2f, pal::kBronzeBright);
+        DrawCircleV({lever_tip_x, lever_tip_y}, 13.0f * pulse, glow_col);
+        DrawPoly({lever_tip_x, lever_tip_y}, 4, 6.5f, 0.0f, crystal_col);
+        DrawCircleV({lever_tip_x, lever_tip_y}, 2.4f, pal::kStoneIvory);
+
+        // Simbolo ASCII sopra l'interruttore
+        const char* sym = (sw.symbol != nullptr) ? sw.symbol : "?";
+        const int sym_w = MeasureText(sym, 14);
+        const int badge_w = std::max(22, sym_w + 10);
+        const int badge_x = static_cast<int>(sx) - badge_w / 2;
+        const int badge_y = static_cast<int>(floor_y - 58.0f);
+        DrawRectangle(badge_x, badge_y, badge_w, 18, Color{18, 22, 28, 210});
+        DrawRectangleLines(badge_x, badge_y, badge_w, 18, sw.active ? pal::kJadeGlow : pal::kBronze);
+        DrawTextShadow(sym, static_cast<int>(sx) - sym_w / 2, badge_y + 2, 14, sw.active ? pal::kJadeGlow : pal::kParchmentText);
+
+        // Anello di interazione pulsante e prompt [E] quando il giocatore e' vicino
+        if (player_near) {
+            const float ring_r = 22.0f + 5.0f * std::sin(sim_time * 6.0f);
+            DrawRing({sx, floor_y - 20.0f}, ring_r - 2.0f, ring_r, 0.0f, 360.0f, 24,
+                     pal::WithAlpha(sw.active ? pal::kJadeGlow : pal::kAmberGlow, 200));
+            const char* prompt = "[E]";
+            const int pw = MeasureText(prompt, 12);
+            const int px = static_cast<int>(sx) - pw / 2;
+            const int py = badge_y - 18;
+            DrawRectangle(px - 5, py - 2, pw + 10, 16, Color{16, 20, 26, 225});
+            DrawRectangleLines(px - 5, py - 2, pw + 10, 16, pal::kAmberGlow);
+            DrawTextShadow(prompt, px, py, 12, pal::kAmberGlow);
+        }
+    }
+
+    // Iscrizione diegetica della camera vicino allo spawn
+    if (puzzle.hint_text != nullptr && puzzle.hint_text[0] != '\0') {
+        const char* title_str = (puzzle.title != nullptr && puzzle.title[0] != '\0') ? puzzle.title : "CAMERA";
+        const int title_w = MeasureText(title_str, 13);
+        const int hint_w = MeasureText(puzzle.hint_text, 11);
+        const int tablet_w = std::max(title_w, hint_w) + 22;
+        const int tablet_h = 40;
+        const int tx = std::clamp(
+            static_cast<int>(world.structure.spawn_point.x) - 16,
+            tile_px * 2 + 8,
+            std::max(tile_px * 2 + 8, world_w - tile_px * 2 - tablet_w - 8));
+        const int ty = std::max(tile_px * 2 + 8, static_cast<int>(world.structure.spawn_point.y) - 96);
+        DrawRectangle(tx, ty, tablet_w, tablet_h, Color{18, 24, 30, 198});
+        DrawRectangleLines(tx, ty, tablet_w, tablet_h, pal::WithAlpha(pal::kBronze, 205));
+        DrawLine(tx + 6, ty + 19, tx + tablet_w - 6, ty + 19, pal::WithAlpha(pal::kBronze, 120));
+        DrawTextShadow(title_str, tx + 10, ty + 4, 13, pal::kAmberGlow);
+        DrawTextShadow(puzzle.hint_text, tx + 10, ty + 23, 11, pal::kParchmentText);
     }
 
     struct ExitCache { bool ready = false; float x = 0.0f; float y = 0.0f; };

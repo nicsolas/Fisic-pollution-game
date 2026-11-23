@@ -104,6 +104,7 @@ add_library(game_core STATIC
     src/core/player.cpp
     src/core/ecosystem.cpp
     src/core/tilemap.cpp
+    src/core/structure_puzzles.cpp
     src/core/physics2d.cpp
     src/core/machine.cpp
     src/core/npc.cpp

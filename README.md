@@ -5,34 +5,43 @@ Videogioco 2D in **C++20 e Raylib 5.5** basato sulla fisica empirica, sulla mate
 Ambientato sull'altopiano monumentale de **La Conca di Meridia**, segue la naturalista e cartografa **Elena Valli** mentre esplora **6 distretti separati in superficie** e **3 strutture interne**, raccoglie **16 reliquie** distribuite in **4 Ere storiche** e riattiva **5 monumenti fisici + l'Astrolabio Centrale** (Ottica di Lambert, Idrostatica di Stevino, Pendolo Isocrono di Galileo, Risonanza Armonica Lorentziana, Termodinamica di Carnot e Interferenza di Fase), scegliendo se guarire la Conca con il calcolo o cedere alle fornaci a pece di Matteo Verrini.
 
 Include:
-- **6 Zone Separate a Mappa Dedicata (`26x36` tile)** caricate on-demand in memoria (una sola mappa residente in RAM alla volta per ottimizzazione footprint).
-- **6 Meccaniche Top-Down Uniche**: specchi e fasci solari con piastre fotosensibili, correnti d'acqua fisiche con chiuse a leva, raffiche di vento periodiche con monoliti frangivento, piastre acustiche di risonanza armonica con sblocco del Ponte di Giada, geyser termici ciclici con valvole di sfogo, e accordatura dei sigilli elementali dell'Astrolabio.
+- **6 Zone Sequenziali a Mappa Dedicata (`26x36` tile)** caricate on-demand in memoria (`Terrazze dell'Alba -> Quartiere dei Canali -> Altopiano dei Venti -> Giardini Sospesi -> Caldera delle Fumarole -> Santuario dell'Armonia`), con **varchi di avanzamento vincolati al completamento della task principale** della zona corrente e ritorno sempre aperto.
+- **3 Livelli dei Portali Ridisegnati come Test di Logica Side-Scrolling**: *Cisterne Ipogee* (`20x40`, **Equilibrio delle Paratoie** a logica booleana), *Torre del Pendolo* (`22x38`, **Sequenza Isocrona** a 4 campane ordinate) e *Camera Geotermica* (`20x42`, **Ciclo di Carnot** a 4 valvole accoppiate), tutti verificati da test automatici di fisica reale a 60 Hz.
+- **6 Meccaniche Top-Down Uniche**: specchi e fasci solari con piastre fotosensibili e muro `SolarGate` completamente sigillato, correnti d'acqua fisiche con chiuse a leva, raffiche di vento periodiche con monoliti frangivento, piastre acustiche di risonanza armonica con sblocco del Ponte di Giada, geyser termici ciclici con valvole di sfogo, e accordatura dei sigilli elementali dell'Astrolabio.
+- **16 Reliquie Lore-Accurate (di cui 7 Nascoste in Nicchie Segrete)**: posizionate in punti coerenti con l'architettura e la storia, con luccichio discreto in prossimita', rivelazione in Fase 3 (*Trama Geodetica*) e Codex `[J]`.
 - **Intramezzi Panoramici tra Zone**: transizioni visive e narrative dipinte proceduralmente ad ogni passaggio di soglia, con parallasse, versi storici dedicati e skip rapido (`SPAZIO`).
 - **Menu di Pausa & Impostazioni Riprogettato**: 4 schede intuitive (**Gioco**, **Grafica**, **Ambiente**, **Audio**), slider trascinabili col mouse, mute rapido `[M]`, reset predefiniti per scheda.
 - **Controlli Effetti Ambientali & Audio Granulari**: intensita' regolabile in tempo reale per atmosfera, particelle, foschia/nebbia, raggi solari, vignettatura e meteo di zona; volumi separati per Master, Musica, Effetti e Ambiente naturale con anteprima live.
-- **Cronologia dei Dialoghi (`[H]`)** e **Codex delle 16 Reliquie (`[J]`)** con riposizionamento lore-accurate in tutte le zone.
-- **Salvataggio automatico/manuale con "Riprendi da dove hai lasciato"** e sfondo ridisegnato dinamicamente per distretto e foschia.
+- **Cronologia dei Dialoghi (`[H]`)** e **Salvataggio Completo Anti-Softlock** ("Riprendi da dove hai lasciato") che persiste anche lo stato di tutte le leve, sequenze, paratoie e ponti dentro i livelli dei portali.
 - **Selezione del Monitor** e **Selezione GPU OpenGL** (NVIDIA / Intel / AMD) su Linux e multi-schermo.
 
 ---
 
 ## Galleria Visiva — La Conca di Meridia
 
-| Titolo — Riprendi Partita (`22_titolo_riprendi_zona.png`) | Impostazioni Schermo, GPU & Audio (`21_impostazioni_monitor_gpu.png`) | Terrazze dell'Alba (`09_terrazze_alba.png`) |
-|---|---|---|
-| ![Riprendi Partita](docs/screenshots/22_titolo_riprendi_zona.png) | ![Impostazioni Monitor & GPU](docs/screenshots/21_impostazioni_monitor_gpu.png) | ![Terrazze dell'Alba](docs/screenshots/09_terrazze_alba.png) |
+### Nuovi Livelli dei Portali a Logica & Zone Sequenziali
 
-| Giardini Sospesi (`10_giardini_sospesi.png`) | Caldera delle Fumarole (`11_caldera_fumarole.png`) | Santuario dell'Armonia (`12_santuario_astrolabio.png`) |
+| Cisterne Ipogee — Equilibrio delle Paratoie (`27_cisterne_enigma_paratoie.png`) | Torre del Pendolo — Sequenza Isocrona (`28_torre_pendolo_sequenza.png`) | Camera Geotermica — Ciclo di Carnot (`29_camera_geotermica_carnot.png`) |
 |---|---|---|
-| ![Giardini Sospesi](docs/screenshots/10_giardini_sospesi.png) | ![Caldera delle Fumarole](docs/screenshots/11_caldera_fumarole.png) | ![Santuario dell'Armonia](docs/screenshots/12_santuario_astrolabio.png) |
+| ![Cisterne Ipogee Enigma](docs/screenshots/27_cisterne_enigma_paratoie.png) | ![Torre del Pendolo Sequenza](docs/screenshots/28_torre_pendolo_sequenza.png) | ![Camera Geotermica Carnot](docs/screenshots/29_camera_geotermica_carnot.png) |
 
-| Cisterne Ipogee (`13_cisterne_ipogee.png`) | Torre del Pendolo (`14_torre_pendolo.png`) | Camera Geotermica (`15_camera_geotermica.png`) |
+| Terrazze dell'Alba — SolarGate & Varco Sigillato (`26_terrazze_solargate_varco.png`) | Quartiere dei Canali — Progressione Sequenziale (`30_canali_sequenziale_varco.png`) | Titolo — Riprendi Partita (`22_titolo_riprendi_zona.png`) |
 |---|---|---|
-| ![Cisterne Ipogee](docs/screenshots/13_cisterne_ipogee.png) | ![Torre del Pendolo](docs/screenshots/14_torre_pendolo.png) | ![Camera Geotermica](docs/screenshots/15_camera_geotermica.png) |
+| ![Terrazze SolarGate](docs/screenshots/26_terrazze_solargate_varco.png) | ![Canali Sequenziale](docs/screenshots/30_canali_sequenziale_varco.png) | ![Riprendi Partita](docs/screenshots/22_titolo_riprendi_zona.png) |
 
-| Cronologia Dialoghi `[H]` (`16_cronologia_dialoghi.png`) | Codex Reliquie `[J]` (`17_codex_reliquie.png`) | Modal Risonatore (`18_modal_risonatore.png`) |
+### Distretti, Interfacce e Impostazioni
+
+| Impostazioni Schermo, GPU & Audio (`21_impostazioni_monitor_gpu.png`) | Giardini Sospesi (`10_giardini_sospesi.png`) | Caldera delle Fumarole (`11_caldera_fumarole.png`) |
 |---|---|---|
-| ![Cronologia Dialoghi](docs/screenshots/16_cronologia_dialoghi.png) | ![Codex Reliquie](docs/screenshots/17_codex_reliquie.png) | ![Modal Risonatore](docs/screenshots/18_modal_risonatore.png) |
+| ![Impostazioni Monitor & GPU](docs/screenshots/21_impostazioni_monitor_gpu.png) | ![Giardini Sospesi](docs/screenshots/10_giardini_sospesi.png) | ![Caldera delle Fumarole](docs/screenshots/11_caldera_fumarole.png) |
+
+| Santuario dell'Armonia (`12_santuario_astrolabio.png`) | Cronologia Dialoghi `[H]` (`16_cronologia_dialoghi.png`) | Codex Reliquie `[J]` (`17_codex_reliquie.png`) |
+|---|---|---|
+| ![Santuario dell'Armonia](docs/screenshots/12_santuario_astrolabio.png) | ![Cronologia Dialoghi](docs/screenshots/16_cronologia_dialoghi.png) | ![Codex Reliquie](docs/screenshots/17_codex_reliquie.png) |
+
+| Modal Risonatore (`18_modal_risonatore.png`) | Epilogo — Alba su Meridia (`19_epilogo_alba_meridia.png`) | Impostazioni Audio (`20_impostazioni_audio.png`) |
+|---|---|---|
+| ![Modal Risonatore](docs/screenshots/18_modal_risonatore.png) | ![Epilogo Alba su Meridia](docs/screenshots/19_epilogo_alba_meridia.png) | ![Impostazioni Audio](docs/screenshots/20_impostazioni_audio.png) |
 
 ---
 
@@ -46,8 +55,8 @@ cmake --build build -j8
 # Avvia il gioco (Campagna Completa attiva di default)
 ./build/eco_proto
 
-# Esegui unit test e test headless E2E
-cd build && ctest --output-on-failure
+# Esegui unit test, test di fisica/logica a 60 Hz e test headless E2E
+ctest --test-dir build --output-on-failure
 ```
 
 ### Opzioni da Riga di Comando (`eco_proto`)
@@ -93,20 +102,31 @@ cd build && ctest --output-on-failure
 
 ## Funzionalita' Principali e Novita'
 
-### 1. Ridisegno Mappa & Architettura a Zone Separate
-- **6 Mappe Indipendenti (`26x36` tile)**:
-  - *Terrazze dell'Alba*: lastricati solari, meridiane in ottone e corridoi d'allineamento ottico.
-  - *Quartiere dei Canali*: banchine d'acqua, canali guadabili e il monumentale Ponte degli Archi.
-  - *Altopiano dei Venti*: costoni rocciosi battuti da folate violente e monoliti frangivento in basalto.
-  - *Giardini Sospesi*: terrazzamenti botanici con vasche d'acqua e piattaforme acustiche in giada.
-  - *Caldera delle Fumarole*: distese vulcaniche solcate da getti termici e condutture in rame.
-  - *Santuario dell'Armonia*: piazza cerimoniale ellittica che ospita l'Astrolabio Centrale e i 5 sigilli elementali.
+### 1. Progressione Sequenziale, Varchi Vincolati & Architettura a Zone Separate
+- **6 Mappe Indipendenti (`26x36` tile) in Catena Sequenziale (`1 <-> 2 <-> 3 <-> 4 <-> 5 <-> 6`)**:
+  1. *Terrazze dell'Alba* (`N -> Canali`, sbloccato dopo l'attivazione dell'**Eliostato Solare**; muro orientale del `SolarGate` sigillato da bordo a bordo).
+  2. *Quartiere dei Canali* (`E -> Venti` sul Ponte degli Archi, sbloccato dopo la **Turbina Idrostatica** + reclutamento di **Clara Sereni**).
+  3. *Altopiano dei Venti* (`E -> Giardini`, sbloccato dopo la calibrazione del **Pendolo Isochronos**).
+  4. *Giardini Sospesi* (`N -> Caldera`, sbloccato dopo l'accordatura del **Risonatore Armonico**).
+  5. *Caldera delle Fumarole* (`E -> Santuario`, sbloccato dopo la calibrazione dello **Scambiatore di Carnot**).
+  6. *Santuario dell'Armonia* (piazza cerimoniale dell'**Astrolabio Centrale** e dei 5 sigilli elementali).
+- **Varchi Sigillati & Ritorno Libero**: ogni varco verso la zona successiva mostra barre energetiche sigillate, targa dedicata e suggerimento contestuale finche' la task principale corrente non viene completata; i varchi all'indietro restano sempre aperti per l'esplorazione.
 - **Ottimizzazione Memoria Reale**:
-  - Viene mantenuta residente in RAM **solo la mappa della zona attualmente attiva** (`936 B` di griglia per zona, oltre `6.3 KB` risparmiati rispetto al caricamento simultaneo).
+  - Viene mantenuta residente in RAM **solo la mappa della zona attualmente attiva** (`936 B` di griglia per zona, oltre `7.1 KB` risparmiati rispetto al caricamento simultaneo di zone e strutture).
   - Al varco tra zone, la vecchia tilemap e le cache procedurali (affreschi e prop) vengono liberate con deallocazione esplicita (`ReleaseOverworldProceduralCache()`), rigenerando on-demand solo gli asset della nuova destinazione.
-  - Statistiche di memoria costantemente tracciate ed esposte via `WorldContext::GetMemoryMetrics()`.
+  - Minimappa filtrata sulla sola zona attiva con stato live dei varchi e bussola guidata.
 
-### 2. Meccaniche Top-Down Uniche per Zona
+### 2. Livelli dei Portali Ridisegnati come Test di Logica Side-Scrolling
+Ogni struttura interna (`src/core/structure_puzzles.h/.cpp`) e' un vero enigma di logica e platforming, calibrato sulla fisica reale di salto (`kJumpForce = 480`, `kGravityAccel = 1200`) e verificato da playthrough automatici a 60 Hz in `tests/test_main.cpp`:
+1. **Cisterne Ipogee (`20x40`) — *Equilibrio delle Paratoie***:
+   - 3 leve (`A`, `B`, `C`) governano una logica booleana senza softlock: la Paratoia Centrale si apre con `A || C`, il Ponte Acquedotto si estende con `A && B`, mentre la Chiusa della Turbina (con **Lorenzo Altieri** e la **Turbina Idrostatica**) si apre solo con `!A && B && C`.
+2. **Torre del Pendolo (`22x38`) — *Sequenza Isocrona***:
+   - 4 campane armoniche (`I`, `II`, `III`, `IV`) su livelli ascendenti da percuotere in ordine strettamente crescente (un ordine errato resetta la sequenza), estendendo 2 ponti armonici fino al Portale Isocrono del **Pendolo**.
+3. **Camera Geotermica (`20x42`) — *Ciclo di Carnot***:
+   - 4 valvole termiche accoppiate (`V1..V4`): `V1 && !V2` estende il Ponte di Basalto verso `V3`, `V2` apre il condotto verso `V4`, `V3 && V4` estende la Passerella Termica e tutte e 4 attive aprono la Camera di Carnot dello **Scambiatore**.
+- **Salvataggio Persistente delle Leve & Anti-Softlock**: lo stato di leve, sequenze, paratoie e ponti di tutte e 3 le strutture (oltre alle piastre solari e risonanze in Overworld) viene salvato automaticamente in `saves/conca_di_meridia.sav` e ripristinato prima del posizionamento di Elena, impedendo di rimanere bloccati alla riapertura del gioco.
+
+### 3. Meccaniche Top-Down Uniche per Zona
 Ogni livello 2D possiede ora un gameplay e una fisica propria:
 1. **Terrazze dell'Alba — Emettitore & Specchi Solari**:
    - Fascio luminoso orientabile ruotando 3 specchi a prisma con `[E]`.
@@ -126,12 +146,12 @@ Ogni livello 2D possiede ora un gameplay e una fisica propria:
 6. **Santuario dell'Armonia — Sigilli Elementali dell'Astrolabio**:
    - 5 sigilli radiali corrispondenti ai 5 distretti periferici, che si accordano e illuminano all'attivazione delle rispettive macchine.
 
-### 3. Intramezzi di Soglia Narrativi e Visivi
+### 4. Intramezzi di Soglia Narrativi e Visivi
 - Attraversando uno dei 5 varchi monumentali tra zone si attiva una sequenza di intramezzo procedurale con dissolvenza, parallasse dello sfondo e polvere atmosferica.
 - Ogni passaggio propone un testo poetico e storico scritto per la specifica direzione del viaggio (`ZoneInterludeCopy()`).
 - Possibilita' di saltare istantaneamente la transizione premendo `SPAZIO`, `INVIO`, `E` o `ESC` (istantanea in test automatizzati `--headless-e2e`).
 
-### 4. Menu di Pausa, Regolazioni Ambientali e Audio
+### 5. Menu di Pausa, Regolazioni Ambientali e Audio
 - **Layout a 4 Schede** navigabile sia da tastiera (`[Q/E]`, `[TAB]`, `[1-4]`, frecce) sia interamente col mouse:
   1. *Gioco*: velocita' dialoghi, tutorial compatto, mostra FPS.
   2. *Grafica*: modalita' finestra/fullscreen, selettore monitor dedicato, risoluzione sicura, FPS target, selettore GPU fisica con riavvio automatico.
@@ -139,8 +159,9 @@ Ogni livello 2D possiede ora un gameplay e una fisica propria:
   4. *Audio*: toggle mute rapido, volume principale, volume musica procedurale, volume effetti/interazioni, volume atmosfera/natura, toggle ambiente, toggle suoni interfaccia, con campionamento sonoro in tempo reale durante la regolazione.
 - Salvataggio persistente e automatico in `saves/settings.cfg`.
 
-### 5. Collezionabili & Codex Storico
-- 16 reliquie archeologiche divise in 4 Ere storiche dei Meridiani, riposizionate nei nuovi scenari in modo organico e sicuro da raggiungere.
+### 6. Collezionabili, Reliquie Nascoste & Codex Storico
+- 16 reliquie archeologiche divise in 4 Ere storiche dei Meridiani (10 in Overworld + 6 nelle 3 Strutture), riposizionate in punti coerenti con la storia e l'architettura.
+- **7 Reliquie Nascoste** in nicchie e passaggi segreti (dietro archi d'acquedotto, sottovento ai monoliti, dietro le fornaci in rovina, sull'ala alta delle Cisterne, sulla guglia della Torre e contro la parete d'ossidiana): invisibili sulla minimappa standard, brillano discretamente finche' Elena non si avvicina (o non attiva la Fase 3 *Trama Geodetica*) e restano sempre 100% raggiungibili.
 - Consultabili in qualsiasi momento con il tasto `[J]` (Codex Reliquie) con analisi scientifiche, estratti di diario e contributi narrativi degli NPC.
 
 ---

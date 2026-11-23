@@ -1,4 +1,5 @@
 #include "core/tilemap.h"
+#include "core/structure_puzzles.h"
 
 #include <algorithm>
 #include <cmath>
@@ -128,8 +129,8 @@ void AddZoneBorder(std::vector<std::uint8_t>& cells, int rows, int cols, TileId 
     FillRectFlat(cells, kR, kC, 21, 23, 2, 7, TileId::Water);
 
     // Alcova Orientale dell'Iscrizione & Reliquia protetta dal SolarGate (col 28)
-    FillRectFlat(cells, kR, kC, 2, 10, 28, 28, TileId::RuinsWall);
-    FillRectFlat(cells, kR, kC, 15, 23, 28, 28, TileId::RuinsWall);
+    FillRectFlat(cells, kR, kC, 1, 10, 28, 28, TileId::RuinsWall);
+    FillRectFlat(cells, kR, kC, 15, 24, 28, 28, TileId::RuinsWall);
     FillRectFlat(cells, kR, kC, 11, 14, 28, 28, TileId::SolarGate);
     FillRectFlat(cells, kR, kC, 9, 17, 29, 33, TileId::SanctuaryFloor);
 
@@ -143,9 +144,8 @@ void AddZoneBorder(std::vector<std::uint8_t>& cells, int rows, int cols, TileId 
 
     AddZoneBorder(cells, kR, kC, TileId::Wall);
 
-    // Varchi: Sud -> DawnTerraces, Nord -> WindPlateau, Est -> HangingGardens (Ponte degli Archi)
+    // Varchi: Sud -> DawnTerraces, Est -> WindPlateau (Ponte degli Archi)
     FillRectFlat(cells, kR, kC, 24, 24, 16, 19, TileId::ZoneGateway);
-    FillRectFlat(cells, kR, kC, 1, 1, 16, 19, TileId::ZoneGateway);
 
     // Gran Canale Orientale (separa il Ponte degli Archi a col 32..34)
     FillRectFlat(cells, kR, kC, 1, 24, 32, 33, TileId::Water);
@@ -185,12 +185,13 @@ void AddZoneBorder(std::vector<std::uint8_t>& cells, int rows, int cols, TileId 
 
     AddZoneBorder(cells, kR, kC, TileId::Wall);
 
-    // Varco Sud -> Quartiere dei Canali
-    FillRectFlat(cells, kR, kC, 24, 24, 16, 19, TileId::ZoneGateway);
+    // Varchi: Ovest -> Quartiere dei Canali, Est -> Giardini Sospesi
+    FillRectFlat(cells, kR, kC, 11, 14, 1, 1, TileId::ZoneGateway);
+    FillRectFlat(cells, kR, kC, 11, 14, 34, 34, TileId::ZoneGateway);
 
-    // Sentiero esposto alle raffiche che sale verso la Torre del Pendolo
+    // Sentiero esposto alle raffiche tra Ovest, Torre del Pendolo e varco Est
     FillRectFlat(cells, kR, kC, 5, 23, 16, 19, TileId::PavedPath);
-    FillRectFlat(cells, kR, kC, 10, 14, 8, 30, TileId::PavedPath);
+    FillRectFlat(cells, kR, kC, 10, 14, 2, 33, TileId::PavedPath);
     FillRectFlat(cells, kR, kC, 4, 9, 14, 21, TileId::SanctuaryFloor);
 
     // 5 Monoliti frangivento in basalto (RuinsWall solidi, allineati con ZoneMechanicState::windbreaks)
@@ -219,10 +220,9 @@ void AddZoneBorder(std::vector<std::uint8_t>& cells, int rows, int cols, TileId 
 
     AddZoneBorder(cells, kR, kC, TileId::Wall);
 
-    // Varchi: Ovest -> CanalQuarter, Nord -> FumaroleCaldera, Sud -> HarmonySanctuary
+    // Varchi: Ovest -> WindPlateau, Nord -> FumaroleCaldera
     FillRectFlat(cells, kR, kC, 11, 14, 1, 1, TileId::ZoneGateway);
     FillRectFlat(cells, kR, kC, 1, 1, 16, 19, TileId::ZoneGateway);
-    FillRectFlat(cells, kR, kC, 24, 24, 16, 19, TileId::ZoneGateway);
 
     // Viali principali N-S e Ovest -> terrazza delle piastre armoniche
     FillRectFlat(cells, kR, kC, 2, 23, 16, 19, TileId::PavedPath);
@@ -254,13 +254,15 @@ void AddZoneBorder(std::vector<std::uint8_t>& cells, int rows, int cols, TileId 
 
     AddZoneBorder(cells, kR, kC, TileId::Wall);
 
-    // Varco Sud -> Giardini Sospesi
+    // Varchi: Sud -> Giardini Sospesi, Est -> Santuario dell'Armonia
     FillRectFlat(cells, kR, kC, 24, 24, 16, 19, TileId::ZoneGateway);
+    FillRectFlat(cells, kR, kC, 11, 14, 34, 34, TileId::ZoneGateway);
 
-    // Sentieri di basalto fra le bocche fumarole verso la Camera Geotermica (r=5, c=17..18)
+    // Sentieri di basalto fra le bocche fumarole verso la Camera Geotermica (r=5, c=17..18) e varco Est
     FillRectFlat(cells, kR, kC, 6, 23, 16, 19, TileId::PavedPath);
     FillRectFlat(cells, kR, kC, 14, 16, 7, 28, TileId::PavedPath);
     FillRectFlat(cells, kR, kC, 9, 11, 10, 31, TileId::PavedPath);
+    FillRectFlat(cells, kR, kC, 11, 14, 28, 33, TileId::PavedPath);
     FillRectFlat(cells, kR, kC, 4, 8, 14, 21, TileId::SanctuaryFloor);
 
     // Colonne di basalto e rovine delle fornaci
@@ -269,9 +271,9 @@ void AddZoneBorder(std::vector<std::uint8_t>& cells, int rows, int cols, TileId 
     FillRectFlat(cells, kR, kC, 19, 21, 5, 9, TileId::RuinsWall);
     FillRectFlat(cells, kR, kC, 19, 21, 26, 30, TileId::RuinsWall);
 
-    // Bacini termali ai lati
+    // Bacini termali ai lati (bacino est spostato a r=17..20 per liberare il varco Est)
     FillRectFlat(cells, kR, kC, 11, 13, 3, 5, TileId::Water);
-    FillRectFlat(cells, kR, kC, 14, 17, 31, 33, TileId::Water);
+    FillRectFlat(cells, kR, kC, 17, 20, 31, 33, TileId::Water);
 
     // Portale Camera Geotermica (r=5, c=17..18)
     SetCellFlat(cells, kR, kC, 5, 17, TileId::StructurePortal);
@@ -287,9 +289,9 @@ void AddZoneBorder(std::vector<std::uint8_t>& cells, int rows, int cols, TileId 
 
     AddZoneBorder(cells, kR, kC, TileId::Wall);
 
-    // Varco Nord -> Giardini Sospesi
-    FillRectFlat(cells, kR, kC, 1, 1, 16, 19, TileId::ZoneGateway);
-    FillRectFlat(cells, kR, kC, 2, 7, 16, 19, TileId::PavedPath);
+    // Varco Ovest -> Caldera delle Fumarole + viale d'ingresso cerimoniale
+    FillRectFlat(cells, kR, kC, 11, 14, 1, 1, TileId::ZoneGateway);
+    FillRectFlat(cells, kR, kC, 12, 14, 2, 10, TileId::PavedPath);
 
     // Specchi d'acqua sacri ai quattro angoli del Santuario
     FillRectFlat(cells, kR, kC, 3, 6, 3, 7, TileId::Water);
@@ -303,80 +305,28 @@ void AddZoneBorder(std::vector<std::uint8_t>& cells, int rows, int cols, TileId 
     SetCellFlat(cells, kR, kC, 19, 11, TileId::RuinsWall);
     SetCellFlat(cells, kR, kC, 19, 24, TileId::RuinsWall);
 
-    // Aiuole dei semi risvegliati
-    FillRectFlat(cells, kR, kC, 11, 15, 3, 6, TileId::GardenFloor);
+    // Aiuole dei semi risvegliati (aiuola ovest divisa per incorniciare l'ingresso Ovest)
+    FillRectFlat(cells, kR, kC, 8, 10, 3, 6, TileId::GardenFloor);
+    FillRectFlat(cells, kR, kC, 16, 18, 3, 6, TileId::GardenFloor);
     FillRectFlat(cells, kR, kC, 11, 15, 29, 32, TileId::GardenFloor);
 
     return Tilemap(kR, kC, std::move(cells), tile_size);
 }
 
 // ============================================================================
-// 3 Mappe delle Strutture Side-Scrolling (invariate)
+// 3 Mappe delle Strutture Side-Scrolling (delegate a structure_puzzles)
 // ============================================================================
 
 [[nodiscard]] Tilemap CreateHypogeanCisternsMap(float tile_size) {
-    constexpr int kRows = 16;
-    constexpr int kCols = 34;
-    std::vector<std::uint8_t> cells(static_cast<std::size_t>(kRows * kCols), 0);
-
-    FillRectFlat(cells, kRows, kCols, 0, 0, 0, kCols - 1, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, kRows - 2, kRows - 1, 0, kCols - 1, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 0, kRows - 1, 0, 0, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 0, kRows - 1, kCols - 1, kCols - 1, TileId::Wall);
-
-    SetCellFlat(cells, kRows, kCols, 13, 2, TileId::ExitPortal);
-    SetCellFlat(cells, kRows, kCols, 13, 3, TileId::ExitPortal);
-
-    FillRectFlat(cells, kRows, kCols, 12, 12, 16, 20, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 10, 10, 22, 26, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 8, 8, 24, 31, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 10, 10, 8, 14, TileId::Wall);
-
-    return Tilemap(kRows, kCols, std::move(cells), tile_size);
+    return BuildStructurePuzzleMap(StructureId::HypogeanCisterns, tile_size);
 }
 
 [[nodiscard]] Tilemap CreatePendulumTowerMap(float tile_size) {
-    constexpr int kRows = 18;
-    constexpr int kCols = 30;
-    std::vector<std::uint8_t> cells(static_cast<std::size_t>(kRows * kCols), 0);
-
-    FillRectFlat(cells, kRows, kCols, 0, 0, 0, kCols - 1, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, kRows - 2, kRows - 1, 0, kCols - 1, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 0, kRows - 1, 0, 0, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 0, kRows - 1, kCols - 1, kCols - 1, TileId::Wall);
-
-    SetCellFlat(cells, kRows, kCols, 15, 2, TileId::ExitPortal);
-    SetCellFlat(cells, kRows, kCols, 15, 3, TileId::ExitPortal);
-
-    FillRectFlat(cells, kRows, kCols, 15, 15, 7, 12, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 14, 14, 10, 17, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 13, 13, 10, 20, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 6, 6, 3, 9, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 6, 6, 21, 27, TileId::Wall);
-
-    return Tilemap(kRows, kCols, std::move(cells), tile_size);
+    return BuildStructurePuzzleMap(StructureId::PendulumTower, tile_size);
 }
 
 [[nodiscard]] Tilemap CreateGeothermalChamberMap(float tile_size) {
-    constexpr int kRows = 16;
-    constexpr int kCols = 34;
-    std::vector<std::uint8_t> cells(static_cast<std::size_t>(kRows * kCols), 0);
-
-    FillRectFlat(cells, kRows, kCols, 0, 0, 0, kCols - 1, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, kRows - 2, kRows - 1, 0, kCols - 1, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 0, kRows - 1, 0, 0, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 0, kRows - 1, kCols - 1, kCols - 1, TileId::Wall);
-
-    SetCellFlat(cells, kRows, kCols, 13, 2, TileId::ExitPortal);
-    SetCellFlat(cells, kRows, kCols, 13, 3, TileId::ExitPortal);
-
-    FillRectFlat(cells, kRows, kCols, 12, 12, 10, 15, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 10, 10, 17, 22, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 10, 10, 24, 30, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 8, 8, 12, 18, TileId::Wall);
-    FillRectFlat(cells, kRows, kCols, 6, 6, 4, 10, TileId::Wall);
-
-    return Tilemap(kRows, kCols, std::move(cells), tile_size);
+    return BuildStructurePuzzleMap(StructureId::GeothermalChamber, tile_size);
 }
 
 } // namespace
@@ -475,14 +425,27 @@ std::vector<ZoneGateway> Tilemap::ZoneGateways(ZoneId zone, float tile_size) {
                 false
             });
             out.push_back(ZoneGateway{
-                GatewayOrientation::Horizontal,
-                {1, 16},
-                {1, 19},
-                {18.0f * ts, 1.5f * ts},
+                GatewayOrientation::Vertical,
+                {11, 34},
+                {14, 34},
+                {34.5f * ts, 13.0f * ts},
                 ZoneId::CanalQuarter,
                 ZoneId::WindPlateau,
-                {22, 17},
-                "N -> VENTO",
+                {12, 3},
+                "E -> VENTO",
+                true
+            });
+            break;
+        case ZoneId::WindPlateau:
+            out.push_back(ZoneGateway{
+                GatewayOrientation::Vertical,
+                {11, 1},
+                {14, 1},
+                {1.5f * ts, 13.0f * ts},
+                ZoneId::WindPlateau,
+                ZoneId::CanalQuarter,
+                {12, 30},
+                "O -> CANALI",
                 false
             });
             out.push_back(ZoneGateway{
@@ -490,23 +453,10 @@ std::vector<ZoneGateway> Tilemap::ZoneGateways(ZoneId zone, float tile_size) {
                 {11, 34},
                 {14, 34},
                 {34.5f * ts, 13.0f * ts},
-                ZoneId::CanalQuarter,
+                ZoneId::WindPlateau,
                 ZoneId::HangingGardens,
                 {12, 3},
                 "E -> GIARDINI",
-                true
-            });
-            break;
-        case ZoneId::WindPlateau:
-            out.push_back(ZoneGateway{
-                GatewayOrientation::Horizontal,
-                {24, 16},
-                {24, 19},
-                {18.0f * ts, 24.5f * ts},
-                ZoneId::WindPlateau,
-                ZoneId::CanalQuarter,
-                {3, 17},
-                "S -> CANALI",
                 false
             });
             break;
@@ -517,9 +467,9 @@ std::vector<ZoneGateway> Tilemap::ZoneGateways(ZoneId zone, float tile_size) {
                 {14, 1},
                 {1.5f * ts, 13.0f * ts},
                 ZoneId::HangingGardens,
-                ZoneId::CanalQuarter,
-                {12, 30},
-                "O -> CANALI",
+                ZoneId::WindPlateau,
+                {12, 31},
+                "O -> VENTO",
                 false
             });
             out.push_back(ZoneGateway{
@@ -531,17 +481,6 @@ std::vector<ZoneGateway> Tilemap::ZoneGateways(ZoneId zone, float tile_size) {
                 ZoneId::FumaroleCaldera,
                 {22, 17},
                 "N -> CALDERA",
-                false
-            });
-            out.push_back(ZoneGateway{
-                GatewayOrientation::Horizontal,
-                {24, 16},
-                {24, 19},
-                {18.0f * ts, 24.5f * ts},
-                ZoneId::HangingGardens,
-                ZoneId::HarmonySanctuary,
-                {3, 17},
-                "S -> SANTUARIO",
                 false
             });
             break;
@@ -557,17 +496,28 @@ std::vector<ZoneGateway> Tilemap::ZoneGateways(ZoneId zone, float tile_size) {
                 "S -> GIARDINI",
                 false
             });
+            out.push_back(ZoneGateway{
+                GatewayOrientation::Vertical,
+                {11, 34},
+                {14, 34},
+                {34.5f * ts, 13.0f * ts},
+                ZoneId::FumaroleCaldera,
+                ZoneId::HarmonySanctuary,
+                {12, 3},
+                "E -> SANTUARIO",
+                false
+            });
             break;
         case ZoneId::HarmonySanctuary:
             out.push_back(ZoneGateway{
-                GatewayOrientation::Horizontal,
-                {1, 16},
-                {1, 19},
-                {18.0f * ts, 1.5f * ts},
+                GatewayOrientation::Vertical,
+                {11, 1},
+                {14, 1},
+                {1.5f * ts, 13.0f * ts},
                 ZoneId::HarmonySanctuary,
-                ZoneId::HangingGardens,
-                {22, 17},
-                "N -> GIARDINI",
+                ZoneId::FumaroleCaldera,
+                {12, 31},
+                "O -> CALDERA",
                 false
             });
             break;
@@ -584,13 +534,13 @@ TileCoord Tilemap::DefaultZoneSpawnTile(ZoneId zone) noexcept {
         case ZoneId::CanalQuarter:
             return {17, 17};
         case ZoneId::WindPlateau:
-            return {21, 17};
+            return {12, 4};
         case ZoneId::HangingGardens:
             return {12, 6};
         case ZoneId::FumaroleCaldera:
             return {21, 17};
         case ZoneId::HarmonySanctuary:
-            return {6, 17};
+            return {13, 5};
         case ZoneId::Count:
             break;
     }
@@ -635,26 +585,26 @@ std::array<DistrictGateway, Tilemap::kOverworldGatewayCount> Tilemap::OverworldG
             false
         },
         DistrictGateway{
-            GatewayOrientation::Horizontal,
-            {1, 16},
-            {1, 19},
-            {18.0f * ts, 1.5f * ts},
+            GatewayOrientation::Vertical,
+            {11, 34},
+            {14, 34},
+            {34.5f * ts, 13.0f * ts},
             ZoneId::CanalQuarter,
             ZoneId::WindPlateau,
-            "N -> VENTO",
-            "S -> CANALI",
-            false
+            "E -> VENTO",
+            "O -> CANALI",
+            true
         },
         DistrictGateway{
             GatewayOrientation::Vertical,
             {11, 34},
             {14, 34},
             {34.5f * ts, 13.0f * ts},
-            ZoneId::CanalQuarter,
+            ZoneId::WindPlateau,
             ZoneId::HangingGardens,
             "E -> GIARDINI",
-            "O -> CANALI",
-            true
+            "O -> VENTO",
+            false
         },
         DistrictGateway{
             GatewayOrientation::Horizontal,
@@ -668,14 +618,14 @@ std::array<DistrictGateway, Tilemap::kOverworldGatewayCount> Tilemap::OverworldG
             false
         },
         DistrictGateway{
-            GatewayOrientation::Horizontal,
-            {24, 16},
-            {24, 19},
-            {18.0f * ts, 24.5f * ts},
-            ZoneId::HangingGardens,
+            GatewayOrientation::Vertical,
+            {11, 34},
+            {14, 34},
+            {34.5f * ts, 13.0f * ts},
+            ZoneId::FumaroleCaldera,
             ZoneId::HarmonySanctuary,
-            "S -> SANTUARIO",
-            "N -> GIARDINI",
+            "E -> SANTUARIO",
+            "O -> CALDERA",
             false
         }
     }};
