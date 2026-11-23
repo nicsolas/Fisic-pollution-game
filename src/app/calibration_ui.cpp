@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "app/raylib_input.h"
 #include "app/render/palette.h"
 #include "app/render/ui_style.h"
 #include "core/collectible.h"
@@ -1487,7 +1488,7 @@ void DrawSceneMachineAndOverlaysWorldSpace(const eco::WorldContext& world) {
 // =============================================================================
 // HUD SUPERIORE, LENTE EMPIRICA, MINIMAPPA & MODAL DI CALIBRAZIONE
 // =============================================================================
-void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world) {
+void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_mouse_input) {
     const eco::OverlayVisibility ov = eco::ComputeOverlayVisibility(world.ecosystem);
     const eco::Machine& machine = world.ModalTargetMachine();
 
@@ -1692,7 +1693,7 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world) {
         };
 
         const Vector2 mouse = GetMousePosition();
-        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
+        if (allow_mouse_input && IsMouseButtonDown(MOUSE_BUTTON_LEFT) &&
             CheckCollisionPointRec(
                 mouse,
                 Rectangle{slider_rect.x - 10.0f, slider_rect.y - 8.0f, slider_rect.width + 20.0f, slider_rect.height + 16.0f})) {
@@ -1757,25 +1758,36 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world) {
         const Rectangle btn_bypass{static_cast<float>(bx + 24), static_cast<float>(by + 306), 720.0f, 38.0f};
         const Rectangle btn_cancel{static_cast<float>(bx + 24), static_cast<float>(by + 356), 248.0f, 34.0f};
 
+        const ControllerPrompts prompts = GetActiveControllerPrompts();
+        const bool hover_confirm = allow_mouse_input && CheckCollisionPointRec(mouse, btn_confirm);
+        const bool hover_bypass = allow_mouse_input && machine.allow_bypass && CheckCollisionPointRec(mouse, btn_bypass);
+        const bool hover_cancel = allow_mouse_input && CheckCollisionPointRec(mouse, btn_cancel);
+
         DrawRectangleRec(
             btn_confirm,
-            world.calibration_modal.can_confirm_clean ? Color{22, 112, 82, 255} : Color{32, 42, 54, 255});
+            world.calibration_modal.can_confirm_clean
+                ? (hover_confirm ? Color{34, 142, 102, 255} : Color{22, 112, 82, 255})
+                : Color{32, 42, 54, 255});
         DrawRectangleLinesEx(
             btn_confirm,
-            2.0f,
+            hover_confirm ? 2.6f : 2.0f,
             world.calibration_modal.can_confirm_clean ? pal::kAccentClean : GRAY);
         DrawTextShadow(
-            "[INVIO / C / CLICK] CONFERMA CALIBRAZIONE PULITA (+Energia Armonica, -Foschia)",
+            prompts.controller_active
+                ? TextFormat("%s / CLICK CONFERMA CALIBRAZIONE PULITA (+Energia Armonica, -Foschia)", prompts.confirm)
+                : "[INVIO / C / CLICK] CONFERMA CALIBRAZIONE PULITA (+Energia Armonica, -Foschia)",
             bx + 36,
             by + 269,
             15,
             world.calibration_modal.can_confirm_clean ? RAYWHITE : GRAY);
 
         if (machine.allow_bypass) {
-            DrawRectangleRec(btn_bypass, Color{116, 48, 28, 255});
-            DrawRectangleLinesEx(btn_bypass, 1.5f, pal::kAccentDirty);
+            DrawRectangleRec(btn_bypass, hover_bypass ? Color{144, 62, 36, 255} : Color{116, 48, 28, 255});
+            DrawRectangleLinesEx(btn_bypass, hover_bypass ? 2.2f : 1.5f, pal::kAccentDirty);
             DrawTextShadow(
-                TextFormat("[B / CLICK] %s (+Foschia di Pece!)", eco::kCombustionBypassLabel),
+                prompts.controller_active
+                    ? TextFormat("%s / CLICK %s (+Foschia di Pece!)", prompts.bypass, eco::kCombustionBypassLabel)
+                    : TextFormat("[B / CLICK] %s (+Foschia di Pece!)", eco::kCombustionBypassLabel),
                 bx + 36,
                 by + 317,
                 15,
@@ -1791,11 +1803,18 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world) {
                 Color{174, 192, 206, 220});
         }
 
-        DrawRectangleRec(btn_cancel, Color{36, 48, 64, 255});
-        DrawRectangleLinesEx(btn_cancel, 1.4f, pal::kBronze);
-        DrawTextShadow("[X / BACKSPACE / CLICK] Annulla", bx + 36, by + 365, 14, pal::kParchmentText);
+        DrawRectangleRec(btn_cancel, hover_cancel ? Color{54, 72, 94, 255} : Color{36, 48, 64, 255});
+        DrawRectangleLinesEx(btn_cancel, hover_cancel ? 2.0f : 1.4f, pal::kBronze);
+        DrawTextShadow(
+            prompts.controller_active
+                ? TextFormat("%s / CLICK Annulla", prompts.cancel)
+                : "[X / BACKSPACE / CLICK] Annulla",
+            bx + 36,
+            by + 365,
+            14,
+            pal::kParchmentText);
 
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        if (allow_mouse_input && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             if (CheckCollisionPointRec(mouse, btn_confirm)) {
                 HandleMouseModalCommit(world, true);
             } else if (machine.allow_bypass && CheckCollisionPointRec(mouse, btn_bypass)) {

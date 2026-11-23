@@ -12,6 +12,7 @@
 #include "app/game_state_manager.h"
 #include "app/intro_state.h"
 #include "app/overworld_state.h"
+#include "app/raylib_input.h"
 #include "app/render/palette.h"
 #include "app/render/ui_style.h"
 #include "app/structure_state.h"
@@ -372,8 +373,9 @@ void TitleState::Update(float dt) {
     const bool has_save = save_summary_.exists;
     const int item_count = has_save ? 4 : 3;
 
-    const bool up_pressed = IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W);
-    const bool down_pressed = IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S);
+    const MenuInputState menu_in = PollMenuInput(dt);
+    const bool up_pressed = menu_in.up_pressed;
+    const bool down_pressed = menu_in.down_pressed;
     if (up_pressed) {
         menu_cursor_ = (menu_cursor_ - 1 + item_count) % item_count;
         PlayUiSfx(SfxId::UiClick, 0.48f, 1.05f);
@@ -413,9 +415,7 @@ void TitleState::Update(float dt) {
         }
     }
 
-    const eco::PlayerInput& p0 = ctx_.input.Get(0);
-    if (p0.confirm_pressed || p0.interact_pressed || p0.jump_pressed ||
-        ctx_.input.advance_dialogue_pressed) {
+    if (activated < 0 && (menu_in.confirm_pressed || IsKeyPressed(KEY_E))) {
         activated = menu_cursor_;
     }
 
@@ -554,13 +554,13 @@ void TitleState::Draw() {
         labels = {
             "Riprendi da dove hai lasciato",
             "Nuova Partita (Ricomincia)",
-            "Impostazioni (Grafica, Ambiente & Audio) [O]",
+            "Impostazioni (Schermo, Audio & Controller) [O]",
             "Esci dal Gioco"
         };
     } else {
         labels = {
             "Inizia il Viaggio nella Conca",
-            "Impostazioni (Grafica, Ambiente & Audio) [O]",
+            "Impostazioni (Schermo, Audio & Controller) [O]",
             "Esci dal Gioco"
         };
     }
@@ -598,8 +598,11 @@ void TitleState::Draw() {
     }
 
     // 5. Footer controlli
-    const char* controls =
-        "[W/S] o Mouse Scegli | [INVIO/E] Conferma | [O] Impostazioni Schermo & GPU | [M] Muto | [F11] Schermo Intero";
+    const ControllerPrompts prompts = GetActiveControllerPrompts();
+    const char* controls = prompts.controller_active
+        ? TextFormat("Controller %s: [Levetta/D-Pad] Scegli | %s Conferma | %s Impostazioni | [M] Muto",
+                     prompts.device_name, prompts.confirm, prompts.pause)
+        : "[W/S] o Mouse Scegli | [INVIO/E] Conferma | [O] Impostazioni Schermo & GPU | [M] Muto | [F11] Schermo Intero";
     const int ctrl_w = MeasureUiText(controls, 13);
     DrawTextShadow(controls, (w - ctrl_w) / 2, h - 30, 13, Color{150, 192, 210, 232});
 }

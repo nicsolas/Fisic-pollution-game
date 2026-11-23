@@ -700,13 +700,15 @@ OverworldStepResult OverworldSim::Step(
 
     for (Player* p : players.ActivePlayers()) {
         const PlayerInput& in = input.Get(p->player_id);
+        const float move_speed =
+            in.sprint_held ? (kTopDownSpeed * kSprintSpeedMultiplier) : kTopDownSpeed;
         MovePlayerTopDown(
             *p,
             {in.move_x, in.move_y},
             safe_dt,
             tilemap,
             bridge_unlocked,
-            kTopDownSpeed,
+            move_speed,
             external_velocity,
             solar_gate_open,
             jade_bridge_unlocked);
@@ -959,6 +961,8 @@ StructureStepResult StructureSim::Step(
 
     for (Player* p : players.ActivePlayers()) {
         const PlayerInput& in = input.Get(p->player_id);
+        const float move_speed =
+            in.sprint_held ? (kSideMoveSpeed * kSprintSpeedMultiplier) : kSideMoveSpeed;
         MovePlayerSideScrolling(
             *p,
             in.move_x,
@@ -967,7 +971,7 @@ StructureStepResult StructureSim::Step(
             safe_dt,
             tilemap,
             bridge_unlocked,
-            kSideMoveSpeed);
+            move_speed);
     }
 
     camera_target = UpdateAverageCameraTarget(camera_target, players, safe_dt, kCameraLerpSpeed);

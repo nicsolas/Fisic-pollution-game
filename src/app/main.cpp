@@ -684,7 +684,11 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
             }
 
             const bool paused = pause_menu.UpdateAndHandleInput(ctx, graphics_settings, &journal);
-            state_manager.ApplyPendingTransition();
+            if (state_manager.ApplyPendingTransition()) {
+                pending_input = {};
+                ctx_input = {};
+                stepper.accumulator = 0.0f;
+            }
 
             bool in_gameplay_state = false;
             if (state_manager.HasActiveState()) {
@@ -695,17 +699,35 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
                 !paused && in_gameplay_state && !world.calibration_modal.is_open && !world.interlude.active;
             const bool journal_open =
                 paused ? journal.IsOpen() : journal.UpdateAndHandleInput(ctx, allow_journal_open);
+            ctx.overlay_blocking_input = paused || journal_open;
 
             const float frame_dt = GetFrameTime();
             if (!paused && !journal_open) {
-                const eco::AllPlayersInput sampled = eco::app::PollRaylibInput();
-                eco::LatchFrameInput(pending_input, sampled);
+                if (ctx.block_state_input_this_frame) {
+                    ctx.block_state_input_this_frame = false;
+                    pending_input = {};
+                    ctx_input = {};
+                } else {
+                    const std::string_view cur_name =
+                        state_manager.HasActiveState()
+                            ? std::string_view(state_manager.CurrentState()->Name())
+                            : std::string_view{};
+                    if (cur_name == "TitleState" || cur_name == "IntroState") {
+                        ctx_input = eco::app::PollRaylibInput();
+                        state_manager.Update(frame_dt);
+                        pending_input = {};
+                        stepper.accumulator = 0.0f;
+                    } else {
+                        const eco::AllPlayersInput sampled = eco::app::PollRaylibInput();
+                        eco::LatchFrameInput(pending_input, sampled);
 
-                const int steps = stepper.Accumulate(frame_dt);
-                for (int s = 0; s < steps; ++s) {
-                    ctx_input = pending_input;
-                    state_manager.Update(stepper.fixed_dt);
-                    eco::ConsumePressedEdges(pending_input);
+                        const int steps = stepper.Accumulate(frame_dt);
+                        for (int s = 0; s < steps; ++s) {
+                            ctx_input = pending_input;
+                            state_manager.Update(stepper.fixed_dt);
+                            eco::ConsumePressedEdges(pending_input);
+                        }
+                    }
                 }
             } else {
                 pending_input = {};

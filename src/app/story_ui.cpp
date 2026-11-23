@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "app/raylib_input.h"
 #include "app/render/palette.h"
 #include "app/render/ui_style.h"
 #include "core/collectible.h"
@@ -539,12 +540,14 @@ void JournalOverlay::Close() noexcept {
 }
 
 bool JournalOverlay::UpdateAndHandleInput(AppContext& ctx, bool allow_open) {
-    // Apri con [H] o [J] quando siamo in gameplay (non su Titolo/Intro/Pausa/Calibrazione)
+    const MenuInputState menu_in = PollMenuInput(GetFrameTime());
+
+    // Apri con [H], [J] o pulsante Diario/View/Share/- del controller
     if (!is_open_) {
         if (!allow_open) {
             return false;
         }
-        if (IsKeyPressed(KEY_H)) {
+        if (IsKeyPressed(KEY_H) || menu_in.journal_pressed) {
             OpenHistory();
             last_seen_history_count_ = ctx.world.story.History().size();
             return true;
@@ -561,14 +564,16 @@ bool JournalOverlay::UpdateAndHandleInput(AppContext& ctx, bool allow_open) {
         return false;
     }
 
-    // Chiusura o cambio tab rapido con [ESC], [H], [J], [TAB]
-    if (IsKeyPressed(KEY_ESCAPE)) {
+    // Chiusura o cambio tab rapido con [ESC], [H], [J], [TAB] o controller
+    if (IsKeyPressed(KEY_ESCAPE) || menu_in.cancel_pressed || menu_in.journal_pressed) {
         Close();
+        ctx.block_state_input_this_frame = true;
         return false;
     }
     if (IsKeyPressed(KEY_H)) {
         if (active_tab_ == JournalTab::History) {
             Close();
+            ctx.block_state_input_this_frame = true;
             return false;
         }
         active_tab_ = JournalTab::History;
@@ -577,12 +582,13 @@ bool JournalOverlay::UpdateAndHandleInput(AppContext& ctx, bool allow_open) {
     if (IsKeyPressed(KEY_J)) {
         if (active_tab_ == JournalTab::Codex) {
             Close();
+            ctx.block_state_input_this_frame = true;
             return false;
         }
         active_tab_ = JournalTab::Codex;
         codex_detail_scroll_px_ = 0.0f;
     }
-    if (IsKeyPressed(KEY_TAB)) {
+    if (IsKeyPressed(KEY_TAB) || menu_in.tab_prev_pressed || menu_in.tab_next_pressed) {
         active_tab_ = (active_tab_ == JournalTab::History) ? JournalTab::Codex : JournalTab::History;
         if (active_tab_ == JournalTab::History) {
             history_scroll_to_bottom_ = true;
@@ -602,6 +608,7 @@ bool JournalOverlay::UpdateAndHandleInput(AppContext& ctx, bool allow_open) {
 
     if (clicked && CheckCollisionPointRec(mouse, close_btn)) {
         Close();
+        ctx.block_state_input_this_frame = true;
         return false;
     }
 
@@ -617,12 +624,12 @@ bool JournalOverlay::UpdateAndHandleInput(AppContext& ctx, bool allow_open) {
         }
     }
 
-    const bool up_pressed = IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W);
-    const bool down_pressed = IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S);
-    const bool up_held = IsKeyDown(KEY_UP) || IsKeyDown(KEY_W);
-    const bool down_held = IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_S);
-    const bool left_pressed = IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A);
-    const bool right_pressed = IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D);
+    const bool up_pressed = menu_in.up_pressed;
+    const bool down_pressed = menu_in.down_pressed;
+    const bool up_held = menu_in.up_held;
+    const bool down_held = menu_in.down_held;
+    const bool left_pressed = menu_in.left_pressed;
+    const bool right_pressed = menu_in.right_pressed;
 
     if (active_tab_ == JournalTab::History) {
         // Filtro capitoli (-1 = Tutti, 0..6 = Prologo..Epilogo)
@@ -684,6 +691,10 @@ bool JournalOverlay::UpdateAndHandleInput(AppContext& ctx, bool allow_open) {
         }
         if (std::abs(wheel) > 0.01f) {
             history_scroll_px_ -= wheel * 64.0f;
+            history_scroll_to_bottom_ = false;
+        }
+        if (std::abs(menu_in.scroll_y) > 0.01f) {
+            history_scroll_px_ += menu_in.scroll_y * 420.0f * dt;
             history_scroll_to_bottom_ = false;
         }
         history_scroll_px_ = std::clamp(history_scroll_px_, 0.0f, history_max_scroll_px_);
@@ -758,6 +769,10 @@ bool JournalOverlay::UpdateAndHandleInput(AppContext& ctx, bool allow_open) {
         }
         if (IsKeyPressed(KEY_PAGE_DOWN)) {
             codex_detail_scroll_px_ += 160.0f;
+        }
+        if (std::abs(menu_in.scroll_y) > 0.01f) {
+            const float dt = std::clamp(GetFrameTime(), 0.0f, 0.05f);
+            codex_detail_scroll_px_ += menu_in.scroll_y * 360.0f * dt;
         }
 
         // Mantieni la riga selezionata visibile nella lista a sinistra quando ci si muove da tastiera

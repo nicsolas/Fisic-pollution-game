@@ -13,6 +13,7 @@ struct PlayerInput {
     float move_y = 0.0f;
     bool jump_pressed = false;
     bool jump_held = false;
+    bool sprint_held = false;
     bool interact_pressed = false;
     bool scan_pressed = false;
     bool toggle_overlay_pressed = false;
@@ -28,7 +29,7 @@ struct PlayerInput {
 
     [[nodiscard]] constexpr bool HasAnyAction() const noexcept {
         return move_x != 0.0f || move_y != 0.0f || jump_pressed || jump_held ||
-               interact_pressed || scan_pressed || toggle_overlay_pressed ||
+               sprint_held || interact_pressed || scan_pressed || toggle_overlay_pressed ||
                join_pressed || cancel_pressed || confirm_pressed ||
                bypass_pressed || slider_delta != 0.0f;
     }
@@ -135,6 +136,7 @@ inline void LatchFrameInput(AllPlayersInput& pending, const AllPlayersInput& fra
         dst.move_x = src.move_x;
         dst.move_y = src.move_y;
         dst.jump_held = src.jump_held;
+        dst.sprint_held = src.sprint_held;
         if (std::isfinite(src.slider_delta) && src.slider_delta != 0.0f) {
             dst.slider_delta += src.slider_delta;
         }

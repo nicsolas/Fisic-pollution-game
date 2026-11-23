@@ -100,7 +100,7 @@ void StructureState::Draw() {
     DrawScreenSpaceAtmosphere(ctx_.world);
 
     // 6. Barra superiore HUD, Lente Empirica e Modal di calibrazione fisica
-    DrawHudAndCalibrationModalScreenSpace(ctx_.world);
+    DrawHudAndCalibrationModalScreenSpace(ctx_.world, !ctx_.overlay_blocking_input);
 
     // 7. Layer Narrativo (Obiettivo, Toast di Struttura/Reliquia, Dialoghi, Diario [H] / Codex [J], Epilogo)
     DrawStoryLayer(ctx_.world);

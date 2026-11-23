@@ -133,7 +133,7 @@ void OverworldState::Draw() {
     }
 
     // 8. Barra superiore HUD, Lente Empirica, Minimappa Overworld e Modal di calibrazione fisica
-    DrawHudAndCalibrationModalScreenSpace(ctx_.world);
+    DrawHudAndCalibrationModalScreenSpace(ctx_.world, !ctx_.overlay_blocking_input);
 
     // 9. Layer Narrativo (Obiettivo, Toast di Zona/Reliquia, Dialoghi, Diario [H] / Codex [J], Epilogo)
     DrawStoryLayer(ctx_.world);

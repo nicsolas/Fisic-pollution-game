@@ -17,6 +17,7 @@
 #include "app/game_state_manager.h"
 #include "app/gpu_selector.h"
 #include "app/overworld_state.h"
+#include "app/raylib_input.h"
 #include "app/render/palette.h"
 #include "app/render/particles.h"
 #include "app/render/ui_style.h"
@@ -30,7 +31,7 @@ namespace eco::app {
 
 namespace {
 
-constexpr int kCategoryCount = 4;
+constexpr int kCategoryCount = 5;
 
 struct ResolutionOption {
     int width;
@@ -71,10 +72,10 @@ constexpr std::array<DialogueSpeedOption, 3> kDialogueSpeedOptions = {{
 constexpr std::array<float, 5> kLegacyVolumeLevels = {0.0f, 0.25f, 0.50f, 0.75f, 1.00f};
 
 struct SettingsPanelLayout {
-    int box_w = 880;
-    int box_h = 612;
-    int bx = (eco::kWindowWidth - 880) / 2;
-    int by = (eco::kWindowHeight - 612) / 2;
+    int box_w = 960;
+    int box_h = 626;
+    int bx = (eco::kWindowWidth - 960) / 2;
+    int by = (eco::kWindowHeight - 626) / 2;
 
     [[nodiscard]] Rectangle PanelRect() const noexcept {
         return Rectangle{
@@ -142,7 +143,47 @@ struct SettingsPanelLayout {
             38.0f
         };
     }
+
+    [[nodiscard]] Rectangle ControllerBindingRect(int action_idx) const noexcept {
+        const int col = action_idx / 5; // 0 = sinistra (0..4), 1 = destra (5..9)
+        const int row_in_col = action_idx % 5;
+        const float col_gap = 16.0f;
+        const float col_w = (static_cast<float>(box_w - 48) - col_gap) * 0.5f;
+        return Rectangle{
+            static_cast<float>(bx + 24) + static_cast<float>(col) * (col_w + col_gap),
+            static_cast<float>(by + 298 + row_in_col * 38),
+            col_w,
+            33.0f
+        };
+    }
 };
+
+[[nodiscard]] ControllerType ControllerTypeForEditTab(int tab) noexcept {
+    switch (tab) {
+        case 1: return ControllerType::PlayStation;
+        case 2: return ControllerType::Switch;
+        default: return ControllerType::Xbox;
+    }
+}
+
+void EnsureControllerBindingsInitialized(GraphicsSettings& settings) noexcept {
+    if (settings.controller_bindings_initialized) {
+        return;
+    }
+    const std::array<ControllerType, 3> types = {
+        ControllerType::Xbox,
+        ControllerType::PlayStation,
+        ControllerType::Switch
+    };
+    for (int p = 0; p < 3; ++p) {
+        const ControllerProfileConfig def = DefaultBindingsFor(types[static_cast<std::size_t>(p)]);
+        for (int a = 0; a < static_cast<int>(GamepadAction::Count); ++a) {
+            settings.controller_bindings[static_cast<std::size_t>(p)][static_cast<std::size_t>(a)] =
+                static_cast<int>(def.bindings[static_cast<std::size_t>(a)]);
+        }
+    }
+    settings.controller_bindings_initialized = true;
+}
 
 [[nodiscard]] int OptionCountForCategory(PauseSettingsMenu::SettingsCategory cat) noexcept {
     switch (cat) {
@@ -154,6 +195,8 @@ struct SettingsPanelLayout {
             return 6;
         case PauseSettingsMenu::SettingsCategory::Audio:
             return 7;
+        case PauseSettingsMenu::SettingsCategory::Controller:
+            return 4 + static_cast<int>(GamepadAction::Count); // 4 opzioni + 10 tasti
     }
     return 3;
 }
@@ -317,6 +360,13 @@ void ResetCategoryDefaults(
             settings.ambient_audio = true;
             settings.ui_sounds_enabled = true;
             break;
+        case PauseSettingsMenu::SettingsCategory::Controller:
+            settings.controller_profile_mode = 0;
+            settings.switch_invert_ab = false;
+            settings.controller_deadzone = 0.20f;
+            settings.controller_bindings_initialized = false;
+            EnsureControllerBindingsInitialized(settings);
+            break;
     }
     ApplyGraphicsSettingsToRuntime(settings);
     (void)SaveGraphicsSettings(settings);
@@ -327,10 +377,12 @@ void AdjustSettingValue(
     GraphicsSettings& settings,
     PauseSettingsMenu::SettingsCategory category,
     int row,
-    int dir) {
+    int dir,
+    int controller_edit_profile = 0) {
     if (dir == 0) {
         return;
     }
+    EnsureControllerBindingsInitialized(settings);
 
     if (float* slider = GetSliderValuePtr(settings, category, row); slider != nullptr) {
         constexpr float kStep = 0.05f;
@@ -421,6 +473,27 @@ void AdjustSettingValue(
                 ApplyGraphicsSettingsToRuntime(settings);
             }
             break;
+        case PauseSettingsMenu::SettingsCategory::Controller:
+            if (row == 0) {
+                settings.controller_profile_mode = (settings.controller_profile_mode + dir + 4) % 4;
+                ApplyGraphicsSettingsToRuntime(settings);
+            } else if (row == 1) {
+                const float stepped = std::round((settings.controller_deadzone + static_cast<float>(dir) * 0.05f) * 20.0f) / 20.0f;
+                settings.controller_deadzone = std::clamp(stepped, 0.10f, 0.40f);
+                ApplyGraphicsSettingsToRuntime(settings);
+            } else if (row == 2) {
+                settings.switch_invert_ab = !settings.switch_invert_ab;
+                ApplyGraphicsSettingsToRuntime(settings);
+            } else if (row >= 4 && row < 4 + static_cast<int>(GamepadAction::Count)) {
+                const int act_idx = row - 4;
+                const int prof_idx = std::clamp(controller_edit_profile, 0, 2);
+                const int btn_count = static_cast<int>(GamepadButtonCode::Count);
+                int cur_btn = settings.controller_bindings[static_cast<std::size_t>(prof_idx)][static_cast<std::size_t>(act_idx)];
+                cur_btn = (cur_btn + dir + btn_count) % btn_count;
+                settings.controller_bindings[static_cast<std::size_t>(prof_idx)][static_cast<std::size_t>(act_idx)] = cur_btn;
+                ApplyGraphicsSettingsToRuntime(settings);
+            }
+            break;
     }
 
     (void)SaveGraphicsSettings(settings);
@@ -447,6 +520,7 @@ void AdjustSettingValue(
 } // namespace
 
 bool LoadGraphicsSettings(GraphicsSettings& settings, const std::string& path) {
+    EnsureControllerBindingsInitialized(settings);
     std::ifstream in(path);
     if (!in.is_open()) {
         return false;
@@ -538,6 +612,26 @@ bool LoadGraphicsSettings(GraphicsSettings& settings, const std::string& path) {
         } else if (key == "effects_volume_index" && !has_effects_float) {
             const int idx = std::clamp(ParseIntSetting(val, 4), 0, static_cast<int>(kLegacyVolumeLevels.size()) - 1);
             settings.effects_volume = kLegacyVolumeLevels[static_cast<std::size_t>(idx)];
+        } else if (key == "controller_profile_mode") {
+            settings.controller_profile_mode = std::clamp(ParseIntSetting(val, 0), 0, 3);
+        } else if (key == "switch_invert_ab") {
+            settings.switch_invert_ab = (ParseIntSetting(val, 0) != 0);
+        } else if (key == "controller_deadzone") {
+            settings.controller_deadzone = std::clamp(ParseFloatSetting(val, 0.20f), 0.10f, 0.40f);
+        } else if (key.rfind("ctrl_bind_", 0) == 0) {
+            // Formato: ctrl_bind_<prof>_<act>=<button_code>
+            const std::string rest = key.substr(10);
+            const std::size_t under = rest.find('_');
+            if (under != std::string::npos) {
+                const int p = ParseIntSetting(rest.substr(0, under), -1);
+                const int a = ParseIntSetting(rest.substr(under + 1), -1);
+                const int b = ParseIntSetting(val, -1);
+                if (p >= 0 && p < 3 &&
+                    a >= 0 && a < static_cast<int>(GamepadAction::Count) &&
+                    b >= 0 && b < static_cast<int>(GamepadButtonCode::Count)) {
+                    settings.controller_bindings[static_cast<std::size_t>(p)][static_cast<std::size_t>(a)] = b;
+                }
+            }
         }
     }
     return true;
@@ -577,6 +671,16 @@ bool SaveGraphicsSettings(const GraphicsSettings& settings, const std::string& p
     out << "ambient_volume=" << settings.ambient_volume << "\n";
     out << "ambient_audio=" << (settings.ambient_audio ? 1 : 0) << "\n";
     out << "ui_sounds_enabled=" << (settings.ui_sounds_enabled ? 1 : 0) << "\n";
+    out << "controller_profile_mode=" << settings.controller_profile_mode << "\n";
+    out << "switch_invert_ab=" << (settings.switch_invert_ab ? 1 : 0) << "\n";
+    out << "controller_deadzone=" << settings.controller_deadzone << "\n";
+    for (int p = 0; p < 3; ++p) {
+        for (int a = 0; a < static_cast<int>(GamepadAction::Count); ++a) {
+            out << "ctrl_bind_" << p << "_" << a << "="
+                << settings.controller_bindings[static_cast<std::size_t>(p)][static_cast<std::size_t>(a)]
+                << "\n";
+        }
+    }
     return out.good();
 }
 
@@ -620,6 +724,28 @@ void ApplyGraphicsSettingsToRuntime(const GraphicsSettings& settings) {
         const int idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
         SetTargetFPS(kFpsOptions[static_cast<std::size_t>(idx)].target_fps);
     }
+
+    ControllerSettingsRuntime ctrl_cfg{};
+    ctrl_cfg.profile_mode = std::clamp(settings.controller_profile_mode, 0, 3);
+    ctrl_cfg.switch_invert_ab = settings.switch_invert_ab;
+    ctrl_cfg.stick_deadzone = std::clamp(settings.controller_deadzone, 0.10f, 0.40f);
+    if (settings.controller_bindings_initialized) {
+        for (int p = 0; p < 3; ++p) {
+            for (int a = 0; a < static_cast<int>(GamepadAction::Count); ++a) {
+                const int code = std::clamp(
+                    settings.controller_bindings[static_cast<std::size_t>(p)][static_cast<std::size_t>(a)],
+                    0,
+                    static_cast<int>(GamepadButtonCode::Count) - 1);
+                ctrl_cfg.profiles[static_cast<std::size_t>(p)].bindings[static_cast<std::size_t>(a)] =
+                    static_cast<GamepadButtonCode>(code);
+            }
+        }
+    } else {
+        ctrl_cfg.profiles[0] = DefaultBindingsFor(ControllerType::Xbox);
+        ctrl_cfg.profiles[1] = DefaultBindingsFor(ControllerType::PlayStation);
+        ctrl_cfg.profiles[2] = DefaultBindingsFor(ControllerType::Switch);
+    }
+    ApplyControllerSettings(ctrl_cfg);
 }
 
 void ApplySelectedMonitor(GraphicsSettings& settings) {
@@ -760,6 +886,8 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         }
     }
 
+    const MenuInputState menu_in = PollMenuInput(GetFrameTime());
+
     // Avanzamento esplicito dei dialoghi (non durante intramezzi o menu)
     if (!is_open_ &&
         !ctx.world.interlude.active &&
@@ -767,9 +895,11 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         !ctx.world.calibration_modal.is_open &&
         ctx.world.story.HasActiveDialogue() &&
         (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) ||
-         IsKeyPressed(KEY_E) || IsKeyPressed(KEY_SPACE)) &&
+         IsKeyPressed(KEY_E) || IsKeyPressed(KEY_SPACE) ||
+         menu_in.confirm_pressed || menu_in.secondary_pressed) &&
         ctx.world.story.LineElapsed() > 0.12f) {
         ctx.world.story.AdvanceDialogue();
+        ctx.block_state_input_this_frame = true;
         PlayUiSfx(SfxId::UiClick, 0.35f, 1.12f);
     }
 
@@ -784,22 +914,25 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
 
     const bool on_title = IsTitleStateActive(ctx);
 
-    // Priorita' ESC: Intramezzo (salta) -> Calibrazione -> Diario [H/J] -> Menu di Pausa / Impostazioni
-    if (IsKeyPressed(KEY_ESCAPE)) {
+    // Priorita' ESC / START(+): Intramezzo (salta) -> Calibrazione -> Diario [H/J] -> Menu di Pausa / Impostazioni
+    if (menu_in.pause_pressed) {
         if (!is_open_) {
             if (ctx.world.interlude.active) {
                 if (ctx.world.interlude.CanSkip()) {
                     ctx.world.SkipZoneInterlude();
+                    ctx.block_state_input_this_frame = true;
                     PlayUiSfx(SfxId::UiClick, 0.45f, 1.0f);
                 }
                 return false;
             }
             if (ctx.world.calibration_modal.is_open) {
                 ctx.world.calibration_modal.Cancel();
+                ctx.block_state_input_this_frame = true;
                 return false;
             }
             if (journal != nullptr && journal->IsOpen()) {
                 journal->Close();
+                ctx.block_state_input_this_frame = true;
                 return false;
             }
             if (on_title) {
@@ -814,6 +947,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         if (in_settings_) {
             if (opened_from_title_) {
                 Close();
+                ctx.block_state_input_this_frame = true;
                 return false;
             }
             in_settings_ = false;
@@ -821,6 +955,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         }
 
         Close();
+        ctx.block_state_input_this_frame = true;
         return false;
     }
 
@@ -833,18 +968,56 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         return false;
     }
 
+    if (in_settings_ && settings_category_ == SettingsCategory::Controller && listening_action_ >= 0) {
+        EnsureControllerBindingsInitialized(settings);
+        if (IsKeyPressed(KEY_ESCAPE) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
+            listening_action_ = -1;
+            PlayUiSfx(SfxId::UiClick, 0.45f, 0.92f);
+            return true;
+        }
+        GamepadButtonCode captured = GamepadButtonCode::FaceDown;
+        if (PollAnyPressedControllerButton(captured)) {
+            const int prof = std::clamp(controller_edit_profile_, 0, 2);
+            const int act = std::clamp(listening_action_, 0, static_cast<int>(GamepadAction::Count) - 1);
+            settings.controller_bindings[static_cast<std::size_t>(prof)][static_cast<std::size_t>(act)] =
+                static_cast<int>(captured);
+            ApplyGraphicsSettingsToRuntime(settings);
+            (void)SaveGraphicsSettings(settings);
+            PlayUiSfx(SfxId::UiClick, 0.68f, 1.12f);
+            listening_action_ = -1;
+            return true;
+        }
+        return true;
+    }
+
+    if (menu_in.cancel_pressed) {
+        dragging_slider_row_ = -1;
+        PlayUiSfx(SfxId::UiClick, 0.50f, 0.94f);
+        if (in_settings_) {
+            if (opened_from_title_) {
+                Close();
+                ctx.block_state_input_this_frame = true;
+                return false;
+            }
+            in_settings_ = false;
+            return true;
+        }
+        Close();
+        ctx.block_state_input_this_frame = true;
+        return false;
+    }
+
     const Vector2 mouse = GetMousePosition();
     const bool mouse_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
     const bool mouse_down = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
     const bool mouse_released = IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
     const bool mouse_moved = (GetMouseDelta().x != 0.0f || GetMouseDelta().y != 0.0f);
 
-    const bool up_pressed = IsKeyPressed(KEY_UP) || IsKeyPressed(KEY_W);
-    const bool down_pressed = IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S);
-    const bool left_pressed = IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A);
-    const bool right_pressed = IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D);
-    const bool confirm_pressed =
-        IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) || IsKeyPressed(KEY_SPACE);
+    const bool up_pressed = menu_in.up_pressed;
+    const bool down_pressed = menu_in.down_pressed;
+    const bool left_pressed = menu_in.left_pressed;
+    const bool right_pressed = menu_in.right_pressed;
+    const bool confirm_pressed = menu_in.confirm_pressed;
 
     if (!in_settings_) {
         // --- MENU DI PAUSA (7 Voci) ---
@@ -890,6 +1063,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         switch (activated_action) {
             case 0: // Riprendi Esplorazione
                 Close();
+                ctx.block_state_input_this_frame = true;
                 return false;
             case 1: // Salva Partita Ora
                 if (eco::SaveWorldToFile(ctx.world)) {
@@ -901,6 +1075,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                 break;
             case 2: // Diario: Cronologia & Codex [H / J]
                 Close();
+                ctx.block_state_input_this_frame = true;
                 if (journal != nullptr) {
                     journal->OpenHistory();
                 }
@@ -916,6 +1091,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                 ctx.world.EnsureInitialized();
                 ctx.state_manager.RequestTransition(std::make_unique<OverworldState>(ctx));
                 Close();
+                ctx.block_state_input_this_frame = true;
                 return false;
             case 5: // Salva e Torna alla Schermata del Titolo
                 if (IsGameplayStateActive(ctx)) {
@@ -923,6 +1099,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                 }
                 ctx.state_manager.RequestTransition(std::make_unique<TitleState>(ctx));
                 Close();
+                ctx.block_state_input_this_frame = true;
                 return false;
             case 6: // Salva ed Esci dal Gioco
                 if (IsGameplayStateActive(ctx)) {
@@ -930,6 +1107,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                 }
                 ctx.quit_requested = true;
                 Close();
+                ctx.block_state_input_this_frame = true;
                 return false;
             default:
                 break;
@@ -940,20 +1118,21 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
     // --- SOTTOMENU IMPOSTAZIONI A 4 SCHEDE (GIOCO / GRAFICA / AMBIENTE / AUDIO) ---
     const SettingsPanelLayout layout{};
 
-    // Cambio scheda pulito: [Q/E], [TAB]/[SHIFT+TAB], [1-4], oppure click mouse (mai A/D!)
+    // Cambio scheda pulito: [Q/E], [TAB]/[SHIFT+TAB], [1-5], oppure click mouse (mai A/D!)
     auto switch_category = [&](int new_cat) {
         const int clamped = ((new_cat % kCategoryCount) + kCategoryCount) % kCategoryCount;
         if (clamped != static_cast<int>(settings_category_)) {
             settings_category_ = static_cast<SettingsCategory>(clamped);
             settings_cursor_ = 0;
             dragging_slider_row_ = -1;
+            listening_action_ = -1;
             PlayUiSfx(SfxId::UiClick, 0.48f, 1.04f);
         }
     };
 
-    if (IsKeyPressed(KEY_Q)) {
+    if (IsKeyPressed(KEY_Q) || menu_in.tab_prev_pressed) {
         switch_category(static_cast<int>(settings_category_) - 1);
-    } else if (IsKeyPressed(KEY_E)) {
+    } else if (IsKeyPressed(KEY_E) || menu_in.tab_next_pressed) {
         switch_category(static_cast<int>(settings_category_) + 1);
     } else if (IsKeyPressed(KEY_TAB)) {
         const bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
@@ -966,6 +1145,8 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         switch_category(2);
     } else if (IsKeyPressed(KEY_FOUR)) {
         switch_category(3);
+    } else if (IsKeyPressed(KEY_FIVE)) {
+        switch_category(4);
     }
 
     // Aggiorna conteggi se la categoria e' appena cambiata
@@ -1019,10 +1200,31 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
 
     // Regolazione tastiera opzione / pulsanti in basso
     if (settings_cursor_ < cur_option_count) {
-        if (left_pressed) {
-            AdjustSettingValue(settings, settings_category_, settings_cursor_, -1);
+        if (settings_category_ == SettingsCategory::Controller && settings_cursor_ == 3) {
+            if (left_pressed) {
+                controller_edit_profile_ = (controller_edit_profile_ + 2) % 3;
+                PlayUiSfx(SfxId::UiClick, 0.50f, 0.96f);
+            } else if (right_pressed || confirm_pressed) {
+                controller_edit_profile_ = (controller_edit_profile_ + 1) % 3;
+                PlayUiSfx(SfxId::UiClick, 0.50f, 1.04f);
+            }
+        } else if (settings_category_ == SettingsCategory::Controller && settings_cursor_ >= 4) {
+            if (left_pressed) {
+                AdjustSettingValue(settings, settings_category_, settings_cursor_, -1, controller_edit_profile_);
+            } else if (right_pressed) {
+                AdjustSettingValue(settings, settings_category_, settings_cursor_, +1, controller_edit_profile_);
+            } else if (confirm_pressed) {
+                if (FindPrimaryGamepad() >= 0) {
+                    listening_action_ = settings_cursor_ - 4;
+                    PlayUiSfx(SfxId::UiClick, 0.55f, 1.08f);
+                } else {
+                    AdjustSettingValue(settings, settings_category_, settings_cursor_, +1, controller_edit_profile_);
+                }
+            }
+        } else if (left_pressed) {
+            AdjustSettingValue(settings, settings_category_, settings_cursor_, -1, controller_edit_profile_);
         } else if (right_pressed || confirm_pressed) {
-            AdjustSettingValue(settings, settings_category_, settings_cursor_, +1);
+            AdjustSettingValue(settings, settings_category_, settings_cursor_, +1, controller_edit_profile_);
         }
     } else {
         // Navigazione orizzontale sui pulsanti in basso
@@ -1041,6 +1243,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                 PlayUiSfx(SfxId::UiClick, 0.55f, 0.94f);
                 if (opened_from_title_) {
                     Close();
+                    ctx.block_state_input_this_frame = true;
                     return false;
                 }
                 in_settings_ = false;
@@ -1062,6 +1265,12 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
         }
     }
 
+    if (menu_in.secondary_pressed) {
+        ResetCategoryDefaults(settings, settings_category_);
+        TriggerSaveFeedback("Predefiniti della scheda ripristinati.");
+        return true;
+    }
+
     // Mouse sulle schede
     hovered_tab_ = -1;
     for (int tab = 0; tab < kCategoryCount; ++tab) {
@@ -1076,7 +1285,9 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
 
     // Mouse sulle righe delle opzioni
     hovered_settings_row_ = -1;
-    for (int i = 0; i < cur_option_count; ++i) {
+    const int linear_rows =
+        (settings_category_ == SettingsCategory::Controller) ? 4 : cur_option_count;
+    for (int i = 0; i < linear_rows; ++i) {
         const Rectangle row_rect = layout.RowRect(i);
         if (CheckCollisionPointRec(mouse, row_rect)) {
             hovered_settings_row_ = i;
@@ -1084,7 +1295,12 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                 settings_cursor_ = i;
             }
             if (mouse_clicked) {
-                if (IsSliderRow(settings_category_, i)) {
+                if (settings_category_ == SettingsCategory::Controller && i == 3) {
+                    const float choice_mid = row_rect.x + row_rect.width - 136.0f;
+                    const int dir = (mouse.x < choice_mid) ? -1 : +1;
+                    controller_edit_profile_ = (controller_edit_profile_ + dir + 3) % 3;
+                    PlayUiSfx(SfxId::UiClick, 0.50f, (dir > 0) ? 1.04f : 0.96f);
+                } else if (IsSliderRow(settings_category_, i)) {
                     const Rectangle track = SliderTrackRect(row_rect);
                     const Rectangle grab_rect{
                         track.x - 10.0f,
@@ -1108,11 +1324,32 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
                         }
                     } else {
                         const float mid_x = row_rect.x + row_rect.width * 0.5f;
-                        AdjustSettingValue(settings, settings_category_, i, (mouse.x < mid_x) ? -1 : +1);
+                        AdjustSettingValue(settings, settings_category_, i, (mouse.x < mid_x) ? -1 : +1, controller_edit_profile_);
                     }
                 } else {
                     const float choice_mid = row_rect.x + row_rect.width - 136.0f;
-                    AdjustSettingValue(settings, settings_category_, i, (mouse.x < choice_mid) ? -1 : +1);
+                    AdjustSettingValue(settings, settings_category_, i, (mouse.x < choice_mid) ? -1 : +1, controller_edit_profile_);
+                }
+            }
+        }
+    }
+
+    if (settings_category_ == SettingsCategory::Controller) {
+        const int act_count = static_cast<int>(GamepadAction::Count);
+        for (int a = 0; a < act_count; ++a) {
+            const Rectangle r = layout.ControllerBindingRect(a);
+            if (CheckCollisionPointRec(mouse, r)) {
+                hovered_settings_row_ = 4 + a;
+                if (mouse_moved || mouse_clicked) {
+                    settings_cursor_ = 4 + a;
+                }
+                if (mouse_clicked) {
+                    if (FindPrimaryGamepad() >= 0) {
+                        listening_action_ = a;
+                        PlayUiSfx(SfxId::UiClick, 0.55f, 1.08f);
+                    } else {
+                        AdjustSettingValue(settings, settings_category_, 4 + a, +1, controller_edit_profile_);
+                    }
                 }
             }
         }
@@ -1129,6 +1366,7 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
             PlayUiSfx(SfxId::UiClick, 0.55f, 0.94f);
             if (opened_from_title_) {
                 Close();
+                ctx.block_state_input_this_frame = true;
                 return false;
             }
             in_settings_ = false;
@@ -1226,7 +1464,7 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             "Riprendi Esplorazione [ESC]",
             "Salva Partita Ora",
             "Diario: Cronologia & Codex [H / J]",
-            "Impostazioni (Grafica, Ambiente & Audio)",
+            "Impostazioni (Grafica, Audio & Controller)",
             "Ricomincia Viaggio (Reset Conca)",
             "Salva e Torna al Titolo",
             "Salva ed Esci dal Gioco"
@@ -1254,19 +1492,20 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
         return;
     }
 
-    // --- DISEGNO SOTTOMENU IMPOSTAZIONI A 4 SCHEDE ---
+    // --- DISEGNO SOTTOMENU IMPOSTAZIONI A 5 SCHEDE ---
     const SettingsPanelLayout layout{};
     DrawPanelWithHeader(
         layout.PanelRect(),
         44,
-        "IMPOSTAZIONI  |  SCHERMO, AMBIENTE & AUDIO",
+        "IMPOSTAZIONI  |  SCHERMO, AUDIO & CONTROLLER",
         pal::kAccentClean);
 
     const char* tab_labels[kCategoryCount] = {
         "1. GIOCO",
         "2. GRAFICA",
         "3. AMBIENTE",
-        "4. AUDIO"
+        "4. AUDIO",
+        "5. CONTROLLER"
     };
     DrawCategoryTabs(
         layout.TabsArea(),
@@ -1402,7 +1641,7 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             layout.by + layout.box_h - 104,
             13,
             Color{154, 206, 214, 225});
-    } else {
+    } else if (settings_category_ == SettingsCategory::Audio) {
         draw_toggle(
             0,
             "Audio Silenziato [M]",
@@ -1432,6 +1671,107 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             layout.by + layout.box_h - 104,
             13,
             Color{154, 206, 214, 225});
+    } else {
+        // --- 5. CONTROLLER (XBOX / PLAYSTATION / SWITCH) ---
+        static constexpr std::array<const char*, 4> kProfileLabels = {
+            "Auto (Rilevato)",
+            "Xbox",
+            "PlayStation",
+            "Nintendo Switch"
+        };
+        const int prof_mode = std::clamp(settings.controller_profile_mode, 0, 3);
+        draw_choice(
+            0,
+            "Profilo Controller Attivo",
+            kProfileLabels[static_cast<std::size_t>(prof_mode)],
+            pal::kAccentClean);
+
+        const float dz_norm = std::clamp((settings.controller_deadzone - 0.10f) / 0.30f, 0.0f, 1.0f);
+        const std::string dz_pct = FormatPercent(settings.controller_deadzone);
+        DrawSliderRow(
+            layout.RowRect(1),
+            "Deadzone Levetta Analogica",
+            dz_norm,
+            dz_pct.c_str(),
+            pal::kBronzeBright,
+            settings_cursor_ == 1,
+            hovered_settings_row_ == 1);
+
+        draw_toggle(
+            2,
+            "Layout Switch A/B (Conferma/Indietro)",
+            settings.switch_invert_ab,
+            settings.switch_invert_ab ? "Invertito (Stile Xbox)" : "Standard Switch (A/B)",
+            pal::kJadeGlow);
+
+        static constexpr std::array<const char*, 3> kEditTargetLabels = {
+            "Xbox (A/B/X/Y)",
+            "PlayStation (X/O/Sq/Tri)",
+            "Nintendo Switch (B/A/Y/X)"
+        };
+        const int edit_idx = std::clamp(controller_edit_profile_, 0, 2);
+        draw_choice(
+            3,
+            "Mappatura Tasti per Controller",
+            kEditTargetLabels[static_cast<std::size_t>(edit_idx)],
+            pal::kAmberGlow);
+
+        const ControllerType edit_type = ControllerTypeForEditTab(edit_idx);
+        const ControllerSettingsRuntime& rt_ctrl = GetControllerSettings();
+        const auto& prof_bindings =
+            settings.controller_bindings_initialized
+                ? settings.controller_bindings[static_cast<std::size_t>(edit_idx)]
+                : std::array<int, 10>{};
+
+        for (int a = 0; a < static_cast<int>(GamepadAction::Count); ++a) {
+            const Rectangle r = layout.ControllerBindingRect(a);
+            const bool selected = (settings_cursor_ == 4 + a);
+            const bool hovered = (hovered_settings_row_ == 4 + a);
+            const bool listening = (listening_action_ == a);
+
+            const Color bg = listening
+                                 ? Color{54, 42, 18, 240}
+                                 : (selected ? Color{22, 48, 66, 235} : Color{14, 26, 38, 220});
+            const Color border = listening
+                                     ? pal::kAmberGlow
+                                     : ((selected || hovered) ? pal::kAccentClean : Color{64, 96, 118, 175});
+            DrawRectangleRec(r, bg);
+            DrawRectangleLinesEx(r, (selected || listening) ? 2.0f : 1.1f, border);
+
+            const char* act_name = GamepadActionLabel(static_cast<GamepadAction>(a));
+            DrawTextShadow(act_name, static_cast<int>(r.x) + 10, static_cast<int>(r.y) + 8, 13, pal::kParchmentText);
+
+            const GamepadButtonCode btn_code =
+                settings.controller_bindings_initialized
+                    ? static_cast<GamepadButtonCode>(std::clamp(
+                          prof_bindings[static_cast<std::size_t>(a)],
+                          0,
+                          static_cast<int>(GamepadButtonCode::Count) - 1))
+                    : rt_ctrl.profiles[static_cast<std::size_t>(edit_idx)].bindings[static_cast<std::size_t>(a)];
+            const char* btn_label =
+                listening ? "Premi un tasto..." : ControllerButtonLabel(edit_type, btn_code);
+            const int bw = MeasureUiText(btn_label, 14);
+            DrawTextShadow(
+                btn_label,
+                static_cast<int>(r.x + r.width) - bw - 12,
+                static_cast<int>(r.y) + 8,
+                14,
+                listening ? pal::kAmberGlow : pal::kJadeGlow);
+        }
+
+        const int primary_gp = FindPrimaryGamepad();
+        const std::string gp_status =
+            (primary_gp >= 0)
+                ? (std::string("Controller Rilevato: ") +
+                   (GetGamepadName(primary_gp) ? GetGamepadName(primary_gp) : "Gamepad") +
+                   "  |  Clicca o [INVIO] su un'azione per rimappare, [A/D] per scorrere")
+                : std::string("Nessun controller rilevato ora  |  Usa [A/D] o Click per preconfigurare Xbox / PS / Switch");
+        DrawTextShadow(
+            gp_status.c_str(),
+            layout.bx + 26,
+            layout.by + layout.box_h - 104,
+            12,
+            (primary_gp >= 0) ? pal::kJadeGlow : Color{174, 204, 218, 225});
     }
 
     // Pulsanti in basso

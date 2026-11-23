@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 
 #include "app/game_state.h"
@@ -47,6 +48,13 @@ struct GraphicsSettings {
     float ambient_volume = 0.85f;   // Volume ambiente / natura (vento, acqua, vapore)
     bool ambient_audio = true;      // Paesaggio sonoro ambientale attivo/disattivo
     bool ui_sounds_enabled = true;  // Suoni interfaccia (menu, click, tab) on/off
+
+    // Controller (Xbox / PlayStation / Switch)
+    int controller_profile_mode = 0; // 0: Auto, 1: Xbox, 2: PlayStation, 3: Switch
+    bool switch_invert_ab = false;   // Scambia A/B su Switch
+    float controller_deadzone = 0.20f;
+    std::array<std::array<int, 10>, 3> controller_bindings{}; // [0:Xbox, 1:PS, 2:Switch][action]
+    bool controller_bindings_initialized = false;
 };
 
 [[nodiscard]] inline const char* DefaultSettingsFilePath() noexcept {
@@ -72,7 +80,8 @@ public:
         Game = 0,
         Graphics = 1,
         Environment = 2,
-        Audio = 3
+        Audio = 3,
+        Controller = 4
     };
 
     void OpenPause() noexcept;
@@ -105,6 +114,8 @@ private:
     int hovered_tab_ = -1;
     int dragging_slider_row_ = -1;
     SettingsCategory settings_category_ = SettingsCategory::Game;
+    int controller_edit_profile_ = 0; // 0: Xbox, 1: PlayStation, 2: Switch
+    int listening_action_ = -1;       // -1 = nessuno, 0..9 = azione in attesa di tasto
     float save_feedback_timer_ = 0.0f;
     std::string save_feedback_msg_{};
 };

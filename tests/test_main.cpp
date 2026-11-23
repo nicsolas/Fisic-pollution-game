@@ -1849,6 +1849,40 @@ void TestRedesignedPortalLogicLevelsPhysics() {
     }
 }
 
+void TestSprintMovement() {
+    eco::WorldContext world;
+    world.instant_zone_transitions = true;
+    world.EnsureInitialized();
+    world.overworld.OnEnter(
+        world.players,
+        false,
+        world.ecosystem.architect_recruited,
+        world.active_structure);
+
+    const eco::Player* p0 = world.players.GetPlayer(0);
+    CHECK(p0 != nullptr);
+    const eco::Vec2 start_pos = p0->pos;
+
+    eco::AllPlayersInput walk_in{};
+    walk_in.players[0].move_x = 1.0f;
+    (void)world.StepWorld(walk_in, eco::kFixedDt);
+    const float walk_dx = p0->pos.x - start_pos.x;
+    CHECK(std::abs(walk_dx - eco::kTopDownSpeed * eco::kFixedDt) < 1e-3f);
+
+    const eco::Vec2 sprint_start = p0->pos;
+    eco::AllPlayersInput sprint_in{};
+    sprint_in.players[0].move_x = 1.0f;
+    sprint_in.players[0].sprint_held = true;
+    eco::AllPlayersInput latched{};
+    eco::LatchFrameInput(latched, sprint_in);
+    CHECK(latched.players[0].sprint_held);
+
+    (void)world.StepWorld(latched, eco::kFixedDt);
+    const float sprint_dx = p0->pos.x - sprint_start.x;
+    CHECK(std::abs(sprint_dx - eco::kTopDownSpeed * eco::kSprintSpeedMultiplier * eco::kFixedDt) < 1e-3f);
+    CHECK(sprint_dx > walk_dx);
+}
+
 } // namespace
 
 int main() {
@@ -1868,6 +1902,7 @@ int main() {
     TestSixZoneTopDownMechanics();
     TestZoneInterludesAndMemorySwap();
     TestRedesignedPortalLogicLevelsPhysics();
+    TestSprintMovement();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test check(s) failed.\n";
