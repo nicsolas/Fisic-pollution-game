@@ -1,0 +1,86 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    name: Build Linux (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (X11 & Wayland dev headers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxcursor-dev libxinerama-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libxkbcommon-dev libwayland-dev wayland-protocols ninja-build
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DECOMATH_ENABLE_IPO=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run Tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Prepare Linux Package
+        run: |
+          mkdir -p dist/linux/assets/fonts
+          cp build/eco_proto dist/linux/
+          cp assets/fonts/ui_font.ttf dist/linux/assets/fonts/
+          cp avvia.sh dist/linux/
+          chmod +x dist/linux/eco_proto dist/linux/avvia.sh
+          tar -czf dist/equilibrio-linux-x86_64.tar.gz -C dist/linux .
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: equilibrio-linux-x86_64
+          path: dist/equilibrio-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows (MSVC)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DECOMATH_ENABLE_IPO=OFF
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run Tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Prepare Windows Package
+        shell: bash
+        run: |
+          mkdir -p dist/windows/assets/fonts
+          cp build/Release/eco_proto.exe dist/windows/
+          cp assets/fonts/ui_font.ttf dist/windows/assets/fonts/
+          cd dist/windows && 7z a ../equilibrio-windows-x64.zip .
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: equilibrio-windows-x64
+          path: dist/equilibrio-windows-x64.zip
+          if-no-files-found: error
