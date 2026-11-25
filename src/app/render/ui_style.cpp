@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <string>
+#include <vector>
 
 #include "app/raylib_input.h"
 #include "app/render/palette.h"
@@ -47,17 +49,34 @@ void InitUiFont() {
         return;
     }
 
-    constexpr std::array<const char*, 5> kCandidatePaths = {
-        "assets/fonts/ui_font.ttf",
-        "../assets/fonts/ui_font.ttf",
-        "../../assets/fonts/ui_font.ttf",
-        "/usr/share/fonts/google-noto/NotoSans-SemiBold.ttf",
-        "/usr/share/fonts/google-noto/NotoSans-Medium.ttf"
-    };
+    std::vector<std::string> candidate_paths;
+    candidate_paths.reserve(14);
 
-    for (const char* path : kCandidatePaths) {
-        if (FileExists(path)) {
-            g_custom_font = LoadFontEx(path, 48, nullptr, 250);
+    if (const char* app_dir = GetApplicationDirectory(); app_dir != nullptr && app_dir[0] != '\0') {
+        const std::string base(app_dir);
+        candidate_paths.push_back(base + "assets/fonts/ui_font.ttf");
+        candidate_paths.push_back(base + "../assets/fonts/ui_font.ttf");
+        candidate_paths.push_back(base + "../../assets/fonts/ui_font.ttf");
+        candidate_paths.push_back(base + "../share/eco_proto/assets/fonts/ui_font.ttf");
+    }
+
+    candidate_paths.emplace_back("assets/fonts/ui_font.ttf");
+    candidate_paths.emplace_back("../assets/fonts/ui_font.ttf");
+    candidate_paths.emplace_back("../../assets/fonts/ui_font.ttf");
+
+#if defined(_WIN32)
+    candidate_paths.emplace_back("C:/Windows/Fonts/segoeui.ttf");
+    candidate_paths.emplace_back("C:/Windows/Fonts/arial.ttf");
+#else
+    candidate_paths.emplace_back("/usr/share/fonts/google-noto/NotoSans-SemiBold.ttf");
+    candidate_paths.emplace_back("/usr/share/fonts/google-noto/NotoSans-Medium.ttf");
+    candidate_paths.emplace_back("/usr/share/fonts/truetype/noto/NotoSans-SemiBold.ttf");
+    candidate_paths.emplace_back("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+#endif
+
+    for (const std::string& path : candidate_paths) {
+        if (FileExists(path.c_str())) {
+            g_custom_font = LoadFontEx(path.c_str(), 48, nullptr, 250);
             if (g_custom_font.texture.id != 0 && g_custom_font.glyphCount > 0) {
                 SetTextureFilter(g_custom_font.texture, TEXTURE_FILTER_BILINEAR);
                 g_custom_font_loaded = true;

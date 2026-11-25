@@ -377,10 +377,12 @@ bool SaveWorldToFile(
 
     fs::rename(tmp_path, target, ec);
     if (ec) {
-        // Fallback copia+rimuovi se rename cross-device
-        fs::copy_file(tmp_path, target, fs::copy_options::overwrite_existing, ec);
-        fs::remove(tmp_path, ec);
-        return !ec;
+        // Fallback copia+rimuovi se rename cross-device o destinazione bloccata brevemente su Windows
+        std::error_code copy_ec;
+        fs::copy_file(tmp_path, target, fs::copy_options::overwrite_existing, copy_ec);
+        std::error_code rm_ec;
+        fs::remove(tmp_path, rm_ec);
+        return !copy_ec;
     }
     return true;
 }
@@ -399,6 +401,9 @@ SaveSummary ReadSaveSummary(const std::string& path) {
     int format = 0;
     std::string line;
     while (std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
+            line.pop_back();
+        }
         const std::size_t eq = line.find('=');
         if (eq == std::string::npos) {
             continue;
@@ -528,6 +533,9 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
 
     std::string line;
     while (std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
+            line.pop_back();
+        }
         const std::size_t eq = line.find('=');
         if (eq == std::string::npos) {
             continue;

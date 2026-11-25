@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -12,12 +13,28 @@
 #if defined(__linux__)
 #include <dlfcn.h>
 #include <unistd.h>
+#elif defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #endif
 
 namespace eco::app {
 
 namespace {
 
+[[nodiscard]] std::string ToLowerAscii(std::string s) {
+    for (char& c : s) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return s;
+}
+
+#if defined(__linux__)
 [[nodiscard]] std::string TrimLine(std::string s) {
     while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ' || s.back() == '\t')) {
         s.pop_back();
@@ -27,13 +44,6 @@ namespace {
         ++start;
     }
     return s.substr(start);
-}
-
-[[nodiscard]] std::string ToLowerAscii(std::string s) {
-    for (char& c : s) {
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    }
-    return s;
 }
 
 [[nodiscard]] std::string ReadFirstLine(const std::filesystem::path& p) {
@@ -54,6 +64,7 @@ namespace {
     }
     return "pci-" + slot;
 }
+#endif
 
 } // namespace
 
@@ -204,11 +215,12 @@ void ApplyGpuPreferenceBeforeInitWindow(const std::string& gpu_id) {
 
 std::string QueryActiveGpuRenderer() {
 #if defined(__linux__)
-    using GlGetStringFn = const unsigned char* (*)(unsigned int);
     constexpr unsigned int kGlRenderer = 0x1F01u;
+    using GlGetStringFn = const unsigned char* (*)(unsigned int);
     void* sym = dlsym(RTLD_DEFAULT, "glGetString");
     if (sym != nullptr) {
-        auto fn = reinterpret_cast<GlGetStringFn>(sym);
+        GlGetStringFn fn = nullptr;
+        std::memcpy(&fn, &sym, sizeof(fn));
         const unsigned char* raw = fn(kGlRenderer);
         if (raw != nullptr && raw[0] != '\0') {
             std::string s(reinterpret_cast<const char*>(raw));
@@ -216,6 +228,25 @@ std::string QueryActiveGpuRenderer() {
                 s = s.substr(0, 41) + "...";
             }
             return s;
+        }
+    }
+#elif defined(_WIN32)
+    constexpr unsigned int kGlRenderer = 0x1F01u;
+    using GlGetStringFn = const unsigned char* (__stdcall*)(unsigned int);
+    HMODULE gl_mod = GetModuleHandleA("opengl32.dll");
+    if (gl_mod != nullptr) {
+        FARPROC sym = GetProcAddress(gl_mod, "glGetString");
+        if (sym != nullptr) {
+            GlGetStringFn fn = nullptr;
+            std::memcpy(&fn, &sym, sizeof(fn));
+            const unsigned char* raw = fn(kGlRenderer);
+            if (raw != nullptr && raw[0] != '\0') {
+                std::string s(reinterpret_cast<const char*>(raw));
+                if (s.size() > 44) {
+                    s = s.substr(0, 41) + "...";
+                }
+                return s;
+            }
         }
     }
 #endif

@@ -6,6 +6,28 @@ project(EcoMathProto VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# Skip unnecessary C++20 module dependency scanning (faster builds on CMake 3.28+ / Ninja / VS)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+# Default single-config generators (Ninja, Unix/MinGW Makefiles) to Release if unspecified
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING
+        "Choose the type of build (Debug, Release, RelWithDebInfo, MinSizeRel)" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+        "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+endif()
+
+option(ECOMATH_ENABLE_IPO "Enable Link-Time Optimization (IPO/LTO) in Release builds when supported" ON)
+option(ECOMATH_MINGW_STATIC_RUNTIME "Statically link libgcc/libstdc++ on Windows MinGW builds" ON)
+
+set(_ecomath_ipo_supported FALSE)
+if(ECOMATH_ENABLE_IPO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT _ecomath_ipo_supported OUTPUT _ecomath_ipo_error)
+    if(NOT _ecomath_ipo_supported)
+        message(STATUS "IPO/LTO not supported by current toolchain: ${_ecomath_ipo_error}")
+    endif()
+endif()
 
 enable_testing()
 
@@ -90,9 +112,19 @@ function(ecomath_configure_target target_name)
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF
+        CXX_SCAN_FOR_MODULES OFF
+    )
+    if(_ecomath_ipo_supported)
+        set_target_properties(${target_name} PROPERTIES
+            INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
+            INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ON
+        )
+    endif()
+    target_compile_definitions(${target_name} PRIVATE
+        $<$<PLATFORM_ID:Windows>:WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS>
     )
     target_compile_options(${target_name} PRIVATE
-        $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /utf-8>
+        $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive- /utf-8 /MP>
         $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wall -Wextra -Wpedantic>
     )
 endfunction()
@@ -146,8 +178,24 @@ target_link_libraries(eco_proto
     PRIVATE
         game_core
         raylib
+        $<$<PLATFORM_ID:Linux>:${CMAKE_DL_LIBS}>
 )
 ecomath_configure_target(eco_proto)
+
+if(WIN32 AND MINGW AND ECOMATH_MINGW_STATIC_RUNTIME)
+    target_link_options(eco_proto PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+# Stage UI font next to executable so both Linux and Windows (including MSVC Release/Debug) find it reliably
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/ui_font.ttf")
+    add_custom_command(TARGET eco_proto POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:eco_proto>/assets/fonts"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/ui_font.ttf"
+            "$<TARGET_FILE_DIR:eco_proto>/assets/fonts/ui_font.ttf"
+        COMMENT "Staging UI font asset next to eco_proto"
+    )
+endif()
 
 # Windows executable icon (.ico embedded via .rc resource)
 if(WIN32)
@@ -156,10 +204,14 @@ if(WIN32)
     )
 endif()
 
-# Linux desktop integration (executable + .desktop + hicolor icon)
+# Linux desktop integration (executable + font asset + .desktop + hicolor icon)
 if(UNIX AND NOT APPLE)
     include(GNUInstallDirs)
     install(TARGETS eco_proto RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/ui_font.ttf")
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/ui_font.ttf"
+            DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/eco_proto/assets/fonts")
+    endif()
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/eco_proto.desktop"
         DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/applications")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/eco_proto.png"
