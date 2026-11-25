@@ -109,6 +109,12 @@ void StoryDirector::Notify(StoryEvent e, const StorySnapshot& s) {
     const Chapter snap_chapter = ChapterFor(s);
     const std::string loc_name = LocationName(s.location, s.zone);
     std::vector<DialogueLine> lines = DialogueForEvent(e, s);
+    if (lines.empty()) {
+        lines.push_back(DialogueLine{
+            "Elena Valli",
+            "Annoto l'osservazione sul taccuino da campo per verificare l'ipotesi."
+        });
+    }
     for (auto& line : lines) {
         if (!line.text.empty()) {
             QueuedEntry qe{};
@@ -168,7 +174,13 @@ void StoryDirector::Observe(const StorySnapshot& s) {
         Notify(StoryEvent::FirstScan, s);
     }
 
-    if (s.solar == MachineState::CleanActive) {
+    if (s.observations_inspected >= 1) {
+        Notify(StoryEvent::ObservationClueRead, s);
+    }
+
+    if (s.solar_approach == CalibrationApproach::RiskyEfficient) {
+        Notify(StoryEvent::SolarRisky, s);
+    } else if (s.solar == MachineState::CleanActive) {
         Notify(StoryEvent::SolarClean, s);
     } else if (s.solar == MachineState::BypassedDirty) {
         Notify(StoryEvent::SolarBypassed, s);
@@ -216,10 +228,24 @@ void StoryDirector::Observe(const StorySnapshot& s) {
         }
     }
 
-    if (s.hydro == MachineState::CleanActive) {
+    if (s.hydro_approach == CalibrationApproach::RiskyEfficient) {
+        Notify(StoryEvent::HydroRisky, s);
+    } else if (s.hydro == MachineState::CleanActive) {
         Notify(StoryEvent::HydroClean, s);
     } else if (s.hydro == MachineState::BypassedDirty) {
         Notify(StoryEvent::HydroBypassed, s);
+    }
+
+    if (s.white_olive_planted) {
+        Notify(StoryEvent::BioPlanterSeeded, s);
+    }
+
+    if (s.laminar_ford_open) {
+        Notify(StoryEvent::LaminarFordOpened, s);
+    }
+
+    if (s.slice_completed) {
+        Notify(StoryEvent::VerticalSliceSynthesis, s);
     }
 
     if (s.lorenzo_recruited) {
@@ -353,6 +379,14 @@ bool StoryDirector::EventFired(StoryEvent e) const noexcept {
 }
 
 bool StoryDirector::CleanPath() const noexcept {
+    if (has_last_) {
+        return last_.solar != MachineState::BypassedDirty &&
+               last_.hydro != MachineState::BypassedDirty &&
+               last_.pendulum != MachineState::BypassedDirty &&
+               last_.harmonic != MachineState::BypassedDirty &&
+               last_.thermal != MachineState::BypassedDirty &&
+               last_.astrolabe != MachineState::BypassedDirty;
+    }
     return !EventFired(StoryEvent::SolarBypassed) &&
            !EventFired(StoryEvent::HydroBypassed) &&
            !EventFired(StoryEvent::PendulumBypassed) &&

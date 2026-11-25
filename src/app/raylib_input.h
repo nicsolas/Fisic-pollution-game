@@ -62,10 +62,13 @@ struct ControllerPrompts {
     const char* confirm = "[INVIO]";
     const char* cancel = "[ESC]";
     const char* interact = "[E]";
-    const char* scan = "[F]";
+    const char* scan = "[Q]";
     const char* jump = "[SPAZIO]";
     const char* sprint = "[SHIFT]";
     const char* bypass = "[B]";
+    const char* trial = "[T / SPAZIO]";
+    const char* risky = "[R]";
+    const char* hypothesis = "[1-3 / I]";
     const char* pause = "[ESC]";
     const char* journal = "[H/J]";
     const char* tab_prev_next = "[Q/E]";

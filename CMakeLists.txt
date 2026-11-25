@@ -149,6 +149,23 @@ target_link_libraries(eco_proto
 )
 ecomath_configure_target(eco_proto)
 
+# Windows executable icon (.ico embedded via .rc resource)
+if(WIN32)
+    target_sources(eco_proto PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/eco_proto.rc"
+    )
+endif()
+
+# Linux desktop integration (executable + .desktop + hicolor icon)
+if(UNIX AND NOT APPLE)
+    include(GNUInstallDirs)
+    install(TARGETS eco_proto RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/eco_proto.desktop"
+        DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/applications")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/icon/eco_proto.png"
+        DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/512x512/apps")
+endif()
+
 # ------------------------------------------------------------------------------
 # Target 3: eco_tests (Zero-dependency CTest suite — links game_core ONLY, NO Raylib)
 # ------------------------------------------------------------------------------

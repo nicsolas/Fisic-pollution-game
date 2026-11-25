@@ -57,8 +57,11 @@ WorldNpc WorldNpc::CreateDefault(NpcId id) {
             npc.location = LocationId::Overworld;
             npc.zone = ZoneId::CanalQuarter;
             npc.pos = TileCenterPos(12, 29); // (1416, 600) — Ponte degli Archi (mappa 26x36)
+            npc.home_pos = npc.pos;
+            npc.mood = NpcMood::NeutralObserving;
+            npc.status_note = "Sorveglia i morsetti idraulici del Ponte degli Archi.";
             npc.last_dialogue =
-                "Prima di aprire il Ponte degli Archi ho bisogno di una prova pulita. Intanto usa le leve delle chiuse [E] per domare le correnti nei canali.";
+                "Prima di aprire il Ponte degli Archi voglio vedere come tratti l'energia della Conca. Osserva le chiuse [E] e le correnti.";
             break;
         case NpcId::LorenzoAltieri: {
             const StructureSpawnLayout cistern_layout =
@@ -66,15 +69,21 @@ WorldNpc WorldNpc::CreateDefault(NpcId id) {
             npc.location = LocationId::HypogeanCisterns;
             npc.zone = ZoneId::CanalQuarter;
             npc.pos = TileCenterPos(cistern_layout.npc_tile.row, cistern_layout.npc_tile.col);
+            npc.home_pos = npc.pos;
             npc.trigger_radius = 96.0f;
+            npc.mood = NpcMood::NeutralObserving;
+            npc.status_note = "Annota il livello piezometrico delle Cisterne Ipogee.";
             npc.last_dialogue =
-                "Qui in alto custodisco le memorie delle quattro ere. Riattiva la Turbina idrostatica e ti apriro' gli appunti antichi.";
+                "Qui custodisco le memorie delle quattro ere. Osserva le tacche di Stevino sulle colonne prima di toccare la Turbina.";
             break;
         }
         case NpcId::MiriamFerro:
             npc.location = LocationId::Overworld;
             npc.zone = ZoneId::HangingGardens;
             npc.pos = TileCenterPos(15, 11); // (552, 744) — Giardini Sospesi (mappa 26x36)
+            npc.home_pos = npc.pos;
+            npc.mood = NpcMood::NeutralObserving;
+            npc.status_note = "Cura le piastre acustiche e i germogli dei Giardini.";
             npc.last_dialogue =
                 "Attiva le quattro piastre di giada in sequenza armonica per stendere il ponte verso il Risonatore, poi accordalo a 120 Hertz.";
             break;
@@ -82,6 +91,9 @@ WorldNpc WorldNpc::CreateDefault(NpcId id) {
             npc.location = LocationId::Overworld;
             npc.zone = ZoneId::FumaroleCaldera;
             npc.pos = TileCenterPos(17, 12); // (600, 840) — Caldera delle Fumarole (mappa 26x36)
+            npc.home_pos = npc.pos;
+            npc.mood = NpcMood::NeutralObserving;
+            npc.status_note = "Controlla la pressione dei condotti verso valle.";
             npc.last_dialogue =
                 "Chiudi pure le valvole di sfogo [E] per passare tra i geyser, ma se vuoi spegnere le nostre fornaci dimostra che Carnot basta da solo.";
             break;

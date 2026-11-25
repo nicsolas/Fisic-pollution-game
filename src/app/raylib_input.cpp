@@ -223,7 +223,10 @@ void UpdateTriggerEdgeCache() noexcept {
     return IsKeyDown(KEY_W) || IsKeyDown(KEY_A) || IsKeyDown(KEY_S) || IsKeyDown(KEY_D) ||
            IsKeyDown(KEY_UP) || IsKeyDown(KEY_DOWN) || IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_RIGHT) ||
            IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ESCAPE) ||
-           IsKeyPressed(KEY_E) || IsKeyPressed(KEY_F) || IsKeyPressed(KEY_H) || IsKeyPressed(KEY_J) ||
+           IsKeyPressed(KEY_E) || IsKeyPressed(KEY_F) || IsKeyPressed(KEY_Q) ||
+           IsKeyPressed(KEY_T) || IsKeyPressed(KEY_R) || IsKeyPressed(KEY_B) || IsKeyPressed(KEY_I) ||
+           IsKeyPressed(KEY_ONE) || IsKeyPressed(KEY_TWO) || IsKeyPressed(KEY_THREE) ||
+           IsKeyPressed(KEY_H) || IsKeyPressed(KEY_J) || IsKeyPressed(KEY_V) || IsKeyPressed(KEY_N) ||
            IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
 }
 
@@ -289,6 +292,10 @@ void UpdateActiveInputDevice(int primary_gp) noexcept {
     const bool confirm_pressed = IsActionPressed(gp, type, GamepadAction::Confirm);
     const bool cancel_pressed = IsActionPressed(gp, type, GamepadAction::Cancel);
     const bool bypass_pressed = IsActionPressed(gp, type, GamepadAction::Bypass);
+    const bool trial_pressed = scan_pressed;
+    const bool risky_pressed = IsCodePressed(gp, GamepadButtonCode::RT);
+    const int hypothesis_delta = IsCodePressed(gp, GamepadButtonCode::LT) ? 1 : 0;
+    const float ry = GetGamepadAxisMovement(gp, GAMEPAD_AXIS_RIGHT_Y);
 
     out = eco::FilterPlayerInput(
         dpad_axis,
@@ -304,7 +311,15 @@ void UpdateActiveInputDevice(int primary_gp) noexcept {
     out.sprint_held = IsActionHeld(gp, type, GamepadAction::Sprint);
     out.confirm_pressed = confirm_pressed;
     out.bypass_pressed = bypass_pressed;
+    out.trial_pressed = trial_pressed;
+    out.risky_pressed = risky_pressed;
+    out.hypothesis_delta = hypothesis_delta;
     out.slider_delta = eco::Clamp(out.move_x, -1.0f, 1.0f) * 0.75f;
+    const float aux_raw =
+        -dpad_axis.y -
+        eco::ApplyAnalogDeadzone(gp_axis.y, g_ctrl_settings.stick_deadzone) -
+        eco::ApplyAnalogDeadzone(ry, g_ctrl_settings.stick_deadzone);
+    out.aux_slider_delta = eco::Clamp(aux_raw, -1.0f, 1.0f) * 0.75f;
     return out;
 }
 
@@ -518,6 +533,9 @@ ControllerPrompts GetActiveControllerPrompts() noexcept {
     p.jump = ControllerButtonLabel(detected, BindingFor(detected, GamepadAction::Jump));
     p.sprint = ControllerButtonLabel(detected, BindingFor(detected, GamepadAction::Sprint));
     p.bypass = ControllerButtonLabel(detected, BindingFor(detected, GamepadAction::Bypass));
+    p.trial = p.scan;
+    p.risky = ControllerButtonLabel(detected, GamepadButtonCode::RT);
+    p.hypothesis = ControllerButtonLabel(detected, GamepadButtonCode::LT);
     p.pause = ControllerButtonLabel(detected, BindingFor(detected, GamepadAction::Pause));
     p.journal = ControllerButtonLabel(detected, BindingFor(detected, GamepadAction::Journal));
     p.tab_prev_next = (detected == ControllerType::PlayStation)
@@ -536,8 +554,9 @@ eco::AllPlayersInput PollRaylibInput() {
 
     eco::Vec2 discrete_axis{0.0f, 0.0f};
     eco::Vec2 gamepad_axis{0.0f, 0.0f};
+    float gamepad_right_y = 0.0f;
 
-    const bool left = IsKeyDown(KEY_A) || IsKeyDown(KEY_Q) || IsKeyDown(KEY_LEFT);
+    const bool left = IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT);
     const bool right = IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT);
     const bool up = IsKeyDown(KEY_W) || IsKeyDown(KEY_Z) || IsKeyDown(KEY_UP);
     const bool down = IsKeyDown(KEY_S) || IsKeyDown(KEY_DOWN);
@@ -558,11 +577,15 @@ eco::AllPlayersInput PollRaylibInput() {
     bool confirm_pressed =
         IsKeyPressed(KEY_C) || IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
     bool bypass_pressed = IsKeyPressed(KEY_B);
+    bool trial_pressed = IsKeyPressed(KEY_T) || IsKeyPressed(KEY_SPACE);
+    bool risky_pressed = IsKeyPressed(KEY_R);
+    int hypothesis_delta = IsKeyPressed(KEY_I) ? 1 : 0;
     bool cancel_pressed = IsKeyPressed(KEY_X) || IsKeyPressed(KEY_BACKSPACE);
 
     if (primary_gp >= 0 && IsGamepadAvailable(primary_gp)) {
         gamepad_axis.x = GetGamepadAxisMovement(primary_gp, GAMEPAD_AXIS_LEFT_X);
         gamepad_axis.y = GetGamepadAxisMovement(primary_gp, GAMEPAD_AXIS_LEFT_Y);
+        gamepad_right_y = GetGamepadAxisMovement(primary_gp, GAMEPAD_AXIS_RIGHT_Y);
 
         const bool dpad_left = IsGamepadButtonDown(primary_gp, GAMEPAD_BUTTON_LEFT_FACE_LEFT);
         const bool dpad_right = IsGamepadButtonDown(primary_gp, GAMEPAD_BUTTON_LEFT_FACE_RIGHT);
@@ -587,6 +610,13 @@ eco::AllPlayersInput PollRaylibInput() {
             confirm_pressed || IsActionPressed(primary_gp, primary_type, GamepadAction::Confirm);
         bypass_pressed =
             bypass_pressed || IsActionPressed(primary_gp, primary_type, GamepadAction::Bypass);
+        trial_pressed =
+            trial_pressed || IsActionPressed(primary_gp, primary_type, GamepadAction::Scan);
+        risky_pressed =
+            risky_pressed || IsCodePressed(primary_gp, GamepadButtonCode::RT);
+        if (IsCodePressed(primary_gp, GamepadButtonCode::LT)) {
+            hypothesis_delta += 1;
+        }
     }
 
     discrete_axis.x = eco::Clamp(discrete_axis.x, -1.0f, 1.0f);
@@ -606,6 +636,9 @@ eco::AllPlayersInput PollRaylibInput() {
     filtered.sprint_held = sprint_held;
     filtered.confirm_pressed = confirm_pressed;
     filtered.bypass_pressed = bypass_pressed;
+    filtered.trial_pressed = trial_pressed;
+    filtered.risky_pressed = risky_pressed;
+    filtered.hypothesis_delta = hypothesis_delta;
 
     float slider_raw = discrete_axis.x + eco::ApplyAnalogDeadzone(gamepad_axis.x, g_ctrl_settings.stick_deadzone);
     if (primary_gp >= 0 && IsGamepadAvailable(primary_gp)) {
@@ -617,6 +650,12 @@ eco::AllPlayersInput PollRaylibInput() {
         }
     }
     filtered.slider_delta = eco::Clamp(slider_raw, -1.0f, 1.0f) * 0.75f;
+
+    const float aux_raw =
+        -discrete_axis.y -
+        eco::ApplyAnalogDeadzone(gamepad_axis.y, g_ctrl_settings.stick_deadzone) -
+        eco::ApplyAnalogDeadzone(gamepad_right_y, g_ctrl_settings.stick_deadzone);
+    filtered.aux_slider_delta = eco::Clamp(aux_raw, -1.0f, 1.0f) * 0.75f;
 
     out.players[0] = filtered;
 

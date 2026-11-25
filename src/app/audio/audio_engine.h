@@ -37,6 +37,13 @@ enum class SfxId : int {
     ValveClose,
     SanctuarySealTune,
     InterludeChime,
+    // Nuovi suoni procedurali Vertical Slice (Indagine, 3 Soluzioni, Reliquie & Fauna)
+    TrialPulse,
+    CalibrateRisky,
+    ObservationInspect,
+    BioPlanterBloom,
+    PrismRemoteToggle,
+    FaunaChirp,
     Count
 };
 

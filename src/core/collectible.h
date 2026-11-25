@@ -107,6 +107,39 @@ struct CollectibleMeta {
 
 [[nodiscard]] const CollectibleMeta& CollectibleMetadata(CollectibleId id);
 
+enum class RelicToolCategory : int {
+    OpticalLens = 0,     // Lente
+    Calibration = 1,     // Calibrazione
+    WorldEcology = 2,    // Mondo
+    MobilityFlow = 3     // Movimento
+};
+
+[[nodiscard]] constexpr const char* RelicToolCategoryName(RelicToolCategory cat) noexcept {
+    switch (cat) {
+        case RelicToolCategory::OpticalLens:
+            return "Strumento Lente [Q]";
+        case RelicToolCategory::Calibration:
+            return "Banco Calibrazione";
+        case RelicToolCategory::WorldEcology:
+            return "Ecologia e Varchi";
+        case RelicToolCategory::MobilityFlow:
+            return "Flussi e Movimento";
+    }
+    return "Strumento di Campo";
+}
+
+struct RelicGameplaySpec {
+    CollectibleId id = CollectibleId::Dawn_BrassGnomon;
+    RelicToolCategory category = RelicToolCategory::OpticalLens;
+    const char* tool_name = "";
+    const char* active_or_passive_label = "";
+    const char* effect_summary = "";
+    const char* field_usage_hint = "";
+    bool is_vertical_slice_core = false;
+};
+
+[[nodiscard]] RelicGameplaySpec GetRelicGameplaySpec(CollectibleId id) noexcept;
+
 // Stato e collocazione spaziale nel mondo (implementato in src/core/collectible.cpp da @ingegnere-1)
 struct CollectibleItem {
     CollectibleId id = CollectibleId::Dawn_BrassGnomon;

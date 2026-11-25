@@ -21,7 +21,11 @@ struct PlayerInput {
     bool cancel_pressed = false;
     bool confirm_pressed = false;
     bool bypass_pressed = false;
+    bool trial_pressed = false;
+    bool risky_pressed = false;
     float slider_delta = 0.0f;
+    float aux_slider_delta = 0.0f;
+    int hypothesis_delta = 0;
 
     [[nodiscard]] constexpr Vec2 MoveAxis() const noexcept {
         return {move_x, move_y};
@@ -31,7 +35,8 @@ struct PlayerInput {
         return move_x != 0.0f || move_y != 0.0f || jump_pressed || jump_held ||
                sprint_held || interact_pressed || scan_pressed || toggle_overlay_pressed ||
                join_pressed || cancel_pressed || confirm_pressed ||
-               bypass_pressed || slider_delta != 0.0f;
+               bypass_pressed || trial_pressed || risky_pressed ||
+               slider_delta != 0.0f || aux_slider_delta != 0.0f || hypothesis_delta != 0;
     }
 };
 
@@ -140,6 +145,10 @@ inline void LatchFrameInput(AllPlayersInput& pending, const AllPlayersInput& fra
         if (std::isfinite(src.slider_delta) && src.slider_delta != 0.0f) {
             dst.slider_delta += src.slider_delta;
         }
+        if (std::isfinite(src.aux_slider_delta) && src.aux_slider_delta != 0.0f) {
+            dst.aux_slider_delta += src.aux_slider_delta;
+        }
+        dst.hypothesis_delta += src.hypothesis_delta;
 
         dst.jump_pressed = dst.jump_pressed || src.jump_pressed;
         dst.interact_pressed = dst.interact_pressed || src.interact_pressed;
@@ -149,6 +158,8 @@ inline void LatchFrameInput(AllPlayersInput& pending, const AllPlayersInput& fra
         dst.cancel_pressed = dst.cancel_pressed || src.cancel_pressed;
         dst.confirm_pressed = dst.confirm_pressed || src.confirm_pressed;
         dst.bypass_pressed = dst.bypass_pressed || src.bypass_pressed;
+        dst.trial_pressed = dst.trial_pressed || src.trial_pressed;
+        dst.risky_pressed = dst.risky_pressed || src.risky_pressed;
     }
     pending.toggle_state_pressed = pending.toggle_state_pressed || frame_sample.toggle_state_pressed;
     pending.toggle_ui_phase_pressed =
@@ -171,7 +182,11 @@ inline void ConsumePressedEdges(AllPlayersInput& pending) noexcept {
         p.cancel_pressed = false;
         p.confirm_pressed = false;
         p.bypass_pressed = false;
+        p.trial_pressed = false;
+        p.risky_pressed = false;
         p.slider_delta = 0.0f;
+        p.aux_slider_delta = 0.0f;
+        p.hypothesis_delta = 0;
     }
     pending.toggle_state_pressed = false;
     pending.toggle_ui_phase_pressed = false;

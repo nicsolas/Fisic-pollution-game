@@ -55,6 +55,22 @@ struct StructureGate {
     const char* label = ""; // Pure ASCII label
 };
 
+// Diegetic observation station for empirical field readings ([E] inspect or [Q] scan).
+struct ObservationNode {
+    int id = 0;
+    LocationId location = LocationId::Overworld;
+    ZoneId zone = ZoneId::DawnTerraces;
+    TileCoord tile{0, 0};
+    Vec2 pos{0.0f, 0.0f};
+    float interact_radius = 68.0f;
+    bool inspected = false;
+    bool scanned = false;
+    bool prompt_visible = false;
+    const char* title = "";
+    const char* reading_text = "";
+    const char* hypothesis_hint = "";
+};
+
 // Event flags emitted when a player interacts with a puzzle switch.
 struct StructurePuzzleEventFlags {
     bool switch_toggled = false;
@@ -62,9 +78,12 @@ struct StructurePuzzleEventFlags {
     bool gate_closed = false;
     bool sequence_failed = false;
     bool puzzle_solved = false;
+    bool observation_inspected = false;
+    bool aux_valve_toggled = false;
 
     [[nodiscard]] constexpr bool Any() const noexcept {
-        return switch_toggled || gate_opened || gate_closed || sequence_failed || puzzle_solved;
+        return switch_toggled || gate_opened || gate_closed || sequence_failed ||
+               puzzle_solved || observation_inspected || aux_valve_toggled;
     }
 };
 
@@ -81,8 +100,17 @@ struct StructurePuzzleState {
     float tile_size = kTileSize;
     std::vector<StructureSwitch> switches{};
     std::vector<StructureGate> gates{};
+    std::vector<ObservationNode> observation_nodes{};
     std::vector<int> expected_sequence{};
     std::vector<int> current_sequence{};
+    TileCoord aux_stevino_valve_tile{17, 24};
+    Vec2 aux_stevino_valve_pos{0.0f, 0.0f};
+    bool aux_stevino_valve_unlocked = false; // Unlocked by Waters_SluiceStele
+    bool aux_stevino_valve_open = false;     // Dry auxiliary equilibrium path active
+    bool aux_valve_prompt_visible = false;
+    bool high_spillway_open = false;         // Opened by HydroTurbine RiskyEfficient or trial pulse
+    float trial_water_hammer_timer = 0.0f;   // Temporary sluice surge from RunTrial
+    bool archivist_niche_open = false;       // Opened by Lorenzo in FlourishingTrust
     const char* title = "";
     const char* hint_text = "";
     bool solved = false;

@@ -188,7 +188,7 @@ void EnsureControllerBindingsInitialized(GraphicsSettings& settings) noexcept {
 [[nodiscard]] int OptionCountForCategory(PauseSettingsMenu::SettingsCategory cat) noexcept {
     switch (cat) {
         case PauseSettingsMenu::SettingsCategory::Game:
-            return 3;
+            return 4;
         case PauseSettingsMenu::SettingsCategory::Graphics:
             return 6;
         case PauseSettingsMenu::SettingsCategory::Environment:
@@ -198,7 +198,7 @@ void EnsureControllerBindingsInitialized(GraphicsSettings& settings) noexcept {
         case PauseSettingsMenu::SettingsCategory::Controller:
             return 4 + static_cast<int>(GamepadAction::Count); // 4 opzioni + 10 tasti
     }
-    return 3;
+    return 4;
 }
 
 [[nodiscard]] bool IsSliderRow(PauseSettingsMenu::SettingsCategory cat, int row) noexcept {
@@ -326,6 +326,7 @@ void ResetCategoryDefaults(
     PauseSettingsMenu::SettingsCategory category) {
     switch (category) {
         case PauseSettingsMenu::SettingsCategory::Game:
+            settings.guidance_mode_index = 0;
             settings.compact_tutorial = false;
             settings.show_fps = false;
             settings.dialogue_speed_index = 1;
@@ -403,10 +404,12 @@ void AdjustSettingValue(
     switch (category) {
         case PauseSettingsMenu::SettingsCategory::Game:
             if (row == 0) {
-                settings.compact_tutorial = !settings.compact_tutorial;
+                settings.guidance_mode_index = (settings.guidance_mode_index + dir + 3) % 3;
             } else if (row == 1) {
-                settings.show_fps = !settings.show_fps;
+                settings.compact_tutorial = !settings.compact_tutorial;
             } else if (row == 2) {
+                settings.show_fps = !settings.show_fps;
+            } else if (row == 3) {
                 const int n = static_cast<int>(kDialogueSpeedOptions.size());
                 settings.dialogue_speed_index = (settings.dialogue_speed_index + dir + n) % n;
             }
@@ -562,6 +565,8 @@ bool LoadGraphicsSettings(GraphicsSettings& settings, const std::string& path) {
             settings.clean_ttf_font = (ParseIntSetting(val, 1) != 0);
         } else if (key == "show_fps") {
             settings.show_fps = (ParseIntSetting(val, 0) != 0);
+        } else if (key == "guidance_mode_index") {
+            settings.guidance_mode_index = std::clamp(ParseIntSetting(val, 0), 0, 2);
         } else if (key == "compact_tutorial") {
             settings.compact_tutorial = (ParseIntSetting(val, 0) != 0);
         } else if (key == "dialogue_speed_index") {
@@ -655,6 +660,7 @@ bool SaveGraphicsSettings(const GraphicsSettings& settings, const std::string& p
     out << "particle_quality=" << static_cast<int>(settings.particle_quality) << "\n";
     out << "clean_ttf_font=" << (settings.clean_ttf_font ? 1 : 0) << "\n";
     out << "show_fps=" << (settings.show_fps ? 1 : 0) << "\n";
+    out << "guidance_mode_index=" << settings.guidance_mode_index << "\n";
     out << "compact_tutorial=" << (settings.compact_tutorial ? 1 : 0) << "\n";
     out << "dialogue_speed_index=" << settings.dialogue_speed_index << "\n";
     out << "gpu_preference=" << settings.gpu_preference << "\n";
@@ -853,6 +859,9 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
     AppContext& ctx,
     GraphicsSettings& settings,
     JournalOverlay* journal) {
+    const int guidance_idx = std::clamp(settings.guidance_mode_index, 0, 2);
+    ctx.world.guidance_mode = static_cast<eco::GuidanceAssistMode>(guidance_idx);
+
     const int dialogue_speed_idx = std::clamp(
         settings.dialogue_speed_index,
         0,
@@ -1089,6 +1098,8 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
             case 4: // Ricomincia Viaggio (Reset Conca)
                 ctx.world.Reset();
                 ctx.world.EnsureInitialized();
+                ctx.world.guidance_mode =
+                    static_cast<eco::GuidanceAssistMode>(std::clamp(settings.guidance_mode_index, 0, 2));
                 ctx.state_manager.RequestTransition(std::make_unique<OverworldState>(ctx));
                 Close();
                 ctx.block_state_input_this_frame = true;
@@ -1517,6 +1528,7 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
 
     const int res_idx = std::clamp(settings.resolution_index, 0, static_cast<int>(kResolutions.size()) - 1);
     const int fps_idx = std::clamp(settings.fps_index, 0, static_cast<int>(kFpsOptions.size()) - 1);
+
     const int dialogue_speed_idx = std::clamp(
         settings.dialogue_speed_index,
         0,
@@ -1559,23 +1571,43 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
     };
 
     if (settings_category_ == SettingsCategory::Game) {
-        draw_toggle(
+        const int g_idx = std::clamp(settings.guidance_mode_index, 0, 2);
+        const auto g_mode = static_cast<eco::GuidanceAssistMode>(g_idx);
+        const Color g_col = (g_mode == eco::GuidanceAssistMode::Empirical)
+                                ? pal::kJadeGlow
+                                : ((g_mode == eco::GuidanceAssistMode::AlwaysOn)
+                                       ? pal::kBronzeBright
+                                       : Color{164, 188, 204, 255});
+        draw_choice(
             0,
+            "Guida Esplorazione",
+            eco::GuidanceAssistModeName(g_mode),
+            g_col);
+        draw_toggle(
+            1,
             "Avanzamento Rapido Dialoghi",
             settings.compact_tutorial,
             settings.compact_tutorial ? "Sintetico (3,2 s)" : "Manuale",
             pal::kAccentClean);
         draw_toggle(
-            1,
+            2,
             "Contatore FPS in Sovrimpressione",
             settings.show_fps,
             settings.show_fps ? "Visibile" : "Nascosto",
             pal::kAccentClean);
         draw_choice(
-            2,
+            3,
             "Velocita' Scrittura Dialoghi",
             kDialogueSpeedOptions[static_cast<std::size_t>(dialogue_speed_idx)].label,
             pal::kBronzeBright);
+
+        const char* guide_desc =
+            (g_mode == eco::GuidanceAssistMode::Empirical)
+                ? "Empirica: nessuna bussola fissa iniziale; leggi ombre/correnti e usa [Q] Lente per il rilievo temporaneo."
+                : ((g_mode == eco::GuidanceAssistMode::AlwaysOn)
+                       ? "Sempre Attiva: bussola obiettivo, metri e indicatori direzionali sempre visibili su schermo."
+                       : "Spenta: bussola e frecce di guida disattivati per un'esplorazione puramente diegetica.");
+        DrawTextShadow(guide_desc, layout.bx + 26, layout.by + 312, 13, g_col);
 
         // Info leggera memoria zone separate (diagnostica utile)
         const eco::MemoryMetrics mem = ctx.world.GetMemoryMetrics();

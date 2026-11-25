@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=EQUILIBRIO - La Conca di Meridia
+Comment=Videogioco 2D di fisica empirica, matematica applicata ed ecologia
+Exec=eco_proto
+Icon=eco_proto
+Terminal=false
+Categories=Game;LogicGame;Education;
+StartupWMClass=EQUILIBRIO - La Conca di Meridia

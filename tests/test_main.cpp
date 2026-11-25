@@ -1883,6 +1883,386 @@ void TestSprintMovement() {
     CHECK(sprint_dx > walk_dx);
 }
 
+void TestVerticalSliceInquiryMultiSolutionRelicsAndSystemicEco() {
+    eco::WorldContext world;
+    world.instant_zone_transitions = true;
+    world.EnsureInitialized();
+    world.overworld.OnEnter(world.players, false, false);
+
+    // ------------------------------------------------------------------------
+    // 1. Audit all 16 RelicGameplaySpec (pure ASCII 32..126, 6 core slice tools)
+    // ------------------------------------------------------------------------
+    int slice_core_count = 0;
+    for (int i = 0; i < eco::kTotalCollectibles; ++i) {
+        const auto cid = static_cast<eco::CollectibleId>(i);
+        const eco::RelicGameplaySpec spec = eco::GetRelicGameplaySpec(cid);
+        CHECK(spec.id == cid);
+        CHECK(spec.tool_name != nullptr && std::string_view(spec.tool_name).size() > 0);
+        CHECK(spec.active_or_passive_label != nullptr && std::string_view(spec.active_or_passive_label).size() > 0);
+        CHECK(spec.effect_summary != nullptr && std::string_view(spec.effect_summary).size() > 0);
+        CHECK(spec.field_usage_hint != nullptr && std::string_view(spec.field_usage_hint).size() > 0);
+        CHECK(IsPureAsciiPrintable(spec.tool_name));
+        CHECK(IsPureAsciiPrintable(spec.active_or_passive_label));
+        CHECK(IsPureAsciiPrintable(spec.effect_summary));
+        CHECK(IsPureAsciiPrintable(spec.field_usage_hint));
+        CHECK(IsPureAsciiPrintable(eco::RelicToolCategoryName(spec.category)));
+        if (spec.is_vertical_slice_core) {
+            ++slice_core_count;
+        }
+    }
+    CHECK(slice_core_count == 6);
+
+    // ------------------------------------------------------------------------
+    // 2. Reduced Initial Automatic Guidance (GuidanceAssistMode::Empirical)
+    // ------------------------------------------------------------------------
+    CHECK(world.guidance_mode == eco::GuidanceAssistMode::Empirical);
+    {
+        const eco::GuidanceDisplayState gd0 = world.ComputeGuidanceDisplay();
+        CHECK(!gd0.show_compass);
+        CHECK(!gd0.show_distance_meters);
+        CHECK(!gd0.show_edge_arrow);
+        CHECK(!gd0.show_world_beacon);
+        CHECK(!gd0.is_scan_pulse_reveal);
+        CHECK(gd0.field_note != nullptr && IsPureAsciiPrintable(gd0.field_note));
+    }
+    // Override modes AlwaysOn & MinimalOff
+    world.guidance_mode = eco::GuidanceAssistMode::AlwaysOn;
+    {
+        const eco::GuidanceDisplayState gd_on = world.ComputeGuidanceDisplay();
+        CHECK(gd_on.show_compass);
+        CHECK(gd_on.show_distance_meters);
+        CHECK(gd_on.show_edge_arrow);
+        CHECK(gd_on.show_world_beacon);
+    }
+    world.guidance_mode = eco::GuidanceAssistMode::MinimalOff;
+    {
+        const eco::GuidanceDisplayState gd_off = world.ComputeGuidanceDisplay();
+        CHECK(!gd_off.show_compass);
+        CHECK(!gd_off.show_edge_arrow);
+        CHECK(!gd_off.show_world_beacon);
+    }
+    world.guidance_mode = eco::GuidanceAssistMode::Empirical;
+
+    // ------------------------------------------------------------------------
+    // 3. ObservationNodes across the 3 Vertical Slice areas (3 + 3 + 3 = 9)
+    // ------------------------------------------------------------------------
+    int dawn_obs = 0;
+    int canal_obs = 0;
+    for (const auto& node : world.zone_mechanics.observation_nodes) {
+        CHECK(node.title != nullptr && IsPureAsciiPrintable(node.title));
+        CHECK(node.reading_text != nullptr && IsPureAsciiPrintable(node.reading_text));
+        CHECK(node.hypothesis_hint != nullptr && IsPureAsciiPrintable(node.hypothesis_hint));
+        if (node.zone == eco::ZoneId::DawnTerraces) {
+            ++dawn_obs;
+        } else if (node.zone == eco::ZoneId::CanalQuarter) {
+            ++canal_obs;
+        }
+    }
+    CHECK(dawn_obs >= 3);
+    CHECK(canal_obs >= 3);
+    CHECK(world.structure.saved_puzzles[static_cast<std::size_t>(eco::StructureId::HypogeanCisterns)]
+              .observation_nodes.size() >= 3);
+
+    // Inspect an ObservationNode in DawnTerraces -> advances inquiry stage
+    auto* p0 = world.players.GetPlayer(0);
+    CHECK(world.CurrentAreaInquiryStage() == eco::InquiryStage::Observe);
+    for (const auto& node : world.zone_mechanics.observation_nodes) {
+        if (node.zone == eco::ZoneId::DawnTerraces) {
+            p0->pos = node.pos;
+            eco::AllPlayersInput in{};
+            in.players[0].interact_pressed = true;
+            const auto res = world.StepWorld(in, eco::kFixedDt);
+            CHECK(res.mechanics_events.observation_inspected);
+            break;
+        }
+    }
+    CHECK(world.observations_inspected_count >= 1);
+    CHECK(static_cast<int>(world.CurrentAreaInquiryStage()) >=
+          static_cast<int>(eco::InquiryStage::Hypothesize));
+
+    // ------------------------------------------------------------------------
+    // 4. Relic 1 (Dawn_BrassGnomon) & Relic 2 (Dawn_FirstMeasureStele)
+    // ------------------------------------------------------------------------
+    (void)world.collectibles.Collect(eco::CollectibleId::Dawn_BrassGnomon);
+    (void)world.collectibles.Collect(eco::CollectibleId::Dawn_FirstMeasureStele);
+
+    // Gnomon: PredictGnomonBeams() multi-bounce optical vector prediction + [Q] scan reveals Empirical Compass!
+    const auto predicted_beams = world.PredictGnomonBeams();
+    CHECK(!predicted_beams.empty());
+    {
+        auto& solar = world.GetMachine(eco::MachineType::SolarArray);
+        // Test +45% extended scan range (distance 350 px > 280 px default, <= 280 * 1.45 = 406 px)
+        p0->pos = {solar.pos.x - 340.0f, solar.pos.y};
+        eco::AllPlayersInput scan_in{};
+        scan_in.players[0].scan_pressed = true;
+        (void)world.StepWorld(scan_in, eco::kFixedDt);
+        CHECK(world.last_scan.active && world.last_scan.has_target);
+        CHECK(world.empirical_compass_timer > 0.0f);
+        const eco::GuidanceDisplayState gd_scan = world.ComputeGuidanceDisplay();
+        CHECK(gd_scan.show_compass);
+        CHECK(gd_scan.is_scan_pulse_reveal);
+    }
+
+    // FirstMeasureStele: fine step (0.25x), widened harmonic stabilizer window (+30%), and harmonic band reveal on 1st trial
+    {
+        auto& solar = world.GetMachine(eco::MachineType::SolarArray);
+        CHECK(!solar.IsInHarmonicStabilizerBand(0.89f, false));
+        CHECK(solar.IsInHarmonicStabilizerBand(0.89f, true)); // +30% tolerance window!
+
+        world.OpenCalibrationModalFor(eco::MachineType::SolarArray);
+        CHECK(world.calibration_modal.is_open);
+        CHECK(world.calibration_modal.precision_relic_active);
+        CHECK(!world.calibration_modal.harmonic_band_revealed);
+
+        const float p_before = world.calibration_modal.slider_value;
+        world.calibration_modal.AdjustParameter(1.0f, solar);
+        CHECK_NEAR(world.calibration_modal.slider_value - p_before, solar.step_param * 0.25f, 1e-4f);
+
+        // Select hypothesis -> RunTrial [T] -> reveals harmonic band and dawn sundial glyphs
+        world.calibration_modal.SelectHypothesis(eco::HypothesisKind::CriticalOverdrive);
+        const eco::TrialExperimentReport rep = world.ExecuteModalTrial();
+        CHECK(rep.executed);
+        CHECK(world.calibration_modal.trials_run == 1);
+        CHECK(world.calibration_modal.harmonic_band_revealed);
+        CHECK(world.zone_mechanics.hidden_sundial_glyphs_revealed);
+        CHECK(IsPureAsciiPrintable(rep.empirical_reading));
+        CHECK(IsPureAsciiPrintable(rep.world_consequence));
+        CHECK(static_cast<int>(world.CurrentAreaInquiryStage()) >=
+              static_cast<int>(eco::InquiryStage::ConsequenceSeen));
+        world.calibration_modal.Cancel();
+    }
+
+    // ------------------------------------------------------------------------
+    // 5. All 3 Solutions on SolarArray + Reversible Recalibration + Systemic Effects
+    // ------------------------------------------------------------------------
+    auto& solar = world.GetMachine(eco::MachineType::SolarArray);
+    // 5a. DirtyImmediate (Bypass a Pece)
+    world.OpenCalibrationModalFor(eco::MachineType::SolarArray);
+    CHECK(world.ExecuteModalBypass());
+    CHECK(!world.calibration_modal.is_open);
+    CHECK(solar.state == eco::MachineState::BypassedDirty);
+    CHECK(solar.approach == eco::CalibrationApproach::DirtyImmediate);
+    {
+        const eco::ZoneEcoStatus eco_dirty = world.GetZoneEcoStatus(eco::ZoneId::DawnTerraces);
+        CHECK(!eco_dirty.brambles_cleared);
+        CHECK(!eco_dirty.risky_shortcut_open);
+        CHECK(eco_dirty.fauna_count == 0);
+        CHECK(world.GetNpc(eco::NpcId::ClaraSereni).mood == eco::NpcMood::ShelteredPolluted);
+    }
+
+    // 5b. Recalibrate SolarArray -> RiskyEfficient (Regime Critico -> opens ScorchedCrest!)
+    world.OpenCalibrationModalFor(eco::MachineType::SolarArray);
+    world.calibration_modal.SetParameter((solar.risky_param_min + solar.risky_param_max) * 0.5f, solar);
+    world.calibration_modal.SetStabilizer(0.22f, solar);
+    CHECK(world.calibration_modal.can_confirm_risky);
+    CHECK(world.ExecuteModalConfirmRisky());
+    CHECK(solar.state == eco::MachineState::CleanActive);
+    CHECK(solar.approach == eco::CalibrationApproach::RiskyEfficient);
+    CHECK_NEAR(world.ecosystem.dirty_energy, 0.0f, 1e-4f); // previous dirty bypass reversed!
+    CHECK_NEAR(world.ecosystem.clean_energy, solar.risky_energy_reward, 1e-4f);
+    CHECK(world.zone_mechanics.scorched_crest_open);
+    CHECK(world.GetZoneEcoStatus(eco::ZoneId::DawnTerraces).risky_shortcut_open);
+    CHECK(world.GetNpc(eco::NpcId::ClaraSereni).mood == eco::NpcMood::TenseOverdrive);
+
+    // 5c. Recalibrate SolarArray -> CleanSlow (Armonia Stabile -> clears brambles & restores fauna!)
+    world.OpenCalibrationModalFor(eco::MachineType::SolarArray);
+    world.calibration_modal.SetParameter(solar.target_param, solar);
+    world.calibration_modal.SetStabilizer(solar.clean_stabilizer_target, solar);
+    CHECK(world.calibration_modal.can_confirm_clean);
+    CHECK(world.ExecuteModalConfirmClean());
+    CHECK(solar.state == eco::MachineState::CleanActive);
+    CHECK(solar.approach == eco::CalibrationApproach::CleanSlow);
+    CHECK_NEAR(world.ecosystem.clean_energy, solar.clean_energy_reward, 1e-4f);
+    CHECK(world.CurrentAreaInquiryStage() == eco::InquiryStage::Resolved);
+    {
+        const eco::ZoneEcoStatus eco_clean = world.GetZoneEcoStatus(eco::ZoneId::DawnTerraces);
+        CHECK(eco_clean.brambles_cleared);
+        CHECK(eco_clean.fauna_count > 0);
+        CHECK(world.zone_mechanics.active_critter_count > 0);
+    }
+
+    // ------------------------------------------------------------------------
+    // 6. Relic 3 (Dawn_WhiteOliveSeed on BioPlanter), Relic 4 (Waters_HydraulicDiary)
+    //    & Relic 6 (Harmony_FarewellPrism remote toggle in Overworld & Structure)
+    // ------------------------------------------------------------------------
+    (void)world.collectibles.Collect(eco::CollectibleId::Dawn_WhiteOliveSeed);
+    (void)world.collectibles.Collect(eco::CollectibleId::Waters_HydraulicDiary);
+    (void)world.collectibles.Collect(eco::CollectibleId::Harmony_FarewellPrism);
+
+    // Seed BioPlanter in DawnTerraces with [E] -> -6 pollution, clears bramble passage, +12% speed bonus
+    const float poll_before_planter = world.ecosystem.pollution_level;
+    for (const auto& planter : world.zone_mechanics.bio_planters) {
+        if (planter.zone == eco::ZoneId::DawnTerraces && !planter.planted) {
+            p0->pos = planter.pos;
+            eco::AllPlayersInput in{};
+            in.players[0].interact_pressed = true;
+            const auto res = world.StepWorld(in, eco::kFixedDt);
+            CHECK(res.mechanics_events.planter_seeded);
+            break;
+        }
+    }
+    CHECK(world.planters_seeded_count >= 1);
+    CHECK_NEAR(poll_before_planter - world.ecosystem.pollution_level, 6.0f, 1e-3f);
+    CHECK(world.GetZoneEcoStatus(eco::ZoneId::DawnTerraces).healed_speed_bonus >= 0.11f);
+
+    // FarewellPrism remote toggle [Q] on a SolarMirror in DawnTerraces from 150 px away (> 64 px interact_radius, <= 220 px)
+    {
+        const auto& m0 = world.zone_mechanics.solar_mirrors[0];
+        const int dir_before = m0.dir_index;
+        p0->pos = {m0.pos.x - 140.0f, m0.pos.y};
+        const eco::RemotePrismTarget rt = world.FindRemotePrismTarget(p0->Center());
+        CHECK(rt.valid && rt.kind == eco::RemoteTargetKind::SolarMirror);
+        eco::AllPlayersInput q_in{};
+        q_in.players[0].scan_pressed = true;
+        const auto res = world.StepWorld(q_in, eco::kFixedDt);
+        CHECK(res.mechanics_events.remote_prism_triggered);
+        CHECK(world.zone_mechanics.solar_mirrors[0].dir_index != dir_before);
+        CHECK(world.prism_remote_toggles >= 1);
+    }
+
+    // Move to CanalQuarter: inspect ObservationNode, pull SluiceLever with Waters_HydraulicDiary -> opens Guado degli Idraulici!
+    world.TeleportToZone(eco::ZoneId::CanalQuarter);
+    p0 = world.players.GetPlayer(0);
+    for (const auto& node : world.zone_mechanics.observation_nodes) {
+        if (node.zone == eco::ZoneId::CanalQuarter) {
+            p0->pos = node.pos;
+            eco::AllPlayersInput in{};
+            in.players[0].interact_pressed = true;
+            (void)world.StepWorld(in, eco::kFixedDt);
+            break;
+        }
+    }
+    CHECK(!world.zone_mechanics.sluice_levers.empty());
+    p0->pos = world.zone_mechanics.sluice_levers[0].pos;
+    {
+        eco::AllPlayersInput in{};
+        in.players[0].interact_pressed = true;
+        const auto res = world.StepWorld(in, eco::kFixedDt);
+        CHECK(res.mechanics_events.sluice_toggled);
+        CHECK(res.mechanics_events.laminar_ford_opened);
+    }
+    CHECK(world.zone_mechanics.laminar_flow_active);
+    CHECK(world.zone_mechanics.laminar_ford_open);
+    CHECK(world.GetZoneEcoStatus(eco::ZoneId::CanalQuarter).laminar_ford_open);
+
+    // ------------------------------------------------------------------------
+    // 7. HypogeanCisterns: Relic 5 (Waters_SluiceStele), Remote Prism on Switch,
+    //    and All 3 Solutions on HydroTurbine + Clara/Lorenzo Dynamic Reactions
+    // ------------------------------------------------------------------------
+    (void)world.collectibles.Collect(eco::CollectibleId::Waters_SluiceStele);
+    world.EnterStructure(eco::StructureId::HypogeanCisterns);
+    p0 = world.players.GetPlayer(0);
+    CHECK(world.structure.puzzle.aux_stevino_valve_unlocked);
+
+    // Open Auxiliary Equilibrium Valve of Stevino with [E]
+    p0->pos = world.structure.puzzle.aux_stevino_valve_pos;
+    {
+        eco::AllPlayersInput in{};
+        in.players[0].interact_pressed = true;
+        const auto res = world.StepWorld(in, eco::kFixedDt);
+        CHECK(res.structure_puzzle_events.aux_valve_toggled);
+        CHECK(world.structure.puzzle.aux_stevino_valve_open);
+    }
+
+    // Remote toggle StructureSwitch 0 with FarewellPrism [Q] from 140 px away
+    {
+        const auto* sw0 = world.structure.puzzle.GetSwitch(0);
+        CHECK(sw0 != nullptr);
+        const bool was_active = sw0->active;
+        p0->pos = {sw0->pos.x + 130.0f, sw0->pos.y};
+        eco::AllPlayersInput q_in{};
+        q_in.players[0].scan_pressed = true;
+        const auto res = world.StepWorld(q_in, eco::kFixedDt);
+        CHECK(res.mechanics_events.remote_prism_triggered);
+        CHECK(world.structure.puzzle.GetSwitch(0)->active != was_active);
+    }
+
+    // Inspect an ObservationNode in HypogeanCisterns
+    if (!world.structure.puzzle.observation_nodes.empty()) {
+        p0->pos = world.structure.puzzle.observation_nodes[0].pos;
+        eco::AllPlayersInput in{};
+        in.players[0].interact_pressed = true;
+        const auto res = world.StepWorld(in, eco::kFixedDt);
+        CHECK(res.structure_puzzle_events.observation_inspected);
+    }
+
+    // Test all 3 solutions on HydroTurbine + trial water hammer
+    auto& hydro = world.GetMachine(eco::MachineType::HydroTurbine);
+    world.OpenCalibrationModalFor(eco::MachineType::HydroTurbine);
+    CHECK(world.calibration_modal.piezometric_relic_active);
+    {
+        const eco::TrialExperimentReport hrep = world.ExecuteModalTrial();
+        CHECK(hrep.executed);
+        CHECK(world.structure.puzzle.trial_water_hammer_timer > 0.0f);
+    }
+    // 7a. Hydro DirtyImmediate
+    CHECK(world.ExecuteModalBypass());
+    CHECK(hydro.approach == eco::CalibrationApproach::DirtyImmediate);
+    CHECK(world.GetNpc(eco::NpcId::LorenzoAltieri).mood == eco::NpcMood::ShelteredPolluted);
+
+    // 7b. Hydro RiskyEfficient -> opens HighSpillway & accelerates CanalQuarter currents by +45%!
+    world.OpenCalibrationModalFor(eco::MachineType::HydroTurbine);
+    world.calibration_modal.SetParameter((hydro.risky_param_min + hydro.risky_param_max) * 0.5f, hydro);
+    world.calibration_modal.SetStabilizer(0.20f, hydro);
+    CHECK(world.calibration_modal.can_confirm_risky);
+    CHECK(world.ExecuteModalConfirmRisky());
+    CHECK(hydro.approach == eco::CalibrationApproach::RiskyEfficient);
+    CHECK(world.structure.puzzle.high_spillway_open);
+    world.zone_mechanics.laminar_flow_active = false;
+    CHECK(world.GetZoneEcoStatus(eco::ZoneId::CanalQuarter).current_speed_mult >= 1.40f);
+    world.zone_mechanics.laminar_flow_active = true;
+    CHECK(world.GetNpc(eco::NpcId::LorenzoAltieri).mood == eco::NpcMood::TenseOverdrive);
+
+    // 7c. Hydro CleanSlow -> heals waters, Lorenzo reaches FlourishingTrust & opens ArchivistNiche!
+    world.OpenCalibrationModalFor(eco::MachineType::HydroTurbine);
+    world.calibration_modal.SetParameter(hydro.target_param, hydro);
+    world.calibration_modal.SetStabilizer(hydro.clean_stabilizer_target, hydro);
+    CHECK(world.calibration_modal.can_confirm_clean);
+    CHECK(world.ExecuteModalConfirmClean());
+    CHECK(hydro.approach == eco::CalibrationApproach::CleanSlow);
+    CHECK(world.GetNpc(eco::NpcId::LorenzoAltieri).mood == eco::NpcMood::FlourishingTrust);
+    CHECK(world.GetNpc(eco::NpcId::LorenzoAltieri).shortcut_unlocked);
+    CHECK(world.structure.puzzle.archivist_niche_open);
+
+    // Talk to Lorenzo Altieri in HypogeanCisterns (positioned within Lorenzo's 78px radius, outside node 22's 68px radius)
+    {
+        const eco::Vec2 lor_pos = world.GetNpc(eco::NpcId::LorenzoAltieri).pos;
+        p0->pos = {lor_pos.x - 72.0f - p0->size.x * 0.5f, lor_pos.y - p0->size.y * 0.5f};
+        eco::AllPlayersInput in{};
+        in.players[0].interact_pressed = true;
+        (void)world.StepWorld(in, eco::kFixedDt);
+    }
+    CHECK(world.GetNpc(eco::NpcId::LorenzoAltieri).recruited);
+
+    // Return to CanalQuarter and talk to Clara Sereni -> Vertical Slice Synthesis complete!
+    world.ExitToOverworld();
+    world.TeleportToZone(eco::ZoneId::CanalQuarter);
+    p0 = world.players.GetPlayer(0);
+    CHECK(world.GetNpc(eco::NpcId::ClaraSereni).mood == eco::NpcMood::FlourishingTrust);
+    CHECK(world.GetNpc(eco::NpcId::ClaraSereni).shortcut_unlocked);
+    p0->pos = world.GetNpc(eco::NpcId::ClaraSereni).pos;
+    {
+        eco::AllPlayersInput in{};
+        in.players[0].interact_pressed = true;
+        (void)world.StepWorld(in, eco::kFixedDt);
+    }
+    CHECK(world.GetNpc(eco::NpcId::ClaraSereni).recruited);
+
+    const eco::VerticalSliceSummary vs = world.ComputeVerticalSliceSummary();
+    CHECK(vs.terraces_resolved);
+    CHECK(vs.canals_explored);
+    CHECK(vs.cisterns_resolved);
+    CHECK(vs.clara_confronted);
+    CHECK(vs.lorenzo_confronted);
+    CHECK(vs.slice_complete);
+    CHECK(vs.solar_approach == eco::CalibrationApproach::CleanSlow);
+    CHECK(vs.hydro_approach == eco::CalibrationApproach::CleanSlow);
+    CHECK(vs.slice_relics_collected == 6);
+    CHECK(vs.planters_seeded >= 1);
+    CHECK(vs.laminar_ford_unlocked);
+    CHECK(IsPureAsciiPrintable(vs.synthesis_headline));
+}
+
 } // namespace
 
 int main() {
@@ -1903,6 +2283,7 @@ int main() {
     TestZoneInterludesAndMemorySwap();
     TestRedesignedPortalLogicLevelsPhysics();
     TestSprintMovement();
+    TestVerticalSliceInquiryMultiSolutionRelicsAndSystemicEco();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test check(s) failed.\n";

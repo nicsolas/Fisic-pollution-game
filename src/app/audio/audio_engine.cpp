@@ -614,10 +614,149 @@ struct FastRng {
     return out;
 }
 
+[[nodiscard]] std::vector<float> SynthTrialPulse() {
+    // Impulso di prova sperimentale (RunTrial): scatto d'ottone + sweep diagnostico limpido
+    constexpr float kDur = 0.56f;
+    const int n = static_cast<int>(kDur * kSampleRate);
+    std::vector<float> out(static_cast<std::size_t>(n), 0.0f);
+    FastRng rng{0x9101u};
+    float phase = 0.0f;
+    float lp = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(kSampleRate);
+        const float u = t / kDur;
+        const float env = SmoothEnvelope(t, kDur, 0.006f, 0.20f);
+        const float freq = 330.0f + 330.0f * std::sin(u * eco::kPi * 0.85f);
+        phase += kTwoPi * freq / static_cast<float>(kSampleRate);
+        lp += 0.16f * (rng.NextSigned() - lp);
+        const float transient = (std::sin(kTwoPi * 220.0f * t) * 0.45f + lp * 0.30f) * std::exp(-t * 36.0f);
+        const float probe =
+            std::sin(phase) * 0.46f +
+            std::sin(phase * 1.5f) * 0.24f * std::exp(-t * 4.5f) +
+            std::sin(kTwoPi * 987.77f * t) * 0.16f * std::exp(-t * 7.5f);
+        out[static_cast<std::size_t>(i)] = (transient + probe) * env * 0.54f;
+    }
+    return out;
+}
+
+[[nodiscard]] std::vector<float> SynthCalibrateRisky() {
+    // Soluzione Rischiosa / Regime Supercritico: ronzio armonico teso + sfiato ad alta pressione
+    constexpr float kDur = 0.92f;
+    const int n = static_cast<int>(kDur * kSampleRate);
+    std::vector<float> out(static_cast<std::size_t>(n), 0.0f);
+    FastRng rng{0x9202u};
+    float lp = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(kSampleRate);
+        const float env = SmoothEnvelope(t, kDur, 0.015f, 0.30f);
+        const float raw = rng.NextSigned();
+        lp += 0.10f * (raw - lp);
+        const float buzz_mod = 0.78f + 0.22f * std::sin(kTwoPi * 26.0f * t);
+        const float chord =
+            std::sin(kTwoPi * 146.83f * t) * 0.36f +
+            std::sin(kTwoPi * 220.00f * t) * 0.30f +
+            std::sin(kTwoPi * 311.13f * t) * 0.22f +
+            std::sin(kTwoPi * 622.25f * t) * 0.16f * std::exp(-t * 3.2f);
+        const float hiss = (raw - lp) * 0.24f * std::exp(-t * 2.8f);
+        out[static_cast<std::size_t>(i)] = (chord * buzz_mod + hiss) * std::exp(-t * 1.6f) * env * 0.58f;
+    }
+    return out;
+}
+
+[[nodiscard]] std::vector<float> SynthObservationInspect() {
+    // Lettura stazione diegetica (gnomone/idrometro/stevino): tocco metallico + nota chiara
+    constexpr float kDur = 0.34f;
+    const int n = static_cast<int>(kDur * kSampleRate);
+    std::vector<float> out(static_cast<std::size_t>(n), 0.0f);
+    for (int i = 0; i < n; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(kSampleRate);
+        const float env = SmoothEnvelope(t, kDur, 0.004f, 0.14f);
+        const float click = std::sin(kTwoPi * 784.0f * t) * std::exp(-t * 42.0f) * 0.40f;
+        const float chime =
+            std::sin(kTwoPi * 523.25f * t) * 0.44f * std::exp(-t * 6.5f) +
+            std::sin(kTwoPi * 783.99f * t) * 0.28f * std::exp(-t * 8.5f);
+        out[static_cast<std::size_t>(i)] = (click + chime) * env * 0.48f;
+    }
+    return out;
+}
+
+[[nodiscard]] std::vector<float> SynthBioPlanterBloom() {
+    // Innesto Seme d'Ulivo Bianco: arpeggio caldo + fruscio di foglie vive
+    constexpr float kDur = 0.96f;
+    const int n = static_cast<int>(kDur * kSampleRate);
+    std::vector<float> out(static_cast<std::size_t>(n), 0.0f);
+    FastRng rng{0x9404u};
+    float lp = 0.0f;
+    constexpr std::array<float, 4> kNotes = {329.63f, 440.00f, 554.37f, 659.25f};
+    for (int i = 0; i < n; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(kSampleRate);
+        const float env = SmoothEnvelope(t, kDur, 0.018f, 0.32f);
+        const float raw = rng.NextSigned();
+        lp += 0.14f * (raw - lp);
+        const float leaves = (raw - lp) * 0.18f * SmoothEnvelope(t, 0.48f, 0.03f, 0.22f);
+        float sum = 0.0f;
+        for (std::size_t k = 0; k < kNotes.size(); ++k) {
+            const float dt = t - static_cast<float>(k) * 0.065f;
+            if (dt >= 0.0f) {
+                sum += std::sin(kTwoPi * kNotes[k] * dt) * std::exp(-dt * 3.1f) * 0.28f;
+            }
+        }
+        out[static_cast<std::size_t>(i)] = (sum + leaves) * env * 0.58f;
+    }
+    return out;
+}
+
+[[nodiscard]] std::vector<float> SynthPrismRemoteToggle() {
+    // Impulso remoto del Prisma del Congedo: risonanza ottica cristallina
+    constexpr float kDur = 0.52f;
+    const int n = static_cast<int>(kDur * kSampleRate);
+    std::vector<float> out(static_cast<std::size_t>(n), 0.0f);
+    for (int i = 0; i < n; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(kSampleRate);
+        const float env = SmoothEnvelope(t, kDur, 0.005f, 0.20f);
+        const float shimmer = 1.0f + 0.12f * std::sin(kTwoPi * 16.0f * t);
+        const float crystal =
+            std::sin(kTwoPi * 659.25f * t) * 0.42f * std::exp(-t * 5.2f) +
+            std::sin(kTwoPi * 987.77f * t) * 0.32f * std::exp(-t * 6.4f) +
+            std::sin(kTwoPi * 1318.51f * t) * 0.22f * std::exp(-t * 8.5f);
+        out[static_cast<std::size_t>(i)] = crystal * shimmer * env * 0.54f;
+    }
+    return out;
+}
+
+[[nodiscard]] std::vector<float> SynthFaunaChirp() {
+    // Breve cinguettio doppio cristallino di rondine / fauna di zona guarita
+    constexpr float kDur = 0.28f;
+    const int n = static_cast<int>(kDur * kSampleRate);
+    std::vector<float> out(static_cast<std::size_t>(n), 0.0f);
+    float phase1 = 0.0f;
+    float phase2 = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(kSampleRate);
+        float s = 0.0f;
+        if (t < 0.11f) {
+            const float u = t / 0.11f;
+            const float f = 1760.0f + 520.0f * std::sin(u * eco::kPi);
+            phase1 += kTwoPi * f / static_cast<float>(kSampleRate);
+            s += std::sin(phase1) * SmoothEnvelope(t, 0.11f, 0.012f, 0.045f) * 0.34f;
+        }
+        if (t >= 0.13f) {
+            const float dt = t - 0.13f;
+            const float u = dt / 0.14f;
+            const float f = 1975.5f + 640.0f * (1.0f - u * 0.45f);
+            phase2 += kTwoPi * f / static_cast<float>(kSampleRate);
+            s += std::sin(phase2) * SmoothEnvelope(dt, 0.14f, 0.012f, 0.06f) * 0.30f;
+        }
+        out[static_cast<std::size_t>(i)] = s;
+    }
+    return out;
+}
+
 // --- Tappeti MUSICALI (armonie tonali, controllati da music_volume_) ---
 enum class MusicLayer : int {
     OverworldClean = 0,
     OverworldSmog,
+    CriticalOverdrive,
     Cisterns,
     Tower,
     Geothermal,
@@ -628,6 +767,7 @@ enum class MusicLayer : int {
 enum class NatureLayer : int {
     AirBreeze = 0,
     CanalWater,
+    LaminarStream,
     PlateauWind,
     ThermalSteam,
     Count
@@ -669,6 +809,16 @@ enum class NatureLayer : int {
                     std::sin(kTwoPi * f_d2 * t) * 0.28f +
                     std::sin(kTwoPi * f_e3 * t) * 0.10f;
                 sample = low_drone * breath * 0.26f;
+                break;
+            }
+            case MusicLayer::CriticalOverdrive: {
+                // Ronzio armonico teso di regime supercritico (battimento a 1.5 Hz)
+                const float pulse_mod = 0.72f + 0.28f * std::sin(kTwoPi * 1.5f * t);
+                const float overdrive =
+                    std::sin(kTwoPi * f_a2 * t) * 0.24f +
+                    std::sin(kTwoPi * snap(165.0f) * t) * 0.18f +
+                    std::sin(kTwoPi * snap(311.25f) * t) * 0.08f;
+                sample = overdrive * pulse_mod * 0.25f;
                 break;
             }
             case MusicLayer::Cisterns: {
@@ -715,6 +865,7 @@ enum class NatureLayer : int {
     float lp1 = 0.0f;
     float lp2 = 0.0f;
     const float alpha = (layer == NatureLayer::CanalWater) ? 0.042f
+                        : (layer == NatureLayer::LaminarStream) ? 0.022f
                         : (layer == NatureLayer::PlateauWind) ? 0.028f
                         : (layer == NatureLayer::ThermalSteam) ? 0.055f
                                                                : 0.015f;
@@ -744,6 +895,15 @@ enum class NatureLayer : int {
             case NatureLayer::CanalWater: {
                 const float ripple = 0.78f + 0.22f * std::sin(kTwoPi * 0.75f * t);
                 sample = nz * ripple * 0.44f;
+                break;
+            }
+            case NatureLayer::LaminarStream: {
+                // Gorgoglio laminare limpido + lieve scintillio armonico di acqua risanata
+                const float shimmer = 0.80f + 0.20f * std::sin(kTwoPi * 0.50f * t);
+                const float bell =
+                    std::sin(kTwoPi * 587.50f * t) * 0.028f * (0.5f + 0.5f * std::sin(kTwoPi * 0.25f * t)) +
+                    std::sin(kTwoPi * 880.00f * t) * 0.018f * (0.5f + 0.5f * std::cos(kTwoPi * 0.50f * t));
+                sample = nz * shimmer * 0.36f + bell;
                 break;
             }
             case NatureLayer::PlateauWind: {
@@ -777,6 +937,7 @@ struct AudioEngine::Impl {
     bool has_prev = false;
     bool prev_modal_open = false;
     float prev_modal_value = 0.0f;
+    float prev_stabilizer_value = 0.68f;
     float slider_tick_cooldown = 0.0f;
     bool prev_pause_open = false;
     bool prev_journal_open = false;
@@ -791,8 +952,19 @@ struct AudioEngine::Impl {
     int prev_collected_count = 0;
     float prev_scan_timer = 0.0f;
     std::array<eco::MachineState, 6> prev_machine_states{};
+    std::array<eco::CalibrationApproach, 6> prev_machine_approaches{};
     std::array<bool, 4> prev_npc_met{};
     std::array<bool, 4> prev_npc_recruited{};
+
+    // Stato Vertical Slice (prove, osservazioni, innesti d'ulivo, prisma remoto, guado, cinguettii)
+    int prev_total_trials = 0;
+    int prev_observations_count = 0;
+    int prev_planters_seeded = 0;
+    int prev_prism_toggles = 0;
+    bool prev_laminar_ford_open = false;
+    bool prev_aux_stevino_open = false;
+    std::vector<bool> prev_struct_switches{};
+    float fauna_chirp_timer = 6.5f;
 
     // Stato osservato per le 6 meccaniche di zona
     std::vector<int> prev_mirror_dirs{};
@@ -874,6 +1046,12 @@ void AudioEngine::Init(bool silent_mode) {
     load_sfx(SfxId::ValveClose, SynthValveClose());
     load_sfx(SfxId::SanctuarySealTune, SynthSanctuarySealTune());
     load_sfx(SfxId::InterludeChime, SynthInterludeChime());
+    load_sfx(SfxId::TrialPulse, SynthTrialPulse());
+    load_sfx(SfxId::CalibrateRisky, SynthCalibrateRisky());
+    load_sfx(SfxId::ObservationInspect, SynthObservationInspect());
+    load_sfx(SfxId::BioPlanterBloom, SynthBioPlanterBloom());
+    load_sfx(SfxId::PrismRemoteToggle, SynthPrismRemoteToggle());
+    load_sfx(SfxId::FaunaChirp, SynthFaunaChirp());
 
     for (int i = 0; i < static_cast<int>(MusicLayer::Count); ++i) {
         const auto layer = static_cast<MusicLayer>(i);
@@ -1072,14 +1250,31 @@ void AudioEngine::SyncAndUpdate(
 
             // Musica
             if (music_volume_ > 0.001f) {
+                const eco::ZoneEcoStatus eco_st = world.ActiveSceneEcoStatus();
+                bool risky_scene = false;
+                if (active_state_name == "OverworldState") {
+                    if (world.current_zone == eco::ZoneId::DawnTerraces) {
+                        risky_scene = (world.GetMachine(eco::MachineType::SolarArray).approach ==
+                                       eco::CalibrationApproach::RiskyEfficient);
+                    } else if (world.current_zone == eco::ZoneId::CanalQuarter) {
+                        risky_scene = (world.GetMachine(eco::MachineType::HydroTurbine).approach ==
+                                       eco::CalibrationApproach::RiskyEfficient);
+                    }
+                } else if (active_state_name == "StructureState" &&
+                           world.active_structure == eco::StructureId::HypogeanCisterns) {
+                    risky_scene = (world.GetMachine(eco::MachineType::HydroTurbine).approach ==
+                                   eco::CalibrationApproach::RiskyEfficient);
+                }
+
                 if (active_state_name == "TitleState" || active_state_name == "IntroState") {
                     music_target[static_cast<std::size_t>(MusicLayer::OverworldClean)] = 0.42f * duck;
                 } else if (active_state_name == "OverworldState") {
                     const float poll = world.ecosystem.PollutionRatio();
+                    const float bloom_boost = (eco_st.band == eco::EcoHealthBand::Flourishing) ? 0.12f : 0.0f;
                     music_target[static_cast<std::size_t>(MusicLayer::OverworldClean)] =
-                        (0.54f - 0.28f * poll) * duck;
+                        std::clamp(0.54f - 0.28f * poll + bloom_boost, 0.12f, 0.68f) * duck;
                     music_target[static_cast<std::size_t>(MusicLayer::OverworldSmog)] =
-                        (0.08f + 0.42f * poll) * duck;
+                        (0.06f + 0.44f * poll) * duck;
                 } else if (active_state_name == "StructureState") {
                     switch (world.active_structure) {
                         case eco::StructureId::HypogeanCisterns:
@@ -1095,10 +1290,16 @@ void AudioEngine::SyncAndUpdate(
                             break;
                     }
                 }
+                if (risky_scene) {
+                    music_target[static_cast<std::size_t>(MusicLayer::CriticalOverdrive)] = 0.34f * duck;
+                }
             }
 
             // Natura / Ambiente (separato da musica!)
             if (ambient_enabled_ && ambient_volume_ > 0.001f) {
+                const eco::ZoneEcoStatus eco_st = world.ActiveSceneEcoStatus();
+                const bool healed = (eco_st.band == eco::EcoHealthBand::Flourishing ||
+                                     eco_st.band == eco::EcoHealthBand::Recovering);
                 if (active_state_name == "TitleState" || active_state_name == "IntroState") {
                     nature_target[static_cast<std::size_t>(NatureLayer::AirBreeze)] = 0.28f * duck;
                 } else if (active_state_name == "OverworldState") {
@@ -1108,9 +1309,19 @@ void AudioEngine::SyncAndUpdate(
                         case eco::ZoneId::HangingGardens:
                         case eco::ZoneId::HarmonySanctuary:
                             nature_target[static_cast<std::size_t>(NatureLayer::AirBreeze)] = 0.34f * duck;
+                            if (eco_st.band == eco::EcoHealthBand::Flourishing) {
+                                nature_target[static_cast<std::size_t>(NatureLayer::LaminarStream)] = 0.22f * duck;
+                            }
                             break;
                         case eco::ZoneId::CanalQuarter:
-                            nature_target[static_cast<std::size_t>(NatureLayer::CanalWater)] = 0.46f * duck;
+                            if (world.zone_mechanics.laminar_flow_active || healed) {
+                                nature_target[static_cast<std::size_t>(NatureLayer::LaminarStream)] = 0.44f * duck;
+                                nature_target[static_cast<std::size_t>(NatureLayer::CanalWater)] = 0.18f * duck;
+                            } else {
+                                const float turb = std::clamp(eco_st.current_turbulence, 0.0f, 1.0f);
+                                nature_target[static_cast<std::size_t>(NatureLayer::CanalWater)] =
+                                    (0.42f + 0.18f * turb) * duck;
+                            }
                             break;
                         case eco::ZoneId::WindPlateau: {
                             const float gust = world.zone_mechanics.wind.gust_intensity;
@@ -1132,7 +1343,16 @@ void AudioEngine::SyncAndUpdate(
                     }
                 } else if (active_state_name == "StructureState") {
                     if (world.active_structure == eco::StructureId::HypogeanCisterns) {
-                        nature_target[static_cast<std::size_t>(NatureLayer::CanalWater)] = 0.48f * duck;
+                        if (healed) {
+                            nature_target[static_cast<std::size_t>(NatureLayer::LaminarStream)] = 0.42f * duck;
+                            nature_target[static_cast<std::size_t>(NatureLayer::CanalWater)] = 0.22f * duck;
+                        } else {
+                            nature_target[static_cast<std::size_t>(NatureLayer::CanalWater)] = 0.48f * duck;
+                        }
+                        if (world.GetMachine(eco::MachineType::HydroTurbine).approach ==
+                            eco::CalibrationApproach::RiskyEfficient) {
+                            nature_target[static_cast<std::size_t>(NatureLayer::ThermalSteam)] = 0.26f * duck;
+                        }
                     } else if (world.active_structure == eco::StructureId::GeothermalChamber) {
                         nature_target[static_cast<std::size_t>(NatureLayer::ThermalSteam)] = 0.48f * duck;
                     } else {
@@ -1215,6 +1435,13 @@ void AudioEngine::SyncAndUpdate(
         for (std::size_t i = 0; i < zm.sanctuary_seals.size(); ++i) {
             impl_->prev_seal_attuned[i] = zm.sanctuary_seals[i].attuned;
         }
+        impl_->prev_laminar_ford_open = zm.laminar_ford_open;
+        impl_->prev_aux_stevino_open = world.structure.puzzle.aux_stevino_valve_open;
+        const auto& sw = world.structure.puzzle.switches;
+        impl_->prev_struct_switches.resize(sw.size());
+        for (std::size_t i = 0; i < sw.size(); ++i) {
+            impl_->prev_struct_switches[i] = sw[i].active;
+        }
     };
 
     // 2. Primo frame: fotografa lo stato iniziale senza sparare suoni spuri
@@ -1222,6 +1449,7 @@ void AudioEngine::SyncAndUpdate(
         impl_->has_prev = true;
         impl_->prev_modal_open = world.calibration_modal.is_open;
         impl_->prev_modal_value = world.calibration_modal.slider_value;
+        impl_->prev_stabilizer_value = world.calibration_modal.stabilizer_value;
         impl_->prev_pause_open = pause_open;
         impl_->prev_journal_open = journal_open;
         impl_->prev_journal_tab = journal_tab_index;
@@ -1234,8 +1462,13 @@ void AudioEngine::SyncAndUpdate(
         impl_->prev_sim_completed = world.simulation_completed;
         impl_->prev_collected_count = world.collectibles.CollectedCount();
         impl_->prev_scan_timer = world.scan_pulse_timer;
+        impl_->prev_total_trials = world.total_trials_run;
+        impl_->prev_observations_count = world.observations_inspected_count;
+        impl_->prev_planters_seeded = world.planters_seeded_count;
+        impl_->prev_prism_toggles = world.prism_remote_toggles;
         for (std::size_t i = 0; i < world.machines.size(); ++i) {
             impl_->prev_machine_states[i] = world.machines[i].state;
+            impl_->prev_machine_approaches[i] = world.machines[i].approach;
         }
         for (std::size_t i = 0; i < world.npcs.size(); ++i) {
             impl_->prev_npc_met[i] = world.npcs[i].met;
@@ -1266,25 +1499,53 @@ void AudioEngine::SyncAndUpdate(
         PlayUiSound(world.calibration_modal.is_open ? SfxId::ModalOpen : SfxId::ModalClose, 0.80f);
         impl_->prev_modal_open = world.calibration_modal.is_open;
         impl_->prev_modal_value = world.calibration_modal.slider_value;
-    } else if (world.calibration_modal.is_open &&
-               std::abs(world.calibration_modal.slider_value - impl_->prev_modal_value) > 1e-3f) {
-        if (impl_->slider_tick_cooldown <= 0.0f) {
-            PlayUiSound(SfxId::SliderTick, 0.55f, 0.96f + 0.08f * impl_->pitch_rng.NextSigned());
-            impl_->slider_tick_cooldown = 0.048f;
+        impl_->prev_stabilizer_value = world.calibration_modal.stabilizer_value;
+    } else if (world.calibration_modal.is_open) {
+        const bool main_changed = std::abs(world.calibration_modal.slider_value - impl_->prev_modal_value) > 1e-3f;
+        const bool stab_changed = std::abs(world.calibration_modal.stabilizer_value - impl_->prev_stabilizer_value) > 1e-3f;
+        if (main_changed || stab_changed) {
+            if (impl_->slider_tick_cooldown <= 0.0f) {
+                const float base_p = stab_changed ? 1.14f : 0.96f;
+                PlayUiSound(SfxId::SliderTick, 0.55f, base_p + 0.07f * impl_->pitch_rng.NextSigned());
+                impl_->slider_tick_cooldown = 0.048f;
+            }
+            impl_->prev_modal_value = world.calibration_modal.slider_value;
+            impl_->prev_stabilizer_value = world.calibration_modal.stabilizer_value;
         }
-        impl_->prev_modal_value = world.calibration_modal.slider_value;
     }
 
-    // 4. Eventi fisici, intramezzi e meccaniche delle 6 zone
+    // 4. Eventi fisici, intramezzi, indagine scientifica e 3 soluzioni
     if (world.interlude.active && !impl_->prev_interlude_active) {
         PlaySfx(SfxId::InterludeChime, 0.74f);
     }
     impl_->prev_interlude_active = world.interlude.active;
 
-    if (world.scan_pulse_timer > impl_->prev_scan_timer + 0.1f) {
+    if (world.prism_remote_toggles > impl_->prev_prism_toggles) {
+        PlaySfx(SfxId::PrismRemoteToggle, 0.88f, 1.0f + 0.04f * impl_->pitch_rng.NextSigned());
+        impl_->prev_prism_toggles = world.prism_remote_toggles;
+        impl_->prev_scan_timer = world.scan_pulse_timer;
+    } else if (world.scan_pulse_timer > impl_->prev_scan_timer + 0.1f) {
         PlaySfx(SfxId::ScanPulse, 0.85f);
+        impl_->prev_scan_timer = world.scan_pulse_timer;
+    } else {
+        impl_->prev_scan_timer = world.scan_pulse_timer;
     }
-    impl_->prev_scan_timer = world.scan_pulse_timer;
+
+    if (world.total_trials_run > impl_->prev_total_trials) {
+        const float eff = std::clamp(world.calibration_modal.last_trial.measured_efficiency, 0.0f, 1.0f);
+        PlaySfx(SfxId::TrialPulse, 0.86f, 0.86f + 0.28f * eff);
+        impl_->prev_total_trials = world.total_trials_run;
+    }
+
+    if (world.observations_inspected_count > impl_->prev_observations_count) {
+        PlaySfx(SfxId::ObservationInspect, 0.78f, 0.96f + 0.08f * impl_->pitch_rng.NextSigned());
+        impl_->prev_observations_count = world.observations_inspected_count;
+    }
+
+    if (world.planters_seeded_count > impl_->prev_planters_seeded) {
+        PlaySfx(SfxId::BioPlanterBloom, 0.90f);
+        impl_->prev_planters_seeded = world.planters_seeded_count;
+    }
 
     const int collected = world.collectibles.CollectedCount();
     if (collected > impl_->prev_collected_count) {
@@ -1294,13 +1555,19 @@ void AudioEngine::SyncAndUpdate(
 
     for (std::size_t i = 0; i < world.machines.size(); ++i) {
         const eco::MachineState st = world.machines[i].state;
-        if (st != impl_->prev_machine_states[i]) {
-            if (st == eco::MachineState::CleanActive) {
-                PlaySfx(SfxId::CalibrateClean, 0.90f);
-            } else if (st == eco::MachineState::BypassedDirty) {
+        const eco::CalibrationApproach ap = world.machines[i].approach;
+        if (st != impl_->prev_machine_states[i] || ap != impl_->prev_machine_approaches[i]) {
+            if (ap == eco::CalibrationApproach::RiskyEfficient) {
+                PlaySfx(SfxId::CalibrateRisky, 0.90f);
+            } else if (ap == eco::CalibrationApproach::DirtyImmediate ||
+                       st == eco::MachineState::BypassedDirty) {
                 PlaySfx(SfxId::CalibrateBypass, 0.86f);
+            } else if (st == eco::MachineState::CleanActive ||
+                       ap == eco::CalibrationApproach::CleanSlow) {
+                PlaySfx(SfxId::CalibrateClean, 0.90f);
             }
             impl_->prev_machine_states[i] = st;
+            impl_->prev_machine_approaches[i] = ap;
         }
     }
 
@@ -1398,6 +1665,36 @@ void AudioEngine::SyncAndUpdate(
             for (std::size_t i = 0; i < zm.sanctuary_seals.size(); ++i) {
                 if (zm.sanctuary_seals[i].attuned && !impl_->prev_seal_attuned[i]) {
                     PlaySfx(SfxId::SanctuarySealTune, 0.86f, 0.92f + 0.06f * static_cast<float>(i));
+                    break;
+                }
+            }
+        }
+
+        if (zm.laminar_ford_open && !impl_->prev_laminar_ford_open) {
+            PlaySfx(SfxId::JadeBridgeUnlock, 0.84f, 0.92f);
+        }
+
+        // Cinguettio leggero e vivo quando la fauna e' tornata in zona guarita
+        const eco::ZoneEcoStatus eco_st = world.ActiveSceneEcoStatus();
+        if (ambient_enabled_ && ambient_volume_ > 0.02f && !pause_open && !journal_open &&
+            !world.calibration_modal.is_open && eco_st.fauna_count >= 5 &&
+            world.current_zone != eco::ZoneId::FumaroleCaldera) {
+            impl_->fauna_chirp_timer -= safe_dt;
+            if (impl_->fauna_chirp_timer <= 0.0f) {
+                const float chirp_pitch = 0.90f + 0.18f * (0.5f + 0.5f * impl_->pitch_rng.NextSigned());
+                PlaySfx(SfxId::FaunaChirp, 0.34f * ambient_volume_, chirp_pitch);
+                impl_->fauna_chirp_timer = 7.2f + 3.4f * (0.5f + 0.5f * impl_->pitch_rng.NextSigned());
+            }
+        }
+    } else if (in_gameplay && world.current_mode == eco::GameMode::Structure && !world.interlude.active) {
+        const auto& pz = world.structure.puzzle;
+        if (pz.aux_stevino_valve_open && !impl_->prev_aux_stevino_open) {
+            PlaySfx(SfxId::ValveClose, 0.82f, 1.08f);
+        }
+        if (pz.switches.size() == impl_->prev_struct_switches.size()) {
+            for (std::size_t i = 0; i < pz.switches.size(); ++i) {
+                if (pz.switches[i].active != impl_->prev_struct_switches[i]) {
+                    PlaySfx(SfxId::SluiceLeverToggle, 0.76f, pz.switches[i].active ? 1.08f : 0.92f);
                     break;
                 }
             }

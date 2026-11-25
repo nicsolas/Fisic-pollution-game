@@ -242,6 +242,144 @@ void ZoneMechanicState::ResetDefaults() {
         };
         sanctuary_seals.push_back(SanctuarySeal{i, kSealZones[static_cast<std::size_t>(i)], pos, 40.0f, false, 0.0f});
     }
+
+    // 7. Vertical Slice: Stazioni di Osservazione Diegetica, Vasche Botaniche & Passaggi Sistemici
+    scorched_crest_open = false;
+    hidden_sundial_glyphs_revealed = false;
+    solar_trial_flash_timer = 0.0f;
+    laminar_flow_active = false;
+    laminar_ford_open = false;
+
+    observation_nodes = {
+        // Terrazze dell'Alba (3 stazioni)
+        ObservationNode{
+            0, LocationId::Overworld, ZoneId::DawnTerraces, {11, 17}, ZoneTileCenter(11, 17),
+            68.0f, false, false, false,
+            "Meridiana Madre di Travertino",
+            "L'ombra dello gnomone eguaglia esattamente la sua altezza (h = L): i raggi incidono a meta' quadrante.",
+            "Ipotesi Armonica: per massimizzare cos(theta - theta_sole) orienta lo specchio a meta' arco con stabilizzatore ~0.70."
+        },
+        ObservationNode{
+            1, LocationId::Overworld, ZoneId::DawnTerraces, {7, 13}, ZoneTileCenter(7, 13),
+            68.0f, false, false, false,
+            "Condotto d'Ottone Ossidato",
+            "Le giunzioni mostrano vetrificazione sopra i 48..68 gradi quando lo smorzatore termico scende sotto 0.40.",
+            "Ipotesi Critica: un fascio concentrato a smorzatore aperto sprigiona +32 energia e apre la Cresta Arsa a Nord."
+        },
+        ObservationNode{
+            2, LocationId::Overworld, ZoneId::DawnTerraces, {17, 16}, ZoneTileCenter(17, 16),
+            68.0f, false, false, false,
+            "Vasca d'Ulivo Spenta",
+            "I rovi di pece serrano la scorciatoia sud-est quando l'aria e' carica di fumo; cedono solo alla luce pura o al Seme Vivo.",
+            "Guarire la zona o innestare il Seme d'Ulivo Bianco sblocca il sentiero fiorito e richiama le rondini."
+        },
+        // Quartiere dei Canali (3 stazioni)
+        ObservationNode{
+            3, LocationId::Overworld, ZoneId::CanalQuarter, {10, 17}, ZoneTileCenter(10, 17),
+            68.0f, false, false, false,
+            "Idrometro del Ponte",
+            "La corrente cambia spinta in base allo scarico delle Cisterne: turbolenta se sporca, rapidissima (+45%) in regime critico.",
+            "Con il Diario dell'Idraulico, azionare una leva [E] instaura il moto laminare e scopre il Guado degli Idraulici."
+        },
+        ObservationNode{
+            4, LocationId::Overworld, ZoneId::CanalQuarter, {7, 10}, ZoneTileCenter(7, 10),
+            68.0f, false, false, false,
+            "Chiusa Incrostata dell'Acquedotto",
+            "Il pozzo piezometrico cala per dieci metri verticali verso le Cisterne Ipogee prima di investire la Turbina.",
+            "Legge di Stevino (P = rho*g*h): scendi dal portale a Ovest per verificare sulle colonne la pressione nominale."
+        },
+        ObservationNode{
+            5, LocationId::Overworld, ZoneId::CanalQuarter, {14, 27}, ZoneTileCenter(14, 27),
+            68.0f, false, false, false,
+            "Conca dei Rami Secchi",
+            "Sulle sponde orientali l'acqua stagnante soffoca carpe e libellule; Clara osserva ogni variazione dal Ponte degli Archi.",
+            "Dopo aver calibrato Terrazze e Cisterne, torna da Clara per il bilancio delle scelte compiute."
+        }
+    };
+
+    bio_planters = {
+        BioPlanter{
+            0, ZoneId::DawnTerraces, {17, 18}, ZoneTileCenter(17, 18),
+            68.0f, 240.0f, false, false, 0,
+            "Conca Botanica delle Terrazze"
+        },
+        BioPlanter{
+            1, ZoneId::CanalQuarter, {5, 13}, ZoneTileCenter(5, 13),
+            68.0f, 240.0f, false, false, 2,
+            "Conca Botanica dell'Acquedotto"
+        }
+    };
+
+    auto make_rect = [](int r0, int r1, int c0, int c1) noexcept -> Rect {
+        return Rect{
+            static_cast<float>(c0) * kTileSize,
+            static_cast<float>(r0) * kTileSize,
+            static_cast<float>(c1 - c0 + 1) * kTileSize,
+            static_cast<float>(r1 - r0 + 1) * kTileSize
+        };
+    };
+
+    dynamic_passages = {
+        DynamicPassage{
+            0, PassageKind::PitchBramble, LocationId::Overworld, ZoneId::DawnTerraces,
+            make_rect(18, 19, 19, 20),
+            {{18, 19}, {18, 20}, {19, 19}, {19, 20}},
+            false,
+            "Sentiero degli Ulivi Bassi",
+            "Ostruito da rovi di pece: purifica le Terrazze o innesta il Seme d'Ulivo Bianco."
+        },
+        DynamicPassage{
+            1, PassageKind::ScorchedCrest, LocationId::Overworld, ZoneId::DawnTerraces,
+            make_rect(3, 4, 10, 11),
+            {{3, 10}, {3, 11}, {4, 10}, {4, 11}},
+            false,
+            "Scorciatoia della Cresta Arsa",
+            "Roccia spinosa: un fascio solare in Regime Critico puo' vetrificarla aprendo il varco."
+        },
+        DynamicPassage{
+            2, PassageKind::PitchBramble, LocationId::Overworld, ZoneId::CanalQuarter,
+            make_rect(3, 4, 13, 13),
+            {{3, 13}, {4, 13}, {21, 25}, {22, 25}},
+            false,
+            "Varchi Fioriti degli Argini",
+            "Intasati da melma e rovi: guarisci le Cisterne o innesta il Seme d'Ulivo Bianco."
+        },
+        DynamicPassage{
+            3, PassageKind::LaminarFord, LocationId::Overworld, ZoneId::CanalQuarter,
+            make_rect(15, 16, 7, 8),
+            {{15, 7}, {15, 8}, {16, 7}, {16, 8}},
+            false,
+            "Guado degli Idraulici",
+            "Pietre sommerse: usa una leva idraulica col Diario dell'Idraulico per prosciugarlo."
+        },
+        DynamicPassage{
+            4, PassageKind::ArtisanArchway, LocationId::Overworld, ZoneId::CanalQuarter,
+            make_rect(3, 4, 22, 22),
+            {{3, 22}, {4, 22}},
+            false,
+            "Passaggio degli Artigiani",
+            "Chiuso da Clara finche' non vede il ritorno dell'acqua pulita."
+        },
+        DynamicPassage{
+            5, PassageKind::HighSpillway, LocationId::HypogeanCisterns, ZoneId::CanalQuarter,
+            make_rect(7, 10, 28, 32),
+            {{7, 28}, {8, 28}, {9, 28}},
+            false,
+            "Sfioratore del Prisma",
+            "Paratoia di sfogo alta: si spalanca in Regime Critico o durante un colpo d'ariete."
+        },
+        DynamicPassage{
+            6, PassageKind::ArchivistNiche, LocationId::HypogeanCisterns, ZoneId::CanalQuarter,
+            make_rect(17, 17, 32, 32),
+            {{17, 32}},
+            false,
+            "Nicchia Sigillata d'Archivio",
+            "Custodita da Lorenzo Altieri per chi risana la Turbina senza pece ne' sovraccarico."
+        }
+    };
+
+    ambient_critters.fill(AmbientCritter{});
+    active_critter_count = 0;
 }
 
 void ZoneMechanicState::RecomputeSolarBeams(const Tilemap& dawn_map) noexcept {
@@ -1088,10 +1226,27 @@ void WorldContext::Reset() {
     sim_time = 0.0f;
     scan_pulse_timer = 0.0f;
     scan_pulse_origin = {0.0f, 0.0f};
+    guidance_mode = GuidanceAssistMode::Empirical;
+    empirical_compass_timer = 0.0f;
+    slice_inquiry_stage = {InquiryStage::Observe, InquiryStage::Observe, InquiryStage::Observe};
+    total_trials_run = 0;
+    observations_inspected_count = 0;
+    planters_seeded_count = 0;
+    prism_remote_toggles = 0;
+    vertical_slice_synthesis_done = false;
+    trial_pulse_timer = 0.0f;
+    trial_pulse_origin = {0.0f, 0.0f};
+    last_trial_machine = MachineType::SolarArray;
+    prism_pulse_timer = 0.0f;
+    prism_pulse_from = {0.0f, 0.0f};
+    prism_pulse_to = {0.0f, 0.0f};
+    planter_bloom_timer = 0.0f;
+    planter_bloom_pos = {0.0f, 0.0f};
     simulation_completed = false;
     current_mode = GameMode::Overworld;
     active_structure = StructureId::HypogeanCisterns;
     returning_from_structure = false;
+    RefreshSystemicWorldState();
 }
 
 void WorldContext::EnsureInitialized() {
@@ -1540,6 +1695,7 @@ void WorldContext::EnterStructure(StructureId id) {
     // Libera la tilemap overworld mentre siamo dentro la struttura (1 sola mappa in RAM)
     overworld.UnloadZoneMemory();
     structure.OnEnter(id, players, ecosystem.architect_recruited);
+    RefreshSystemicWorldState();
     TriggerStructureBanner(id);
     UpdateProximityPrompts();
     story.Observe(BuildStorySnapshot());
@@ -1555,6 +1711,7 @@ void WorldContext::ExitToOverworld() {
     structure.UnloadMemory();
     overworld.OnEnter(players, true, ecosystem.architect_recruited, from_id);
     current_zone = overworld.active_zone;
+    RefreshSystemicWorldState();
     if (current_zone == ZoneId::DawnTerraces) {
         zone_mechanics.RecomputeSolarBeams(overworld.tilemap);
     }
@@ -1579,6 +1736,7 @@ void WorldContext::TeleportToZone(ZoneId zone) {
     }
     overworld.camera_target = players.AverageActivePosition();
     current_zone = zone;
+    RefreshSystemicWorldState();
     if (current_zone == ZoneId::DawnTerraces) {
         zone_mechanics.RecomputeSolarBeams(overworld.tilemap);
     }
@@ -1635,6 +1793,7 @@ void WorldContext::CommitZoneSwap() {
     }
     overworld.camera_target = players.AverageActivePosition();
     current_zone = interlude.to_zone;
+    RefreshSystemicWorldState();
     if (current_zone == ZoneId::DawnTerraces) {
         zone_mechanics.RecomputeSolarBeams(overworld.tilemap);
     }
@@ -1661,8 +1820,10 @@ StorySnapshot WorldContext::BuildStorySnapshot() const noexcept {
     snap.location = ActiveLocation();
     snap.zone = current_zone;
     snap.has_scanned = last_scan.active && last_scan.has_target;
-    snap.solar = GetMachine(MachineType::SolarArray).state;
-    snap.hydro = GetMachine(MachineType::HydroTurbine).state;
+    const Machine& solar = GetMachine(MachineType::SolarArray);
+    const Machine& hydro = GetMachine(MachineType::HydroTurbine);
+    snap.solar = solar.state;
+    snap.hydro = hydro.state;
     snap.pendulum = GetMachine(MachineType::PendulumRegulator).state;
     snap.harmonic = GetMachine(MachineType::HarmonicResonator).state;
     snap.thermal = GetMachine(MachineType::ThermalExchanger).state;
@@ -1676,7 +1837,703 @@ StorySnapshot WorldContext::BuildStorySnapshot() const noexcept {
     snap.total_relics = collectibles.TotalCount();
     snap.pollution_level = ecosystem.pollution_level;
     snap.simulation_completed = simulation_completed;
+
+    snap.solar_approach = solar.approach;
+    snap.hydro_approach = hydro.approach;
+    snap.inquiry_stage = CurrentAreaInquiryStage();
+    snap.observations_inspected = observations_inspected_count;
+    snap.trials_completed = total_trials_run;
+    snap.white_olive_planted = (planters_seeded_count > 0);
+    snap.laminar_ford_open = zone_mechanics.laminar_ford_open;
+    snap.slice_completed = vertical_slice_synthesis_done ||
+                           (solar.state != MachineState::Broken &&
+                            hydro.state != MachineState::Broken &&
+                            snap.clara_recruited);
+    snap.has_brass_gnomon = collectibles.IsCollected(CollectibleId::Dawn_BrassGnomon);
+    snap.has_first_measure_stele = collectibles.IsCollected(CollectibleId::Dawn_FirstMeasureStele);
+    snap.has_white_olive_seed = collectibles.IsCollected(CollectibleId::Dawn_WhiteOliveSeed);
+    snap.has_hydraulic_diary = collectibles.IsCollected(CollectibleId::Waters_HydraulicDiary);
+    snap.has_sluice_stele = collectibles.IsCollected(CollectibleId::Waters_SluiceStele);
+    snap.has_farewell_prism = collectibles.IsCollected(CollectibleId::Harmony_FarewellPrism);
     return snap;
+}
+
+InquiryStage WorldContext::CurrentAreaInquiryStage() const noexcept {
+    if (current_mode == GameMode::Structure && active_structure == StructureId::HypogeanCisterns) {
+        return slice_inquiry_stage[2];
+    }
+    if (current_mode == GameMode::Overworld && current_zone == ZoneId::CanalQuarter) {
+        return slice_inquiry_stage[1];
+    }
+    return slice_inquiry_stage[0];
+}
+
+void WorldContext::AdvanceInquiryStageForArea(
+    LocationId loc,
+    ZoneId zone,
+    InquiryStage min_stage) noexcept {
+    std::size_t idx = 0;
+    if (loc == LocationId::HypogeanCisterns) {
+        idx = 2;
+    } else if (loc == LocationId::Overworld && zone == ZoneId::CanalQuarter) {
+        idx = 1;
+    }
+    if (static_cast<int>(min_stage) > static_cast<int>(slice_inquiry_stage[idx])) {
+        slice_inquiry_stage[idx] = min_stage;
+    }
+}
+
+GuidanceDisplayState WorldContext::ComputeGuidanceDisplay() const noexcept {
+    GuidanceDisplayState out{};
+    if (guidance_mode == GuidanceAssistMode::MinimalOff) {
+        out.field_note = "Guida spenta: orientati con ombre solari, condotti d'ottone, correnti e tacche.";
+        return out;
+    }
+    if (guidance_mode == GuidanceAssistMode::AlwaysOn) {
+        out.show_compass = true;
+        out.show_distance_meters = true;
+        out.show_edge_arrow = true;
+        out.show_world_beacon = true;
+        out.is_scan_pulse_reveal = false;
+        out.field_note = "Guida esplorazione: Sempre Attiva.";
+        return out;
+    }
+
+    // Modalita' Empirical (default): riduce la guida automatica iniziale
+    const bool has_gnomon = collectibles.IsCollected(CollectibleId::Dawn_BrassGnomon);
+    const bool solar_done = GetMachine(MachineType::SolarArray).state != MachineState::Broken;
+    const bool hydro_done = GetMachine(MachineType::HydroTurbine).state != MachineState::Broken;
+    const bool steady_unlocked =
+        vertical_slice_synthesis_done ||
+        (solar_done && hydro_done && ecosystem.architect_recruited);
+
+    if (steady_unlocked) {
+        out.show_compass = true;
+        out.show_distance_meters =
+            (static_cast<int>(ecosystem.ui_phase) >= static_cast<int>(UiPhase::Phase2_Telemetry));
+        out.show_edge_arrow = true;
+        out.show_world_beacon = true;
+        out.is_scan_pulse_reveal = false;
+        out.field_note = "Rilievo Geodetico Stabile: bussola armonica sbloccata.";
+        return out;
+    }
+
+    if ((has_gnomon || solar_done) && empirical_compass_timer > 0.0f) {
+        out.show_compass = true;
+        out.show_distance_meters = has_gnomon;
+        out.show_edge_arrow = true;
+        out.show_world_beacon = true;
+        out.is_scan_pulse_reveal = true;
+        out.field_note = "Rilievo Empirico [Q] attivo: bussola gnomonica temporanea.";
+        return out;
+    }
+
+    out.show_compass = false;
+    out.show_distance_meters = false;
+    out.show_edge_arrow = false;
+    out.show_world_beacon = false;
+    out.is_scan_pulse_reveal = false;
+    if (!has_gnomon && !solar_done) {
+        out.field_note =
+            "Sguardo Empirico: segui le ombre sulla Meridiana e i condotti d'ottone nel travertino.";
+    } else {
+        out.field_note =
+            "Premi [Q] Lente per proiettare per 7s il Rilievo Empirico dallo Gnomone d'Ottone.";
+    }
+    return out;
+}
+
+ZoneEcoStatus WorldContext::ComputeZoneEcoStatus(ZoneId zone) const noexcept {
+    ZoneEcoStatus st{};
+    const Machine& solar = GetMachine(MachineType::SolarArray);
+    const Machine& hydro = GetMachine(MachineType::HydroTurbine);
+
+    CalibrationApproach local_approach = CalibrationApproach::None;
+    if (zone == ZoneId::DawnTerraces) {
+        local_approach = solar.approach;
+        if (local_approach == CalibrationApproach::None && solar.state == MachineState::CleanActive) {
+            local_approach = CalibrationApproach::CleanSlow;
+        } else if (local_approach == CalibrationApproach::None && solar.state == MachineState::BypassedDirty) {
+            local_approach = CalibrationApproach::DirtyImmediate;
+        }
+    } else if (zone == ZoneId::CanalQuarter) {
+        local_approach = (hydro.approach != CalibrationApproach::None) ? hydro.approach : solar.approach;
+        if (local_approach == CalibrationApproach::None && hydro.state == MachineState::CleanActive) {
+            local_approach = CalibrationApproach::CleanSlow;
+        } else if (local_approach == CalibrationApproach::None && hydro.state == MachineState::BypassedDirty) {
+            local_approach = CalibrationApproach::DirtyImmediate;
+        }
+    }
+
+    bool local_planter = false;
+    for (const auto& bp : zone_mechanics.bio_planters) {
+        if (bp.zone == zone && bp.planted) {
+            local_planter = true;
+            break;
+        }
+    }
+
+    float eff_poll = ecosystem.pollution_level;
+    if (local_approach == CalibrationApproach::CleanSlow) {
+        eff_poll -= 14.0f;
+    } else if (local_approach == CalibrationApproach::DirtyImmediate) {
+        eff_poll += 22.0f;
+    } else if (local_approach == CalibrationApproach::RiskyEfficient) {
+        eff_poll += 4.0f;
+    }
+    if (local_planter) {
+        eff_poll -= 10.0f;
+    }
+    eff_poll = Clamp(eff_poll, 0.0f, 100.0f);
+
+    if (local_approach == CalibrationApproach::DirtyImmediate || eff_poll >= 55.0f) {
+        st.band = EcoHealthBand::Critical;
+    } else if (local_approach == CalibrationApproach::CleanSlow && eff_poll <= 26.0f) {
+        st.band = EcoHealthBand::Flourishing;
+    } else if (local_planter && eff_poll <= 30.0f) {
+        st.band = EcoHealthBand::Flourishing;
+    } else if (eff_poll <= 28.0f || local_approach == CalibrationApproach::CleanSlow) {
+        st.band = EcoHealthBand::Recovering;
+    } else {
+        st.band = EcoHealthBand::Polluted;
+    }
+
+    st.local_vitality = Clamp(1.0f - (eff_poll / 85.0f), 0.0f, 1.0f);
+    if (st.band == EcoHealthBand::Flourishing) {
+        st.local_vitality = std::max(st.local_vitality, 0.90f);
+        st.flora_bloom = 1.0f;
+        st.fauna_count = collectibles.IsCollected(CollectibleId::Harmony_AwakeningSeed) ? 12 : 10;
+    } else if (st.band == EcoHealthBand::Recovering) {
+        st.flora_bloom = 0.68f;
+        st.fauna_count = 6;
+    } else if (st.band == EcoHealthBand::Polluted) {
+        st.flora_bloom = 0.30f;
+        st.fauna_count = 2;
+    } else {
+        st.local_vitality = 0.05f;
+        st.flora_bloom = collectibles.IsCollected(CollectibleId::Pitch_CharredSeed) ? 0.15f : 0.0f;
+        st.fauna_count = 0;
+    }
+
+    st.brambles_cleared =
+        (local_approach == CalibrationApproach::CleanSlow || local_planter) &&
+        (local_approach != CalibrationApproach::DirtyImmediate);
+    st.risky_shortcut_open = (zone == ZoneId::DawnTerraces)
+                                 ? (solar.approach == CalibrationApproach::RiskyEfficient)
+                                 : (hydro.approach == CalibrationApproach::RiskyEfficient);
+    st.laminar_ford_open = zone_mechanics.laminar_ford_open;
+
+    if (zone_mechanics.laminar_flow_active) {
+        st.current_speed_mult = 0.35f;
+        st.current_turbulence = 0.08f;
+    } else if (hydro.approach == CalibrationApproach::RiskyEfficient) {
+        st.current_speed_mult = 1.45f;
+        st.current_turbulence = 0.78f;
+    } else if (hydro.approach == CalibrationApproach::CleanSlow || st.band == EcoHealthBand::Flourishing) {
+        st.current_speed_mult = 0.62f;
+        st.current_turbulence = 0.12f;
+    } else if (st.band == EcoHealthBand::Critical) {
+        st.current_speed_mult = 1.22f;
+        st.current_turbulence = 0.92f;
+    } else {
+        st.current_speed_mult = 1.0f;
+        st.current_turbulence = 0.38f;
+    }
+
+    st.healed_speed_bonus = (st.band == EcoHealthBand::Flourishing || local_planter) ? 0.12f : 0.0f;
+    return st;
+}
+
+ZoneEcoStatus WorldContext::ActiveSceneEcoStatus() const noexcept {
+    if (current_mode == GameMode::Structure) {
+        return ComputeZoneEcoStatus(OverworldSim::PortalZone(active_structure));
+    }
+    return ComputeZoneEcoStatus(current_zone);
+}
+
+VerticalSliceSummary WorldContext::ComputeVerticalSliceSummary() const noexcept {
+    VerticalSliceSummary s{};
+    const Machine& solar = GetMachine(MachineType::SolarArray);
+    const Machine& hydro = GetMachine(MachineType::HydroTurbine);
+    const WorldNpc& clara = GetNpc(NpcId::ClaraSereni);
+    const WorldNpc& lorenzo = GetNpc(NpcId::LorenzoAltieri);
+
+    s.terraces_resolved = (solar.state != MachineState::Broken);
+    s.canals_explored =
+        (current_zone == ZoneId::CanalQuarter) || clara.met ||
+        story.EventFired(StoryEvent::EnteredCanalQuarter);
+    s.cisterns_resolved = (hydro.state != MachineState::Broken);
+    s.clara_confronted = clara.met || clara.recruited || ecosystem.architect_recruited;
+    s.lorenzo_confronted = lorenzo.met || lorenzo.recruited;
+    s.slice_complete =
+        vertical_slice_synthesis_done ||
+        (s.terraces_resolved && s.cisterns_resolved && s.clara_confronted);
+
+    s.solar_approach = solar.approach;
+    s.hydro_approach = hydro.approach;
+    int max_st = 0;
+    for (InquiryStage st : slice_inquiry_stage) {
+        max_st = std::max(max_st, static_cast<int>(st));
+    }
+    s.highest_inquiry_stage = static_cast<InquiryStage>(max_st);
+    s.observations_count = observations_inspected_count;
+    s.trials_run_total = total_trials_run;
+
+    static constexpr std::array<CollectibleId, 6> kSliceRelics{{
+        CollectibleId::Dawn_BrassGnomon,
+        CollectibleId::Dawn_FirstMeasureStele,
+        CollectibleId::Dawn_WhiteOliveSeed,
+        CollectibleId::Waters_HydraulicDiary,
+        CollectibleId::Waters_SluiceStele,
+        CollectibleId::Harmony_FarewellPrism
+    }};
+    int r_count = 0;
+    for (CollectibleId id : kSliceRelics) {
+        if (collectibles.IsCollected(id)) {
+            ++r_count;
+        }
+    }
+    s.slice_relics_collected = r_count;
+    s.planters_seeded = planters_seeded_count;
+    s.laminar_ford_unlocked = zone_mechanics.laminar_ford_open;
+    s.scorched_shortcut_open = zone_mechanics.scorched_crest_open;
+    s.high_spillway_open =
+        structure.saved_puzzles[static_cast<std::size_t>(StructureId::HypogeanCisterns)].high_spillway_open ||
+        (current_mode == GameMode::Structure &&
+         active_structure == StructureId::HypogeanCisterns &&
+         structure.puzzle.high_spillway_open);
+
+    const ZoneEcoStatus canal_eco = ComputeZoneEcoStatus(ZoneId::CanalQuarter);
+    s.eco_band = canal_eco.band;
+    s.vitality_score = canal_eco.local_vitality;
+
+    if (s.solar_approach == CalibrationApproach::CleanSlow &&
+        s.hydro_approach == CalibrationApproach::CleanSlow) {
+        s.synthesis_headline =
+            "Armonia di Meridia: Terrazze e Cisterne rifioriscono, rondini e carpe popolano le acque.";
+    } else if (s.solar_approach == CalibrationApproach::RiskyEfficient ||
+               s.hydro_approach == CalibrationApproach::RiskyEfficient) {
+        s.synthesis_headline =
+            "Ingegno Supercritico: potenza al massimo, Cresta Arsa e Sfioratore aperti sotto alta tensione.";
+    } else if (s.solar_approach == CalibrationApproach::DirtyImmediate ||
+               s.hydro_approach == CalibrationApproach::DirtyImmediate) {
+        s.synthesis_headline =
+            "Inverno di Pece: energia immediata ma i rovi serrano i sentieri bassi e la fauna tace.";
+    } else {
+        s.synthesis_headline =
+            "Indagine in corso tra Terrazze dell'Alba, Quartiere dei Canali e Cisterne Ipogee.";
+    }
+    return s;
+}
+
+RemotePrismTarget WorldContext::FindRemotePrismTarget(Vec2 origin, float max_range) const noexcept {
+    RemotePrismTarget out{};
+    if (!collectibles.IsCollected(CollectibleId::Harmony_FarewellPrism)) {
+        return out;
+    }
+    const float limit = (std::isfinite(max_range) && max_range > 0.0f)
+                            ? max_range
+                            : kFarewellPrismRemoteRange;
+    float best_dist = limit;
+
+    if (current_mode == GameMode::Overworld) {
+        if (current_zone == ZoneId::DawnTerraces) {
+            for (const auto& m : zone_mechanics.solar_mirrors) {
+                if (!m.rotatable) {
+                    continue;
+                }
+                const float d = origin.DistanceTo(m.pos);
+                if (d <= best_dist) {
+                    best_dist = d;
+                    out.valid = true;
+                    out.kind = RemoteTargetKind::SolarMirror;
+                    out.target_id = m.id;
+                    out.world_pos = m.pos;
+                    out.distance = d;
+                    out.label = "[Q] Prisma: Ruota Specchio Solare";
+                }
+            }
+        } else if (current_zone == ZoneId::CanalQuarter) {
+            for (const auto& lv : zone_mechanics.sluice_levers) {
+                const float d = origin.DistanceTo(lv.pos);
+                if (d <= best_dist) {
+                    best_dist = d;
+                    out.valid = true;
+                    out.kind = RemoteTargetKind::SluiceLever;
+                    out.target_id = lv.id;
+                    out.world_pos = lv.pos;
+                    out.distance = d;
+                    out.label = "[Q] Prisma: Commuta Chiusa Idraulica";
+                }
+            }
+        }
+    } else if (current_mode == GameMode::Structure) {
+        for (const auto& sw : structure.puzzle.switches) {
+            const float d = origin.DistanceTo(sw.pos);
+            if (d <= best_dist) {
+                best_dist = d;
+                out.valid = true;
+                out.kind = RemoteTargetKind::StructureSwitch;
+                out.target_id = sw.id;
+                out.world_pos = sw.pos;
+                out.distance = d;
+                out.label = "[Q] Prisma: Risonanza Interruttore Remoto";
+            }
+        }
+    }
+    return out;
+}
+
+std::vector<SolarBeamSegment> WorldContext::PredictGnomonBeams() const {
+    return zone_mechanics.solar_beams;
+}
+
+void WorldContext::OpenCalibrationModalFor(MachineType type) noexcept {
+    modal_machine_type = type;
+    Machine& m = GetMachine(type);
+    if (m.state == MachineState::CleanActive && m.approach == CalibrationApproach::None) {
+        m.approach = CalibrationApproach::CleanSlow;
+    } else if (m.state == MachineState::BypassedDirty && m.approach == CalibrationApproach::None) {
+        m.approach = CalibrationApproach::DirtyImmediate;
+    }
+    AdvanceInquiryStageForArea(m.location, m.zone, InquiryStage::Hypothesize);
+    calibration_modal.OpenFor(
+        m,
+        collectibles.IsCollected(CollectibleId::Dawn_FirstMeasureStele),
+        collectibles.IsCollected(CollectibleId::Waters_SluiceStele),
+        collectibles.IsCollected(CollectibleId::Dawn_WhiteOliveSeed),
+        CurrentAreaInquiryStage());
+}
+
+TrialExperimentReport WorldContext::ExecuteModalTrial() noexcept {
+    if (!calibration_modal.is_open) {
+        return {};
+    }
+    Machine& m = ModalTargetMachine();
+    const float poll_before = ecosystem.pollution_level;
+    TrialExperimentReport rep = calibration_modal.RunTrial(m, ecosystem);
+    if (!rep.executed) {
+        return rep;
+    }
+    // Reliquie che riducono lo stress di prova (Stele delle Braci / Verbale dello Scisma)
+    if (rep.pollution_delta_applied > 0.0f) {
+        float refund = 0.0f;
+        if (collectibles.IsCollected(CollectibleId::Pitch_EmberStele)) {
+            refund += 1.0f;
+        }
+        if (collectibles.IsCollected(CollectibleId::Pitch_SchismMinutes)) {
+            refund += 0.35f;
+        }
+        if (refund > 0.0f) {
+            const float actual_refund = std::min(rep.pollution_delta_applied, refund);
+            ecosystem.pollution_level = Clamp(poll_before + (rep.pollution_delta_applied - actual_refund), kMinEcoValue, kMaxEcoValue);
+            rep.pollution_delta_applied -= actual_refund;
+            calibration_modal.last_trial = rep;
+        }
+    }
+
+    ++total_trials_run;
+    trial_pulse_timer = 1.15f;
+    trial_pulse_origin = m.pos;
+    last_trial_machine = m.type;
+    AdvanceInquiryStageForArea(m.location, m.zone, InquiryStage::ConsequenceSeen);
+
+    // Conseguenze fisiche tangibili nella scena
+    if (m.type == MachineType::SolarArray) {
+        zone_mechanics.hidden_sundial_glyphs_revealed = true;
+        zone_mechanics.solar_trial_flash_timer = 2.4f;
+        story.Notify(StoryEvent::SolarTrialRun, BuildStorySnapshot());
+    } else if (m.type == MachineType::HydroTurbine) {
+        structure.puzzle.trial_water_hammer_timer = 4.5f;
+        structure.saved_puzzles[static_cast<std::size_t>(StructureId::HypogeanCisterns)].trial_water_hammer_timer = 4.5f;
+        if (current_mode == GameMode::Structure && active_structure == StructureId::HypogeanCisterns) {
+            structure.puzzle.ApplyGatesToTilemap(structure.tilemap);
+        }
+        story.Notify(StoryEvent::HydroTrialRun, BuildStorySnapshot());
+    }
+    RefreshSystemicWorldState();
+    story.Observe(BuildStorySnapshot());
+    return rep;
+}
+
+bool WorldContext::ExecuteModalConfirmClean() noexcept {
+    if (!calibration_modal.is_open) {
+        return false;
+    }
+    Machine& m = ModalTargetMachine();
+    if (!calibration_modal.ConfirmClean(m, ecosystem)) {
+        return false;
+    }
+    if (m.type == MachineType::CentralAstrolabe) {
+        simulation_completed = true;
+    }
+    AdvanceInquiryStageForArea(m.location, m.zone, InquiryStage::Resolved);
+    if (AllFiveMonumentsActivated()) {
+        GetMachine(MachineType::CentralAstrolabe).unlocked = true;
+    }
+    RefreshSystemicWorldState();
+    UpdateProximityPrompts();
+    story.Observe(BuildStorySnapshot());
+    return true;
+}
+
+bool WorldContext::ExecuteModalConfirmRisky() noexcept {
+    if (!calibration_modal.is_open) {
+        return false;
+    }
+    Machine& m = ModalTargetMachine();
+    if (!calibration_modal.ConfirmRisky(m, ecosystem)) {
+        return false;
+    }
+    AdvanceInquiryStageForArea(m.location, m.zone, InquiryStage::Resolved);
+    if (AllFiveMonumentsActivated()) {
+        GetMachine(MachineType::CentralAstrolabe).unlocked = true;
+    }
+    RefreshSystemicWorldState();
+    UpdateProximityPrompts();
+    story.Observe(BuildStorySnapshot());
+    return true;
+}
+
+bool WorldContext::ExecuteModalBypass() noexcept {
+    if (!calibration_modal.is_open) {
+        return false;
+    }
+    Machine& m = ModalTargetMachine();
+    if (!m.allow_bypass) {
+        return false;
+    }
+    calibration_modal.TriggerBypass(m, ecosystem);
+    AdvanceInquiryStageForArea(m.location, m.zone, InquiryStage::Resolved);
+    if (AllFiveMonumentsActivated()) {
+        GetMachine(MachineType::CentralAstrolabe).unlocked = true;
+    }
+    RefreshSystemicWorldState();
+    UpdateProximityPrompts();
+    story.Observe(BuildStorySnapshot());
+    return true;
+}
+
+void WorldContext::RefreshSystemicWorldState() noexcept {
+    // Sincronizza approach se un test ha impostato direttamente machine.state
+    for (auto& m : machines) {
+        if (m.state == MachineState::Broken) {
+            m.approach = CalibrationApproach::None;
+        } else if (m.state == MachineState::CleanActive &&
+                   (m.approach == CalibrationApproach::None ||
+                    m.approach == CalibrationApproach::DirtyImmediate)) {
+            m.approach = CalibrationApproach::CleanSlow;
+        } else if (m.state == MachineState::BypassedDirty) {
+            m.approach = CalibrationApproach::DirtyImmediate;
+        }
+    }
+
+    const Machine& solar = GetMachine(MachineType::SolarArray);
+    const Machine& hydro = GetMachine(MachineType::HydroTurbine);
+    const bool has_diary = collectibles.IsCollected(CollectibleId::Waters_HydraulicDiary);
+    const bool has_sluice_stele = collectibles.IsCollected(CollectibleId::Waters_SluiceStele);
+
+    bool any_sluice_pulled = false;
+    for (const auto& lv : zone_mechanics.sluice_levers) {
+        if (lv.pulled) {
+            any_sluice_pulled = true;
+            break;
+        }
+    }
+
+    zone_mechanics.laminar_flow_active =
+        has_diary && (any_sluice_pulled || zone_mechanics.laminar_ford_open);
+    if (has_diary && any_sluice_pulled) {
+        zone_mechanics.laminar_ford_open = true;
+    }
+    zone_mechanics.scorched_crest_open = (solar.approach == CalibrationApproach::RiskyEfficient);
+
+    // Aggiorna Clara Sereni e Lorenzo Altieri (umore, posizione sicura, scorciatoie)
+    WorldNpc& clara = GetNpc(NpcId::ClaraSereni);
+    const ZoneEcoStatus canal_eco = ComputeZoneEcoStatus(ZoneId::CanalQuarter);
+    if (solar.approach == CalibrationApproach::DirtyImmediate ||
+        hydro.approach == CalibrationApproach::DirtyImmediate ||
+        canal_eco.band == EcoHealthBand::Critical) {
+        clara.mood = NpcMood::ShelteredPolluted;
+        clara.pos = ZoneTileCenter(14, 24);
+        clara.shortcut_unlocked = false;
+        clara.status_note = "Riparata sotto l'arco dal fumo acre di pece.";
+    } else if (solar.approach == CalibrationApproach::RiskyEfficient ||
+               hydro.approach == CalibrationApproach::RiskyEfficient) {
+        clara.mood = NpcMood::TenseOverdrive;
+        clara.pos = ZoneTileCenter(11, 27);
+        clara.shortcut_unlocked = false;
+        clara.status_note = "In allerta sui manometri: flusso ad alta pressione nei canali!";
+    } else if (solar.approach == CalibrationApproach::CleanSlow ||
+               hydro.approach == CalibrationApproach::CleanSlow ||
+               canal_eco.band == EcoHealthBand::Flourishing) {
+        clara.mood = NpcMood::FlourishingTrust;
+        clara.pos = ZoneTileCenter(12, 30);
+        clara.shortcut_unlocked = true;
+        clara.status_note = "Sul parapetto fiorito: Passaggio degli Artigiani aperto.";
+    } else {
+        clara.mood = NpcMood::NeutralObserving;
+        clara.pos = clara.home_pos;
+        clara.shortcut_unlocked = false;
+        clara.status_note = "Sorveglia i morsetti idraulici del Ponte degli Archi.";
+    }
+
+    WorldNpc& lorenzo = GetNpc(NpcId::LorenzoAltieri);
+    if (hydro.approach == CalibrationApproach::DirtyImmediate ||
+        (hydro.state != MachineState::Broken && ecosystem.pollution_level >= 55.0f)) {
+        lorenzo.mood = NpcMood::ShelteredPolluted;
+        lorenzo.pos = ZoneTileCenter(16, 35);
+        lorenzo.shortcut_unlocked = false;
+        lorenzo.status_note = "Ritirato sul ballatoio alto per proteggere i cilindri dai fumi.";
+    } else if (hydro.approach == CalibrationApproach::RiskyEfficient) {
+        lorenzo.mood = NpcMood::TenseOverdrive;
+        lorenzo.pos = ZoneTileCenter(16, 34);
+        lorenzo.shortcut_unlocked = false;
+        lorenzo.status_note = "Sorveglia le tubazioni vibranti e lo Sfioratore del Prisma aperto!";
+    } else if (hydro.approach == CalibrationApproach::CleanSlow) {
+        lorenzo.mood = NpcMood::FlourishingTrust;
+        lorenzo.pos = ZoneTileCenter(17, 31);
+        lorenzo.shortcut_unlocked = true;
+        lorenzo.status_note = "Accanto alla vasca limpida: Nicchia d'Archivio aperta.";
+    } else {
+        lorenzo.mood = NpcMood::NeutralObserving;
+        lorenzo.pos = lorenzo.home_pos;
+        lorenzo.shortcut_unlocked = false;
+        lorenzo.status_note = "Annota il livello piezometrico delle Cisterne Ipogee.";
+    }
+
+    // Sincronizza Cisterne Ipogee (puzzle live e salvato)
+    const bool spillway = (hydro.approach == CalibrationApproach::RiskyEfficient);
+    const bool niche = (hydro.approach == CalibrationApproach::CleanSlow);
+    StructurePuzzleState& saved_cist =
+        structure.saved_puzzles[static_cast<std::size_t>(StructureId::HypogeanCisterns)];
+    saved_cist.aux_stevino_valve_unlocked = has_sluice_stele;
+    saved_cist.high_spillway_open = spillway;
+    saved_cist.archivist_niche_open = niche;
+    if (current_mode == GameMode::Structure && active_structure == StructureId::HypogeanCisterns) {
+        structure.puzzle.aux_stevino_valve_unlocked = has_sluice_stele;
+        structure.puzzle.high_spillway_open = spillway;
+        structure.puzzle.archivist_niche_open = niche;
+        structure.puzzle.EvaluateGates(structure.tilemap);
+        saved_cist = structure.puzzle;
+    }
+
+    // Aggiorna DynamicPassages e applicali alla tilemap Overworld attiva
+    const ZoneEcoStatus dawn_eco = ComputeZoneEcoStatus(ZoneId::DawnTerraces);
+    for (auto& dp : zone_mechanics.dynamic_passages) {
+        switch (dp.kind) {
+            case PassageKind::PitchBramble:
+                dp.open = (dp.zone == ZoneId::DawnTerraces)
+                              ? dawn_eco.brambles_cleared
+                              : canal_eco.brambles_cleared;
+                dp.state_hint = dp.open
+                    ? "Sentiero rigenerato: ulivi bianchi in fiore (+12% passo)."
+                    : "Serrato dai rovi di pece: purifica la zona o innesta il Seme d'Ulivo Bianco.";
+                break;
+            case PassageKind::ScorchedCrest:
+                dp.open = zone_mechanics.scorched_crest_open;
+                dp.state_hint = dp.open
+                    ? "Varco vetrificato dal fascio solare supercritico: scorciatoia aperta!"
+                    : "Barriera rocciosa: richiede il Regime Critico sull'Eliostato Solare.";
+                break;
+            case PassageKind::LaminarFord:
+                dp.open = zone_mechanics.laminar_ford_open;
+                dp.state_hint = dp.open
+                    ? "Guado degli Idraulici emerso: collegamento rapido tra Cisterne e Terrazze!"
+                    : "Pietre sommerse: usa una chiusa [E] possedendo il Diario dell'Idraulico.";
+                break;
+            case PassageKind::ArtisanArchway:
+                dp.open = clara.shortcut_unlocked;
+                dp.state_hint = dp.open
+                    ? "Passaggio degli Artigiani aperto da Clara Sereni."
+                    : "Arco chiuso: guadagna la fiducia armonica di Clara.";
+                break;
+            case PassageKind::HighSpillway:
+                dp.open = spillway || (structure.puzzle.trial_water_hammer_timer > 0.0f);
+                dp.state_hint = dp.open
+                    ? "Sfioratore del Prisma spalancato dalla pressione supercritica!"
+                    : "Paratoia alta chiusa: richiede Regime Critico o impulso ad alta pressione.";
+                break;
+            case PassageKind::ArchivistNiche:
+                dp.open = niche;
+                dp.state_hint = dp.open
+                    ? "Nicchia d'Archivio sbloccata da Lorenzo."
+                    : "Nicchia sigillata: richiede calibrazione pulita della Turbina.";
+                break;
+        }
+
+        if (current_mode == GameMode::Overworld &&
+            dp.location == LocationId::Overworld &&
+            dp.zone == current_zone &&
+            !overworld.tilemap.Empty()) {
+            TileId tid = TileId::RuinsWall;
+            if (dp.open) {
+                tid = (dp.kind == PassageKind::ScorchedCrest || dp.kind == PassageKind::LaminarFord)
+                          ? TileId::PavedPath
+                          : TileId::GardenFloor;
+            } else if (dp.kind == PassageKind::LaminarFord) {
+                tid = TileId::Water;
+            }
+            for (const TileCoord& tc : dp.tiles) {
+                (void)overworld.tilemap.SetTile(tc.row, tc.col, tid);
+            }
+        }
+    }
+
+    // Configura lo sciame deterministico zero-heap di Fauna Ambientale (AmbientCritter)
+    const ZoneEcoStatus active_eco = ActiveSceneEcoStatus();
+    const int desired_critters =
+        std::clamp(active_eco.fauna_count, 0, static_cast<int>(kMaxAmbientCritters));
+    zone_mechanics.active_critter_count = desired_critters;
+    for (std::size_t i = 0; i < kMaxAmbientCritters; ++i) {
+        AmbientCritter& cr = zone_mechanics.ambient_critters[i];
+        if (static_cast<int>(i) >= desired_critters) {
+            cr.active = false;
+            continue;
+        }
+        cr.active = true;
+        const float fi = static_cast<float>(i);
+        cr.phase = fi * 1.15f;
+        cr.speed = 1.25f + 0.12f * static_cast<float>(i % 4);
+        if (current_mode == GameMode::Structure) {
+            cr.kind = (i % 2 == 0) ? CritterKind::GlowNewt : CritterKind::CaveFirefly;
+            cr.anchor = ZoneTileCenter(11 + static_cast<int>(i % 6), 12 + static_cast<int>((i * 3) % 22));
+            cr.orbit_radius = 28.0f + 6.0f * static_cast<float>(i % 3);
+        } else if (current_zone == ZoneId::CanalQuarter) {
+            cr.kind = (i % 2 == 0) ? CritterKind::SilverCarp : CritterKind::Dragonfly;
+            const int row = (i % 2 == 0) ? 12 : (10 + static_cast<int>(i % 9));
+            const int col = 6 + static_cast<int>((i * 2) % 22);
+            cr.anchor = ZoneTileCenter(row, col);
+            cr.orbit_radius = 32.0f + 5.0f * static_cast<float>(i % 4);
+        } else {
+            cr.kind = CritterKind::Swallow;
+            cr.anchor = ZoneTileCenter(7 + static_cast<int>((i * 2) % 13), 8 + static_cast<int>((i * 3) % 20));
+            cr.orbit_radius = 44.0f + 8.0f * static_cast<float>(i % 4);
+        }
+        const float ang = sim_time * cr.speed + cr.phase;
+        cr.pos = {
+            cr.anchor.x + std::cos(ang) * cr.orbit_radius,
+            cr.anchor.y + std::sin(ang * 0.85f) * (cr.orbit_radius * 0.65f)
+        };
+    }
+}
+
+void WorldContext::TickAmbientCritters(float dt) noexcept {
+    (void)dt;
+    for (int i = 0; i < zone_mechanics.active_critter_count &&
+                    i < static_cast<int>(kMaxAmbientCritters); ++i) {
+        AmbientCritter& cr = zone_mechanics.ambient_critters[static_cast<std::size_t>(i)];
+        if (!cr.active) {
+            continue;
+        }
+        const float ang = sim_time * cr.speed + cr.phase;
+        const Vec2 next_pos{
+            cr.anchor.x + std::cos(ang) * cr.orbit_radius,
+            cr.anchor.y + std::sin(ang * 0.85f) * (cr.orbit_radius * 0.65f)
+        };
+        cr.velocity = next_pos - cr.pos;
+        cr.pos = next_pos;
+    }
 }
 
 void WorldContext::UpdateProximityPrompts() noexcept {
@@ -1718,6 +2575,64 @@ void WorldContext::UpdateProximityPrompts() noexcept {
         }
         item.prompt_visible = near_interact;
     }
+
+    // Aggiorna prossimita' Stazioni di Osservazione e Vasche Botaniche
+    const bool has_olive_seed = collectibles.IsCollected(CollectibleId::Dawn_WhiteOliveSeed);
+    if (loc == LocationId::Overworld) {
+        for (auto& node : zone_mechanics.observation_nodes) {
+            bool near_node = false;
+            if (node.zone == current_zone) {
+                for (const Player* p : players.ActivePlayers()) {
+                    if (p != nullptr && p->Center().DistanceTo(node.pos) <= node.interact_radius) {
+                        near_node = true;
+                        break;
+                    }
+                }
+            }
+            node.prompt_visible = near_node;
+        }
+        for (auto& bp : zone_mechanics.bio_planters) {
+            bool near_bp = false;
+            if (bp.zone == current_zone && !bp.planted && has_olive_seed) {
+                for (const Player* p : players.ActivePlayers()) {
+                    if (p != nullptr && p->Center().DistanceTo(bp.pos) <= bp.interact_radius) {
+                        near_bp = true;
+                        break;
+                    }
+                }
+            }
+            bp.prompt_visible = near_bp;
+        }
+    } else {
+        for (auto& node : zone_mechanics.observation_nodes) {
+            node.prompt_visible = false;
+        }
+        for (auto& bp : zone_mechanics.bio_planters) {
+            bp.prompt_visible = false;
+        }
+        for (auto& node : structure.puzzle.observation_nodes) {
+            bool near_node = false;
+            for (const Player* p : players.ActivePlayers()) {
+                if (p != nullptr && p->Center().DistanceTo(node.pos) <= node.interact_radius) {
+                    near_node = true;
+                    break;
+                }
+            }
+            node.prompt_visible = near_node;
+        }
+        bool near_aux = false;
+        if (active_structure == StructureId::HypogeanCisterns &&
+            structure.puzzle.aux_stevino_valve_unlocked) {
+            for (const Player* p : players.ActivePlayers()) {
+                if (p != nullptr &&
+                    p->Center().DistanceTo(structure.puzzle.aux_stevino_valve_pos) <= 68.0f) {
+                    near_aux = true;
+                    break;
+                }
+            }
+        }
+        structure.puzzle.aux_valve_prompt_visible = near_aux;
+    }
 }
 
 EmpiricalScanReading WorldContext::TriggerScan(int player_id) noexcept {
@@ -1730,7 +2645,40 @@ EmpiricalScanReading WorldContext::TriggerScan(int player_id) noexcept {
     scan_pulse_timer = 0.85f;
     scan_pulse_origin = p->Center();
 
+    const bool has_gnomon = collectibles.IsCollected(CollectibleId::Dawn_BrassGnomon);
+    const bool solar_done = GetMachine(MachineType::SolarArray).state != MachineState::Broken;
+    if (has_gnomon || solar_done) {
+        empirical_compass_timer = 7.0f;
+    }
+
+    const float scanner_range = kDefaultScannerRange * (has_gnomon ? 1.45f : 1.0f);
     const LocationId loc = ActiveLocation();
+
+    // Scansione stazioni di osservazione nel raggio della Lente
+    if (loc == LocationId::Overworld) {
+        for (auto& node : zone_mechanics.observation_nodes) {
+            if (node.zone == current_zone && p->Center().DistanceTo(node.pos) <= scanner_range * 0.72f) {
+                node.scanned = true;
+                if (!node.inspected) {
+                    node.inspected = true;
+                    ++observations_inspected_count;
+                }
+                AdvanceInquiryStageForArea(loc, current_zone, InquiryStage::Hypothesize);
+            }
+        }
+    } else {
+        for (auto& node : structure.puzzle.observation_nodes) {
+            if (p->Center().DistanceTo(node.pos) <= scanner_range * 0.72f) {
+                node.scanned = true;
+                if (!node.inspected) {
+                    node.inspected = true;
+                    ++observations_inspected_count;
+                }
+                AdvanceInquiryStageForArea(loc, current_zone, InquiryStage::Hypothesize);
+            }
+        }
+    }
+
     const Machine* best = nullptr;
     float best_dist = 1e9f;
     for (const auto& m : machines) {
@@ -1741,16 +2689,16 @@ EmpiricalScanReading WorldContext::TriggerScan(int player_id) noexcept {
             continue;
         }
         const float d = m.DistanceToPlayer(*p);
-        if (d <= kDefaultScannerRange && d < best_dist) {
+        if (d <= scanner_range && d < best_dist) {
             best = &m;
             best_dist = d;
         }
     }
 
     if (best != nullptr) {
-        last_scan = PerformEmpiricalScan(player_id, players, *best, kDefaultScannerRange);
+        last_scan = PerformEmpiricalScan(player_id, players, *best, scanner_range);
     } else {
-        last_scan = PerformEmpiricalScan(player_id, players, ActiveMachine(), kDefaultScannerRange);
+        last_scan = PerformEmpiricalScan(player_id, players, ActiveMachine(), scanner_range);
     }
     return last_scan;
 }
@@ -1764,6 +2712,31 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
     if (scan_pulse_timer > 0.0f) {
         scan_pulse_timer = std::max(0.0f, scan_pulse_timer - safe_dt);
     }
+    if (empirical_compass_timer > 0.0f) {
+        empirical_compass_timer = std::max(0.0f, empirical_compass_timer - safe_dt);
+    }
+    if (trial_pulse_timer > 0.0f) {
+        trial_pulse_timer = std::max(0.0f, trial_pulse_timer - safe_dt);
+    }
+    if (prism_pulse_timer > 0.0f) {
+        prism_pulse_timer = std::max(0.0f, prism_pulse_timer - safe_dt);
+    }
+    if (planter_bloom_timer > 0.0f) {
+        planter_bloom_timer = std::max(0.0f, planter_bloom_timer - safe_dt);
+    }
+    if (zone_mechanics.solar_trial_flash_timer > 0.0f) {
+        zone_mechanics.solar_trial_flash_timer =
+            std::max(0.0f, zone_mechanics.solar_trial_flash_timer - safe_dt);
+    }
+    if (structure.puzzle.trial_water_hammer_timer > 0.0f) {
+        structure.puzzle.trial_water_hammer_timer =
+            std::max(0.0f, structure.puzzle.trial_water_hammer_timer - safe_dt);
+        if (structure.puzzle.trial_water_hammer_timer <= 0.0f &&
+            current_mode == GameMode::Structure &&
+            active_structure == StructureId::HypogeanCisterns) {
+            structure.puzzle.ApplyGatesToTilemap(structure.tilemap);
+        }
+    }
     if (zone_banner_timer > 0.0f) {
         zone_banner_timer = std::max(0.0f, zone_banner_timer - safe_dt);
     }
@@ -1771,6 +2744,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         locked_gateway_hint_timer = std::max(0.0f, locked_gateway_hint_timer - safe_dt);
     }
     collectibles.Tick(safe_dt);
+    TickAmbientCritters(safe_dt);
 
     // 0. Gestione Intramezzo tra Zone (congela fisica, esegue swap pulito di memoria a 50% o su skip)
     if (interlude.active) {
@@ -1810,10 +2784,57 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         ecosystem.CycleUiPhase();
     }
 
-    // 2. Empirical scanner trigger
+    // 2. Empirical scanner trigger + Prisma del Congedo remote activation
     for (const Player* p : players.ActivePlayers()) {
         if (p != nullptr && input.Get(p->player_id).scan_pressed) {
             (void)TriggerScan(p->player_id);
+            const RemotePrismTarget rem = FindRemotePrismTarget(p->Center(), kFarewellPrismRemoteRange);
+            if (rem.valid) {
+                prism_pulse_timer = 0.75f;
+                prism_pulse_from = p->Center();
+                prism_pulse_to = rem.world_pos;
+                ++prism_remote_toggles;
+                out.mechanics_events.remote_prism_triggered = true;
+                if (rem.kind == RemoteTargetKind::SolarMirror) {
+                    for (auto& mirror : zone_mechanics.solar_mirrors) {
+                        if (mirror.id == rem.target_id && mirror.rotatable) {
+                            const bool was_open = zone_mechanics.solar_gate_open;
+                            mirror.dir_index = (mirror.dir_index + 1) % 4;
+                            zone_mechanics.RecomputeSolarBeams(overworld.tilemap);
+                            out.mechanics_events.mirror_rotated = true;
+                            if (!was_open && zone_mechanics.solar_gate_open) {
+                                out.mechanics_events.solar_gate_unlocked = true;
+                            }
+                            break;
+                        }
+                    }
+                } else if (rem.kind == RemoteTargetKind::SluiceLever) {
+                    for (auto& lever : zone_mechanics.sluice_levers) {
+                        if (lever.id == rem.target_id) {
+                            const bool was_ford = zone_mechanics.laminar_ford_open;
+                            lever.pulled = !lever.pulled;
+                            for (auto& cur : zone_mechanics.water_currents) {
+                                if (cur.sluice_group == lever.sluice_group) {
+                                    cur.active = !lever.pulled;
+                                }
+                            }
+                            out.mechanics_events.sluice_toggled = true;
+                            RefreshSystemicWorldState();
+                            if (!was_ford && zone_mechanics.laminar_ford_open) {
+                                out.mechanics_events.laminar_ford_opened = true;
+                            }
+                            break;
+                        }
+                    }
+                } else if (rem.kind == RemoteTargetKind::StructureSwitch) {
+                    const StructurePuzzleEventFlags pev =
+                        structure.puzzle.ToggleSwitchById(rem.target_id, structure.tilemap);
+                    if (pev.Any()) {
+                        structure.SyncActivePuzzleToSaved();
+                        out.structure_puzzle_events = pev;
+                    }
+                }
+            }
         }
     }
 
@@ -1828,19 +2849,39 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
             if (std::isfinite(in.slider_delta) && in.slider_delta != 0.0f) {
                 calibration_modal.AdjustParameter(in.slider_delta, machine);
             }
+            if (std::isfinite(in.aux_slider_delta) && in.aux_slider_delta != 0.0f) {
+                calibration_modal.AdjustStabilizer(in.aux_slider_delta, machine);
+            }
+            if (in.hypothesis_delta != 0) {
+                calibration_modal.CycleHypothesis(in.hypothesis_delta);
+            }
             if (in.cancel_pressed) {
                 calibration_modal.Cancel();
                 break;
             }
+            if (in.trial_pressed) {
+                (void)ExecuteModalTrial();
+                out.mechanics_events.trial_pulse_triggered = true;
+                break;
+            }
             if (in.bypass_pressed && machine.allow_bypass) {
-                calibration_modal.TriggerBypass(machine, ecosystem);
+                if (ExecuteModalBypass()) {
+                    out.mechanics_events.calibration_confirmed = true;
+                    out.mechanics_events.confirmed_approach = CalibrationApproach::DirtyImmediate;
+                }
+                break;
+            }
+            if (in.risky_pressed) {
+                if (ExecuteModalConfirmRisky()) {
+                    out.mechanics_events.calibration_confirmed = true;
+                    out.mechanics_events.confirmed_approach = CalibrationApproach::RiskyEfficient;
+                }
                 break;
             }
             if (in.confirm_pressed) {
-                if (calibration_modal.ConfirmClean(machine, ecosystem)) {
-                    if (machine.type == MachineType::CentralAstrolabe) {
-                        simulation_completed = true;
-                    }
+                if (ExecuteModalConfirmClean()) {
+                    out.mechanics_events.calibration_confirmed = true;
+                    out.mechanics_events.confirmed_approach = CalibrationApproach::CleanSlow;
                 }
                 break;
             }
@@ -1848,6 +2889,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         if (AllFiveMonumentsActivated()) {
             GetMachine(MachineType::CentralAstrolabe).unlocked = true;
         }
+        RefreshSystemicWorldState();
         UpdateProximityPrompts();
         story.Observe(BuildStorySnapshot());
         story.Tick(safe_dt);
@@ -1860,15 +2902,34 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         const Player* p0 = players.GetPlayer(0);
         const Vec2 p0_center = (p0 != nullptr && p0->active) ? p0->Center() : overworld.camera_target;
 
-        // 4a. Quartiere dei Canali: Correnti d'acqua direzionali
+        // 4a. Quartiere dei Canali: Correnti d'acqua direzionali (modulate da approccio, diario laminare e prisma)
         if (current_zone == ZoneId::CanalQuarter) {
+            const ZoneEcoStatus canal_eco = ComputeZoneEcoStatus(ZoneId::CanalQuarter);
+            const float prism_damp =
+                collectibles.IsCollected(CollectibleId::Harmony_CurrentsPrism) ? 0.75f : 1.0f;
             for (const auto& cur : zone_mechanics.water_currents) {
                 if (!cur.active) {
                     continue;
                 }
                 if (p0_center.x >= cur.bounds.Left() && p0_center.x <= cur.bounds.Right() &&
                     p0_center.y >= cur.bounds.Top() && p0_center.y <= cur.bounds.Bottom()) {
-                    external_velocity += cur.flow_dir.Normalized() * cur.strength;
+                    external_velocity +=
+                        cur.flow_dir.Normalized() *
+                        (cur.strength * canal_eco.current_speed_mult * prism_damp);
+                }
+            }
+        }
+
+        // Bonus di movimento (+12%) sui sentieri fioriti / rigenerati dal Seme d'Ulivo Bianco
+        if (p0 != nullptr && p0->active) {
+            const ZoneEcoStatus z_eco = ComputeZoneEcoStatus(current_zone);
+            if (z_eco.healed_speed_bonus > 0.0f) {
+                const PlayerInput& in0 = input.Get(p0->player_id);
+                const Vec2 move_dir = Vec2{in0.move_x, in0.move_y}.Normalized();
+                if (move_dir.LengthSquared() > kEpsilon) {
+                    const float base_spd =
+                        in0.sprint_held ? (kTopDownSpeed * kSprintSpeedMultiplier) : kTopDownSpeed;
+                    external_velocity += move_dir * (base_spd * z_eco.healed_speed_bonus);
                 }
             }
         }
@@ -1903,7 +2964,10 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
             }
             w.player_sheltered = zone_mechanics.IsWindSheltered(p0_center);
             if (w.gust_active && !w.player_sheltered) {
-                external_velocity += w.wind_dir.Normalized() * (w.max_push_speed * w.gust_intensity);
+                const float wind_mult =
+                    collectibles.IsCollected(CollectibleId::Dawn_SolsticeCylinder) ? 0.65f : 1.0f;
+                external_velocity +=
+                    w.wind_dir.Normalized() * (w.max_push_speed * w.gust_intensity * wind_mult);
             }
         }
 
@@ -1973,7 +3037,11 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
                     const float dist = delta.Length();
                     if (dist <= g.radius) {
                         const Vec2 push_dir = (dist > kEpsilon) ? (delta / dist) : Vec2{0.0f, 1.0f};
-                        external_velocity += push_dir * 340.0f;
+                        const float geyser_mult =
+                            collectibles.IsCollected(CollectibleId::Pitch_BasaltThermometer)
+                                ? 0.70f
+                                : 1.0f;
+                        external_velocity += push_dir * (340.0f * geyser_mult);
                         out.mechanics_events.geyser_pushed_player = true;
                     }
                 }
@@ -2110,19 +3178,89 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
         bool handled = false;
         const Vec2 p_center = p->Center();
 
-        // 10a. Interazioni con i puzzle interni o con le meccaniche top-down della zona corrente
+        // 10a. Interazioni con Stazioni di Osservazione, Vasche Botaniche, puzzle interni o meccaniche top-down
         if (current_mode == GameMode::Structure) {
-            if (const StructureSwitch* sw = structure.puzzle.FindNearestSwitch(p_center)) {
-                const StructurePuzzleEventFlags pev =
-                    structure.puzzle.ToggleSwitchById(sw->id, structure.tilemap);
-                if (pev.Any()) {
-                    structure.SyncActivePuzzleToSaved();
-                    out.structure_puzzle_events = pev;
+            for (auto& node : structure.puzzle.observation_nodes) {
+                if (p_center.DistanceTo(node.pos) <= node.interact_radius) {
+                    if (!node.inspected) {
+                        node.inspected = true;
+                        ++observations_inspected_count;
+                    }
+                    AdvanceInquiryStageForArea(loc, current_zone, InquiryStage::Hypothesize);
+                    out.mechanics_events.observation_inspected = true;
+                    out.mechanics_events.observation_id = node.id;
+                    out.structure_puzzle_events.observation_inspected = true;
+                    story.PushAdHocLine("Elena Valli", node.reading_text, current_zone, ActiveLocationName());
                     handled = true;
+                    break;
+                }
+            }
+            if (!handled &&
+                active_structure == StructureId::HypogeanCisterns &&
+                structure.puzzle.aux_stevino_valve_unlocked &&
+                p_center.DistanceTo(structure.puzzle.aux_stevino_valve_pos) <= 68.0f) {
+                structure.puzzle.aux_stevino_valve_open = !structure.puzzle.aux_stevino_valve_open;
+                StructurePuzzleEventFlags pev{};
+                pev.aux_valve_toggled = true;
+                structure.puzzle.EvaluateGates(structure.tilemap, &pev);
+                structure.SyncActivePuzzleToSaved();
+                out.structure_puzzle_events = pev;
+                story.PushAdHocLine(
+                    "Elena Valli",
+                    "La Tavola Piezometrica di Stevino bilancia la pressione: la Chiusa Est si apre a secco!",
+                    current_zone,
+                    ActiveLocationName());
+                handled = true;
+            }
+            if (!handled) {
+                if (const StructureSwitch* sw = structure.puzzle.FindNearestSwitch(p_center)) {
+                    const StructurePuzzleEventFlags pev =
+                        structure.puzzle.ToggleSwitchById(sw->id, structure.tilemap);
+                    if (pev.Any()) {
+                        structure.SyncActivePuzzleToSaved();
+                        out.structure_puzzle_events = pev;
+                        handled = true;
+                    }
                 }
             }
         } else if (current_mode == GameMode::Overworld) {
-            if (current_zone == ZoneId::DawnTerraces) {
+            for (auto& node : zone_mechanics.observation_nodes) {
+                if (node.zone == current_zone && p_center.DistanceTo(node.pos) <= node.interact_radius) {
+                    if (!node.inspected) {
+                        node.inspected = true;
+                        ++observations_inspected_count;
+                    }
+                    AdvanceInquiryStageForArea(loc, current_zone, InquiryStage::Hypothesize);
+                    out.mechanics_events.observation_inspected = true;
+                    out.mechanics_events.observation_id = node.id;
+                    story.PushAdHocLine("Elena Valli", node.reading_text, current_zone, ActiveLocationName());
+                    handled = true;
+                    break;
+                }
+            }
+            if (!handled && collectibles.IsCollected(CollectibleId::Dawn_WhiteOliveSeed)) {
+                for (auto& bp : zone_mechanics.bio_planters) {
+                    if (bp.zone == current_zone && !bp.planted &&
+                        p_center.DistanceTo(bp.pos) <= bp.interact_radius) {
+                        bp.planted = true;
+                        bp.prompt_visible = false;
+                        ++planters_seeded_count;
+                        planter_bloom_timer = 2.2f;
+                        planter_bloom_pos = bp.pos;
+                        ecosystem.ApplyPollutionDelta(-6.0f);
+                        RefreshSystemicWorldState();
+                        out.mechanics_events.planter_seeded = true;
+                        story.PushAdHocLine(
+                            "Elena Valli",
+                            "Il Seme d'Ulivo Bianco attecchisce nella conca: i rovi di pece si dissolvono e la brezza schiarisce l'aria!",
+                            current_zone,
+                            ActiveLocationName());
+                        handled = true;
+                        break;
+                    }
+                }
+            }
+            if (!handled && current_zone == ZoneId::DawnTerraces) {
                 for (auto& mirror : zone_mechanics.solar_mirrors) {
                     if (mirror.rotatable && p_center.DistanceTo(mirror.pos) <= mirror.interact_radius) {
                         const bool was_open = zone_mechanics.solar_gate_open;
@@ -2136,9 +3274,10 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
                         break;
                     }
                 }
-            } else if (current_zone == ZoneId::CanalQuarter) {
+            } else if (!handled && current_zone == ZoneId::CanalQuarter) {
                 for (auto& lever : zone_mechanics.sluice_levers) {
                     if (p_center.DistanceTo(lever.pos) <= lever.interact_radius) {
+                        const bool was_ford = zone_mechanics.laminar_ford_open;
                         lever.pulled = !lever.pulled;
                         for (auto& cur : zone_mechanics.water_currents) {
                             if (cur.sluice_group == lever.sluice_group) {
@@ -2146,11 +3285,20 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
                             }
                         }
                         out.mechanics_events.sluice_toggled = true;
+                        RefreshSystemicWorldState();
+                        if (!was_ford && zone_mechanics.laminar_ford_open) {
+                            out.mechanics_events.laminar_ford_opened = true;
+                            story.PushAdHocLine(
+                                "Elena Valli",
+                                "Il Codice delle Chiuse Laminari placa i vortici: il Guado degli Idraulici emerge dall'acqua!",
+                                current_zone,
+                                ActiveLocationName());
+                        }
                         handled = true;
                         break;
                     }
                 }
-            } else if (current_zone == ZoneId::FumaroleCaldera) {
+            } else if (!handled && current_zone == ZoneId::FumaroleCaldera) {
                 for (auto& valve : zone_mechanics.relief_valves) {
                     if (!valve.open && p_center.DistanceTo(valve.pos) <= valve.interact_radius) {
                         valve.open = true;
@@ -2165,7 +3313,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
                         break;
                     }
                 }
-            } else if (current_zone == ZoneId::HarmonySanctuary) {
+            } else if (!handled && current_zone == ZoneId::HarmonySanctuary) {
                 for (auto& seal : zone_mechanics.sanctuary_seals) {
                     if (!seal.attuned && p_center.DistanceTo(seal.pos) <= seal.radius + 24.0f) {
                         seal.attuned = true;
@@ -2200,8 +3348,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
                 handled = true;
                 break;
             }
-            modal_machine_type = m.type;
-            calibration_modal.OpenFor(m);
+            OpenCalibrationModalFor(m.type);
             handled = true;
             break;
         }
@@ -2222,40 +3369,68 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
             }
             npc.met = true;
             if (npc.id == NpcId::ClaraSereni) {
+                const bool both_slice_monuments =
+                    GetMachine(MachineType::SolarArray).state != MachineState::Broken &&
+                    GetMachine(MachineType::HydroTurbine).state != MachineState::Broken;
+                if (both_slice_monuments) {
+                    vertical_slice_synthesis_done = true;
+                }
                 if (npc.recruited || ecosystem.architect_recruited) {
                     npc.recruited = true;
                     npc.hidden_bridge_revealed = true;
                     ecosystem.SetArchitectRecruited(true);
-                    npc.last_dialogue =
-                        "Il Ponte degli Archi e' libero e la Trama Geodetica mostra le linee di forza della Conca.";
+                    if (npc.mood == NpcMood::TenseOverdrive) {
+                        npc.last_dialogue =
+                            "Il Ponte degli Archi regge, ma i condotti vibrano sotto la spinta supercritica: tieni d'occhio i manometri!";
+                    } else if (npc.mood == NpcMood::ShelteredPolluted) {
+                        npc.last_dialogue =
+                            "Il ponte e' aperto, ma questo fumo di pece sta soffocando i canali. Ricalibra i monumenti [E] in modo pulito.";
+                    } else {
+                        npc.last_dialogue =
+                            "Il Ponte degli Archi e' libero, il Passaggio degli Artigiani e' aperto e la Trama Geodetica brilla.";
+                    }
                     story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
                 } else if (ecosystem.clean_energy > 0.0f) {
                     npc.recruited = true;
                     npc.hidden_bridge_revealed = true;
                     ecosystem.SetArchitectRecruited(true);
-                    npc.last_dialogue =
-                        "Calibrazione verificata senza pece. Apro il Ponte degli Archi e condivido con te la Trama Geodetica.";
+                    if (npc.mood == NpcMood::TenseOverdrive) {
+                        npc.last_dialogue =
+                            "Quella sintonizzazione supercritica sprigiona una potenza impressionante! Apro il Ponte degli Archi, ma attenzione alle correnti.";
+                    } else {
+                        npc.last_dialogue =
+                            "Calibrazione verificata senza pece. Apro il Ponte degli Archi, il Passaggio degli Artigiani e la Trama Geodetica.";
+                    }
                 } else if (ecosystem.dirty_energy > 0.0f) {
                     npc.last_dialogue =
-                        "Non apro il Ponte degli Archi per fumo di fornace. Riaccendi un monumento con la fisica pulita.";
+                        "Non apro il Ponte degli Archi per fumo di fornace. Torna al monumento [E] e ricalibralo con la fisica pulita.";
                     story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
                 } else {
                     npc.last_dialogue =
-                        "Prima di aprire il Ponte degli Archi calibra l'Eliostato sulle Terrazze dell'Alba.";
+                        "Prima di aprire il Ponte degli Archi osserva le ombre e calibra l'Eliostato sulle Terrazze dell'Alba.";
                     story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
                 }
             } else if (npc.id == NpcId::LorenzoAltieri) {
-                if (GetMachine(MachineType::HydroTurbine).state != MachineState::Broken) {
+                const Machine& hydro = GetMachine(MachineType::HydroTurbine);
+                if (hydro.state != MachineState::Broken) {
                     const bool was_recruited = npc.recruited;
                     npc.recruited = true;
-                    npc.last_dialogue =
-                        "L'acqua torna a cantare sotto le volte. Cerca le reliquie nelle quattro ere: la Conca ricorda tutto.";
+                    if (hydro.approach == CalibrationApproach::RiskyEfficient) {
+                        npc.last_dialogue =
+                            "La pressione supercritica ha spalancato lo Sfioratore del Prisma lassu', ma senti come tremano le colonne di Stevino!";
+                    } else if (hydro.approach == CalibrationApproach::DirtyImmediate) {
+                        npc.last_dialogue =
+                            "La turbina gira, ma i fumi di pece mi costringono qui in alto. Ricalibrala con l'acqua pura se vuoi aprire la nicchia.";
+                    } else {
+                        npc.last_dialogue =
+                            "L'acqua torna a cantare limpida sotto le volte: ho aperto la Nicchia d'Archivio qui accanto.";
+                    }
                     if (was_recruited) {
                         story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
                     }
                 } else {
                     npc.last_dialogue =
-                        "Riavvia prima la Turbina Idrostatica qui sotto: solo allora ti consegnero' le mappe dell'archivio.";
+                        "Leggi le tacche di Stevino sulle colonne prima di toccare la Turbina: l'acqua risponde solo all'equilibrio.";
                     story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
                 }
             } else if (npc.id == NpcId::MiriamFerro) {
@@ -2283,6 +3458,7 @@ WorldStepResult WorldContext::StepWorld(const AllPlayersInput& input, float dt) 
                     story.PushAdHocLine(npc.name, npc.last_dialogue, current_zone, ActiveLocationName());
                 }
             }
+            RefreshSystemicWorldState();
             handled = true;
             break;
         }

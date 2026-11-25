@@ -121,31 +121,67 @@ void DrawMeridianStele(float x, float y, const char* label, Color accent, float 
 // =============================================================================
 // Mosaici Astronomici & Armonici Monumentali (World-Space, sotto i monumenti)
 // =============================================================================
-void DrawSolarSundialMosaic(eco::Vec2 center, float poll, float sim_time) {
+void DrawSolarSundialMosaic(
+    eco::Vec2 center,
+    float poll,
+    float sim_time,
+    float sun_angle_deg = 45.0f,
+    bool glyphs_revealed = false,
+    float trial_flash = 0.0f) {
     const float health = 1.0f - poll;
     const Color stone_ring = pal::WorldColor(Color{98, 86, 72, 175}, Color{196, 180, 148, 210}, poll);
     const Color bronze_inlay = pal::WorldColor(Color{116, 88, 54, 175}, Color{226, 182, 92, 235}, poll);
     const Color glow = pal::WithAlpha(pal::kAmberGlow, static_cast<unsigned char>(35.0f + 55.0f * health));
 
-    DrawCircleV({center.x, center.y}, 94.0f, pal::WithAlpha(stone_ring, 70));
+    DrawCircleV({center.x, center.y}, 106.0f, pal::WithAlpha(stone_ring, 68));
+    DrawRing({center.x, center.y}, 98.0f, 104.0f, 0.0f, 360.0f, 40, stone_ring);
     DrawRing({center.x, center.y}, 86.0f, 92.0f, 0.0f, 360.0f, 36, stone_ring);
     DrawRing({center.x, center.y}, 64.0f, 67.0f, 0.0f, 360.0f, 32, bronze_inlay);
     DrawRing({center.x, center.y}, 36.0f, 38.0f, 0.0f, 360.0f, 24, bronze_inlay);
 
-    for (int i = 0; i < 12; ++i) {
-        const float ang = static_cast<float>(i) * (eco::kPi / 6.0f);
-        const float r0 = (i % 3 == 0) ? 38.0f : 67.0f;
-        const float r1 = (i % 3 == 0) ? 94.0f : 86.0f;
+    // Tacche goniometriche incise nel travertino ogni 15 gradi (quadrante empirico)
+    for (int i = 0; i < 24; ++i) {
+        const float ang = static_cast<float>(i) * (eco::kPi / 12.0f);
+        const bool major_cardinal = (i % 6 == 0);
+        const bool diag_45 = (i % 3 == 0 && !major_cardinal);
+        const float r0 = major_cardinal ? 38.0f : (diag_45 ? 50.0f : 72.0f);
+        const float r1 = major_cardinal ? 104.0f : (diag_45 ? 98.0f : 86.0f);
         DrawLineEx(
             {center.x + std::cos(ang) * r0, center.y + std::sin(ang) * r0},
             {center.x + std::cos(ang) * r1, center.y + std::sin(ang) * r1},
-            (i % 3 == 0) ? 2.4f : 1.4f,
-            bronze_inlay);
+            major_cardinal ? 2.5f : (diag_45 ? 2.0f : 1.1f),
+            diag_45 ? pal::LerpColor(bronze_inlay, pal::kSolarBeamCore, 0.45f) : bronze_inlay);
         if (i % 3 == 0) {
-            const float px = center.x + std::cos(ang) * 98.0f;
-            const float py = center.y + std::sin(ang) * 98.0f;
-            DrawPoly({px, py}, 4, 4.5f, 45.0f, bronze_inlay);
+            const float px = center.x + std::cos(ang) * 108.0f;
+            const float py = center.y + std::sin(ang) * 108.0f;
+            DrawPoly({px, py}, 4, diag_45 ? 5.2f : 4.2f, 45.0f, bronze_inlay);
         }
+    }
+
+    // Quadrante d'ombra reale della Meridiana Madre (mostra a occhio nudo l'angolo solare!)
+    const float sun_rad = eco::deg2rad(sun_angle_deg);
+    const Vector2 sun_dir{std::cos(sun_rad), std::sin(sun_rad)};
+    const Vector2 sun_perp{-sun_dir.y, sun_dir.x};
+    // Cuneo d'ombra proiettata dallo gnomone lungo la direttrice solare
+    const Vector2 sh_base_l{center.x + sun_perp.x * 8.0f, center.y + sun_perp.y * 8.0f};
+    const Vector2 sh_base_r{center.x - sun_perp.x * 8.0f, center.y - sun_perp.y * 8.0f};
+    const Vector2 sh_tip{center.x + sun_dir.x * 102.0f, center.y + sun_dir.y * 102.0f};
+    DrawTriangle(sh_base_l, sh_tip, sh_base_r, Color{18, 16, 14, 115});
+    DrawTriangle(sh_base_r, sh_tip, sh_base_l, Color{18, 16, 14, 115});
+    DrawLineEx({center.x, center.y}, sh_tip, 2.8f, pal::WithAlpha(pal::kSolarBeamCore, 215));
+    DrawRing({center.x, center.y}, 74.0f, 77.5f, 0.0f, sun_angle_deg, 18,
+             pal::WithAlpha(pal::kAmberGlow, 210));
+    DrawCircleV(sh_tip, 4.2f, pal::kSolarBeamCore);
+
+    // Incisioni segrete di Lambert rivelate dall'Impulso di Prova (RunTrial)
+    if (glyphs_revealed || trial_flash > 0.01f) {
+        const float flash_boost = std::clamp(trial_flash, 0.0f, 1.0f);
+        const float pulse = 0.65f + 0.35f * std::sin(sim_time * 4.2f);
+        const auto glyph_a = static_cast<unsigned char>(std::clamp(130.0f * pulse + 115.0f * flash_boost, 0.0f, 250.0f));
+        const Color glyph_col = pal::WithAlpha(pal::kSolarBeamCore, glyph_a);
+        DrawRing({center.x, center.y}, 51.0f, 54.0f, sun_angle_deg - 28.0f, sun_angle_deg + 28.0f, 20, glyph_col);
+        DrawRing({center.x, center.y}, 80.0f, 83.0f, sun_angle_deg - 18.0f, sun_angle_deg + 18.0f, 18,
+                 pal::WithAlpha(pal::kJadeGlow, glyph_a));
     }
 
     if (health > 0.25f) {
@@ -270,6 +306,77 @@ void DrawBioCrystalNode(float x, float y, float sim_time, float poll, Color acce
     DrawPoly({x + 10.0f, y - 4.0f}, 5, 4.8f, sim_time * 14.0f, crystal_col);
 }
 
+// =============================================================================
+// Stato Biologico Sistemico a 3 Stadi (1. Inquinato/Scheletrico, 2. In Ripresa, 3. Guarito/Ulivo Bianco)
+// =============================================================================
+struct LocalFloraVisual {
+    int bio_stage = 1;            // 0 = Inquinato/Critico (scheletrico), 1 = In ripresa (salvia), 2 = Guarito (rigoglioso)
+    float vitality = 0.5f;        // 0..1
+    float bloom = 0.35f;          // 0..1
+    bool white_olive_aura = false;// Innesto Seme d'Ulivo Bianco attivo nelle vicinanze o Terrazze guarite
+};
+
+[[nodiscard]] LocalFloraVisual ComputeLocalFloraVisual(
+    const eco::WorldContext& world,
+    eco::ZoneId zone,
+    const eco::ZoneEcoStatus& eco_st,
+    eco::Vec2 pos) noexcept {
+    LocalFloraVisual out{};
+    out.vitality = std::clamp(eco_st.local_vitality, 0.0f, 1.0f);
+    out.bloom = std::clamp(eco_st.flora_bloom, 0.0f, 1.0f);
+
+    for (const auto& bp : world.zone_mechanics.bio_planters) {
+        if (bp.zone == zone && bp.planted) {
+            const float dist = pos.DistanceTo(bp.pos);
+            if (dist <= bp.aura_radius * 1.25f) {
+                out.white_olive_aura = true;
+                out.vitality = std::max(out.vitality, 0.92f);
+                out.bloom = std::max(out.bloom, 0.95f);
+                break;
+            }
+        }
+    }
+
+    if (out.white_olive_aura || eco_st.band == eco::EcoHealthBand::Flourishing) {
+        out.bio_stage = 2;
+        if (zone == eco::ZoneId::DawnTerraces && eco_st.band == eco::EcoHealthBand::Flourishing) {
+            out.white_olive_aura = true;
+        }
+    } else if (eco_st.band == eco::EcoHealthBand::Recovering) {
+        out.bio_stage = 1;
+    } else {
+        // Critical o Polluted
+        out.bio_stage = 0;
+    }
+    return out;
+}
+
+void DrawPollutedGroundBlight(float x, float y, float scale, int seed) {
+    // Macchia di pece scura + foglie secche cadute a terra attorno alle radici
+    DrawEllipse(
+        static_cast<int>(x - 2.0f * scale),
+        static_cast<int>(y + 11.0f * scale),
+        14.0f * scale,
+        5.2f * scale,
+        pal::WithAlpha(pal::kFloraPitchStain, 175));
+    for (int i = 0; i < 5; ++i) {
+        const std::uint32_t h = Hash2(seed + i * 13, i * 29, 991);
+        const float lx = x + (static_cast<float>(h % 29u) - 14.0f) * scale;
+        const float ly = y + (6.0f + static_cast<float>((h >> 5) % 11u)) * scale;
+        DrawPoly({lx, ly}, 3, 2.6f * scale, static_cast<float>((h >> 9) % 360u), pal::kFloraDryLeaf);
+    }
+}
+
+void DrawHealedPollenMotes(float x, float y, float scale, float sim_time, int seed, Color pollen_col) {
+    for (int i = 0; i < 4; ++i) {
+        const float phase = sim_time * 2.1f + static_cast<float>(seed + i * 17) * 0.7f;
+        const float px = x + std::cos(phase * 0.8f + static_cast<float>(i)) * 15.0f * scale;
+        const float py = y - (14.0f + static_cast<float>(i) * 4.5f) * scale + std::sin(phase) * 3.5f * scale;
+        const auto a = static_cast<unsigned char>(135.0f + 95.0f * (0.5f + 0.5f * std::sin(phase * 1.4f)));
+        DrawCircleV({px, py}, 1.9f * scale, pal::WithAlpha(pollen_col, a));
+    }
+}
+
 void DrawOliveTree(
     float x,
     float y,
@@ -277,28 +384,59 @@ void DrawOliveTree(
     float sim_time,
     float poll,
     const pal::DistrictPalette& dp,
-    int seed) {
-    const float health = 1.0f - poll;
-    const float sway = std::sin(sim_time * 1.4f + static_cast<float>(seed) * 1.9f) * (1.0f + 1.8f * health);
+    int seed,
+    const LocalFloraVisual& bio = {}) {
+    const float health = std::max(1.0f - poll, bio.vitality);
+    const float sway = std::sin(sim_time * 1.4f + static_cast<float>(seed) * 1.9f) *
+                       (bio.bio_stage == 0 ? 0.35f : (1.0f + 1.8f * health));
 
     DrawEllipse(
         static_cast<int>(x + 7.0f * scale),
         static_cast<int>(y + 12.0f * scale),
-        22.0f * scale,
-        8.5f * scale,
+        (bio.bio_stage == 0 ? 15.0f : 22.0f) * scale,
+        (bio.bio_stage == 0 ? 6.0f : 8.5f) * scale,
         Color{0, 0, 0, 108});
 
-    const Color trunk_dark = pal::WorldColor(Color{48, 40, 36, 255}, Color{72, 54, 40, 255}, poll);
-    const Color trunk_hi = pal::WorldColor(Color{74, 62, 52, 255}, Color{114, 88, 64, 255}, poll);
+    if (bio.bio_stage == 0) {
+        DrawPollutedGroundBlight(x, y, scale, seed);
+    }
+
+    const Color trunk_dark = (bio.bio_stage == 0)
+                                 ? pal::kFloraDeadWood
+                                 : (bio.white_olive_aura ? Color{98, 92, 82, 255}
+                                                         : pal::WorldColor(Color{48, 40, 36, 255}, Color{72, 54, 40, 255}, poll));
+    const Color trunk_hi = (bio.bio_stage == 0)
+                               ? pal::ShiftBrightness(pal::kFloraDeadWood, 18)
+                               : (bio.white_olive_aura ? Color{168, 162, 148, 255}
+                                                       : pal::WorldColor(Color{74, 62, 52, 255}, Color{114, 88, 64, 255}, poll));
     DrawLineEx({x - 3.0f * scale, y + 11.0f * scale}, {x - 1.0f * scale + sway * 0.25f, y - 11.0f * scale}, 5.5f * scale, trunk_dark);
     DrawLineEx({x + 3.0f * scale, y + 11.0f * scale}, {x + 1.5f * scale + sway * 0.25f, y - 10.0f * scale}, 5.0f * scale, trunk_dark);
     DrawLineEx({x - 2.0f * scale, y + 9.0f * scale}, {x - 0.5f * scale + sway * 0.25f, y - 11.0f * scale}, 2.4f * scale, trunk_hi);
     DrawLineEx({x, y - 5.0f * scale}, {x - 13.0f * scale + sway * 0.45f, y - 15.0f * scale}, 3.2f * scale, trunk_dark);
     DrawLineEx({x, y - 6.0f * scale}, {x + 13.0f * scale + sway * 0.45f, y - 16.0f * scale}, 3.2f * scale, trunk_dark);
 
-    const float r = (12.0f + 6.5f * health) * scale;
-    const Color c_mid = pal::WorldColor(dp.canopy_sick, dp.canopy_healthy, poll);
-    const Color c_hi = pal::WorldColor(dp.canopy_hi_sick, dp.canopy_hi_healthy, poll);
+    if (bio.bio_stage == 0) {
+        // Stato 1: Rami scheletrici grigio-bruni spogli con piccoli rami secchi biforcuti
+        DrawLineEx({x - 13.0f * scale, y - 15.0f * scale}, {x - 20.0f * scale, y - 24.0f * scale}, 2.0f * scale, trunk_dark);
+        DrawLineEx({x - 13.0f * scale, y - 15.0f * scale}, {x - 9.0f * scale, y - 26.0f * scale}, 1.8f * scale, trunk_hi);
+        DrawLineEx({x + 13.0f * scale, y - 16.0f * scale}, {x + 21.0f * scale, y - 25.0f * scale}, 2.0f * scale, trunk_dark);
+        DrawLineEx({x + 13.0f * scale, y - 16.0f * scale}, {x + 8.0f * scale, y - 27.0f * scale}, 1.8f * scale, trunk_hi);
+        DrawLineEx({x, y - 11.0f * scale}, {x - 3.0f * scale, y - 28.0f * scale}, 2.2f * scale, trunk_dark);
+        DrawLineEx({x - 3.0f * scale, y - 23.0f * scale}, {x + 5.0f * scale, y - 30.0f * scale}, 1.5f * scale, trunk_hi);
+        return;
+    }
+
+    const float r = ((bio.bio_stage == 2 ? 15.5f : 11.5f) + 4.5f * health) * scale;
+    Color c_mid = (bio.bio_stage == 1)
+                      ? pal::LerpColor(dp.canopy_sick, pal::kFloraRecoveringSage, 0.72f)
+                      : pal::WorldColor(dp.canopy_sick, dp.canopy_healthy, poll);
+    Color c_hi = (bio.bio_stage == 1)
+                     ? pal::ShiftBrightness(c_mid, 24)
+                     : pal::WorldColor(dp.canopy_hi_sick, dp.canopy_hi_healthy, poll);
+    if (bio.white_olive_aura && bio.bio_stage == 2) {
+        c_mid = pal::LerpColor(dp.canopy_healthy, pal::kFloraWhiteOliveSilver, 0.68f);
+        c_hi = pal::kFloraWhiteOliveHi;
+    }
     const Color c_sh = pal::ShiftBrightness(c_mid, -26);
 
     const Vector2 c{x + sway, y - 19.0f * scale};
@@ -309,11 +447,18 @@ void DrawOliveTree(
     DrawCircleV({c.x - 6.0f * scale, c.y - 4.5f * scale}, r * 0.58f, c_hi);
     DrawCircleV({c.x + 5.0f * scale, c.y - 3.0f * scale}, r * 0.44f, c_hi);
 
-    if (health > 0.45f) {
-        const unsigned char alpha = static_cast<unsigned char>(std::clamp((health - 0.45f) * 430.0f, 0.0f, 235.0f));
-        DrawCircleV({c.x - 9.0f * scale, c.y - 1.0f * scale}, 2.2f * scale, pal::WithAlpha(dp.blossom_a, alpha));
-        DrawCircleV({c.x + 8.0f * scale, c.y + 1.0f * scale}, 2.0f * scale, pal::WithAlpha(dp.blossom_b, alpha));
-        DrawCircleV({c.x + 1.0f * scale, c.y - 8.0f * scale}, 2.3f * scale, pal::WithAlpha(dp.blossom_a, alpha));
+    if (bio.bio_stage == 1) {
+        // Stato 2: Primi germogli verde chiaro
+        DrawCircleV({c.x - 7.0f * scale, c.y - 2.0f * scale}, 2.0f * scale, Color{168, 224, 146, 220});
+        DrawCircleV({c.x + 6.0f * scale, c.y + 1.0f * scale}, 1.8f * scale, Color{168, 224, 146, 220});
+    } else if (bio.bio_stage == 2) {
+        // Stato 3: Fioritura rigogliosa d'ulivo bianco / dorato + polline luminoso
+        DrawCircleV({c.x - 9.0f * scale, c.y - 1.0f * scale}, 2.6f * scale, dp.blossom_a);
+        DrawCircleV({c.x + 8.0f * scale, c.y + 1.0f * scale}, 2.4f * scale, dp.blossom_b);
+        DrawCircleV({c.x + 1.0f * scale, c.y - 8.0f * scale}, 2.7f * scale, dp.blossom_a);
+        DrawCircleV({c.x - 3.0f * scale, c.y + 5.0f * scale}, 2.2f * scale, pal::kStoneIvory);
+        DrawCircleV({c.x + 11.0f * scale, c.y - 4.0f * scale}, 2.2f * scale, dp.blossom_a);
+        DrawHealedPollenMotes(x, y, scale, sim_time, seed, pal::kFloraPollenGold);
     }
 }
 
@@ -325,11 +470,12 @@ void DrawWindCypress(
     float poll,
     const pal::DistrictPalette& dp,
     int seed,
-    float wind_gust_bias = 0.0f) {
-    const float health = 1.0f - poll;
-    const float wind = 3.2f + wind_gust_bias * 7.5f +
+    float wind_gust_bias = 0.0f,
+    const LocalFloraVisual& bio = {}) {
+    const float health = std::max(1.0f - poll, bio.vitality);
+    const float wind = (bio.bio_stage == 0 ? 1.2f : 3.2f) + wind_gust_bias * 7.5f +
                        std::sin(sim_time * (2.5f + wind_gust_bias * 3.0f) + static_cast<float>(seed) * 1.3f) *
-                           (2.2f + 2.0f * health);
+                           (bio.bio_stage == 0 ? 0.6f : (2.2f + 2.0f * health));
 
     DrawEllipse(
         static_cast<int>(x + 8.0f * scale),
@@ -338,21 +484,52 @@ void DrawWindCypress(
         5.5f * scale,
         Color{0, 0, 0, 105});
 
-    const Color trunk = pal::WorldColor(Color{50, 44, 40, 255}, Color{70, 52, 38, 255}, poll);
-    DrawLineEx({x, y + 11.0f * scale}, {x + wind * 0.4f, y - 16.0f * scale}, 4.5f * scale, trunk);
+    if (bio.bio_stage == 0) {
+        DrawPollutedGroundBlight(x, y, scale, seed);
+    }
 
-    const Color c_mid = pal::WorldColor(dp.canopy_sick, dp.canopy_healthy, poll);
-    const Color c_hi = pal::WorldColor(dp.canopy_hi_sick, dp.canopy_hi_healthy, poll);
+    const Color trunk = (bio.bio_stage == 0)
+                            ? pal::kFloraDeadWood
+                            : pal::WorldColor(Color{50, 44, 40, 255}, Color{70, 52, 38, 255}, poll);
+    DrawLineEx({x, y + 11.0f * scale}, {x + wind * 0.4f, y - 24.0f * scale}, 4.5f * scale, trunk);
+
+    if (bio.bio_stage == 0) {
+        // Rami scheletrici spogli lungo il fusto del cipresso/albero ripariale
+        for (int b = 0; b < 4; ++b) {
+            const float by = y - (6.0f + static_cast<float>(b) * 5.5f) * scale;
+            const float bx = x + wind * (0.1f + static_cast<float>(b) * 0.08f);
+            const float span = (10.0f - static_cast<float>(b) * 1.8f) * scale;
+            DrawLineEx({bx, by}, {bx - span, by - 5.0f * scale}, 1.9f * scale, trunk);
+            DrawLineEx({bx, by - 1.5f * scale}, {bx + span, by - 6.0f * scale}, 1.9f * scale, pal::ShiftBrightness(trunk, 14));
+        }
+        return;
+    }
+
+    Color c_mid = (bio.bio_stage == 1)
+                      ? pal::LerpColor(dp.canopy_sick, pal::kFloraRecoveringSage, 0.70f)
+                      : pal::WorldColor(dp.canopy_sick, dp.canopy_healthy, poll);
+    Color c_hi = (bio.bio_stage == 1)
+                     ? pal::ShiftBrightness(c_mid, 24)
+                     : pal::WorldColor(dp.canopy_hi_sick, dp.canopy_hi_healthy, poll);
+    if (bio.white_olive_aura && bio.bio_stage == 2) {
+        c_mid = pal::LerpColor(dp.canopy_healthy, pal::kFloraWhiteOliveSilver, 0.55f);
+        c_hi = pal::kFloraWhiteOliveHi;
+    }
     const Color c_sh = pal::ShiftBrightness(c_mid, -22);
 
     for (int tier = 0; tier < 4; ++tier) {
         const float tf = static_cast<float>(tier) / 3.0f;
         const float ty = y - (8.0f + tf * 28.0f) * scale;
         const float tx = x + wind * (0.25f + tf * 0.85f);
-        const float tr = (11.0f - tf * 5.2f + 2.5f * health) * scale;
+        const float tr = ((bio.bio_stage == 2 ? 12.2f : 9.8f) - tf * 5.0f + 2.5f * health) * scale;
         DrawCircleV({tx + 2.0f * scale, ty + 2.0f * scale}, tr, c_sh);
         DrawCircleV({tx, ty}, tr * 0.92f, c_mid);
         DrawCircleV({tx - 2.2f * scale, ty - 2.0f * scale}, tr * 0.52f, c_hi);
+    }
+    if (bio.bio_stage == 2) {
+        DrawCircleV({x + wind * 0.5f - 5.0f * scale, y - 16.0f * scale}, 2.2f * scale, dp.blossom_a);
+        DrawCircleV({x + wind * 0.7f + 4.0f * scale, y - 24.0f * scale}, 2.0f * scale, dp.blossom_b);
+        DrawHealedPollenMotes(x, y, scale, sim_time, seed, dp.blossom_a);
     }
 }
 
@@ -363,9 +540,11 @@ void DrawFloweringGardenTree(
     float sim_time,
     float poll,
     const pal::DistrictPalette& dp,
-    int seed) {
-    const float health = 1.0f - poll;
-    const float sway = std::sin(sim_time * 1.8f + static_cast<float>(seed) * 2.1f) * (1.2f + 2.4f * health);
+    int seed,
+    const LocalFloraVisual& bio = {}) {
+    const float health = std::max(1.0f - poll, bio.vitality);
+    const float sway = std::sin(sim_time * 1.8f + static_cast<float>(seed) * 2.1f) *
+                       (bio.bio_stage == 0 ? 0.35f : (1.2f + 2.4f * health));
 
     DrawEllipse(
         static_cast<int>(x + 6.0f * scale),
@@ -376,14 +555,27 @@ void DrawFloweringGardenTree(
 
     DrawRing({x, y + 9.0f * scale}, 7.0f * scale, 10.5f * scale, 0.0f, 360.0f, 16,
              pal::WorldColor(Color{92, 84, 74, 210}, Color{168, 166, 152, 230}, poll));
-    const Color trunk = pal::WorldColor(Color{58, 46, 38, 255}, Color{94, 66, 46, 255}, poll);
+    const Color trunk = (bio.bio_stage == 0)
+                            ? pal::kFloraDeadWood
+                            : pal::WorldColor(Color{58, 46, 38, 255}, Color{94, 66, 46, 255}, poll);
     DrawLineEx({x, y + 9.0f * scale}, {x + sway * 0.35f, y - 15.0f * scale}, 5.5f * scale, trunk);
     DrawLineEx({x, y - 6.0f * scale}, {x - 10.0f * scale + sway * 0.5f, y - 16.0f * scale}, 2.8f * scale, trunk);
     DrawLineEx({x, y - 7.0f * scale}, {x + 10.0f * scale + sway * 0.5f, y - 17.0f * scale}, 2.8f * scale, trunk);
 
-    const float r = (12.0f + 7.0f * health) * scale;
-    const Color c_mid = pal::WorldColor(dp.canopy_sick, dp.canopy_healthy, poll);
-    const Color c_hi = pal::WorldColor(dp.canopy_hi_sick, dp.canopy_hi_healthy, poll);
+    if (bio.bio_stage == 0) {
+        DrawPollutedGroundBlight(x, y, scale, seed);
+        DrawLineEx({x - 10.0f * scale, y - 16.0f * scale}, {x - 17.0f * scale, y - 24.0f * scale}, 1.8f * scale, trunk);
+        DrawLineEx({x + 10.0f * scale, y - 17.0f * scale}, {x + 18.0f * scale, y - 25.0f * scale}, 1.8f * scale, trunk);
+        return;
+    }
+
+    const float r = ((bio.bio_stage == 2 ? 14.5f : 11.0f) + 6.0f * health) * scale;
+    const Color c_mid = (bio.bio_stage == 1)
+                            ? pal::LerpColor(dp.canopy_sick, pal::kFloraRecoveringSage, 0.72f)
+                            : pal::WorldColor(dp.canopy_sick, dp.canopy_healthy, poll);
+    const Color c_hi = (bio.bio_stage == 1)
+                           ? pal::ShiftBrightness(c_mid, 24)
+                           : pal::WorldColor(dp.canopy_hi_sick, dp.canopy_hi_healthy, poll);
     const Color c_sh = pal::ShiftBrightness(c_mid, -28);
 
     const Vector2 c{x + sway, y - 21.0f * scale};
@@ -393,8 +585,10 @@ void DrawFloweringGardenTree(
     DrawCircleV(c, r * 0.94f, c_mid);
     DrawCircleV({c.x - 4.0f * scale, c.y - 4.5f * scale}, r * 0.62f, c_hi);
 
-    if (health > 0.30f) {
-        const unsigned char alpha = static_cast<unsigned char>(std::clamp((health - 0.30f) * 350.0f, 0.0f, 245.0f));
+    if (bio.bio_stage == 2 || health > 0.30f) {
+        const unsigned char alpha = (bio.bio_stage == 2)
+                                        ? 245
+                                        : static_cast<unsigned char>(std::clamp((health - 0.30f) * 350.0f, 0.0f, 245.0f));
         const Color b1 = pal::WithAlpha(dp.blossom_a, alpha);
         const Color b2 = pal::WithAlpha(dp.blossom_b, alpha);
         const Color b3 = pal::WithAlpha(pal::kJadeGlow, alpha);
@@ -603,6 +797,648 @@ void DrawCarvedBasReliefPlaque(float x, float y, float poll, const pal::District
 }
 
 // =============================================================================
+// Segnali Diegetici a Terra: Condotti d'Ottone, Colonnine Idrometriche,
+// Passaggi Sistemici (DynamicPassage), Stazioni (ObservationNode), Vasche (BioPlanter) & Fauna
+// =============================================================================
+void DrawDawnBrassConduitSegment(
+    eco::Vec2 a,
+    eco::Vec2 b,
+    eco::CalibrationApproach approach,
+    bool energized_hint,
+    float sim_time,
+    int seg_seed) {
+    const Vector2 va{a.x, a.y};
+    const Vector2 vb{b.x, b.y};
+    const eco::Vec2 d = b - a;
+    const float len = d.Length();
+    if (len < 4.0f) {
+        return;
+    }
+    const eco::Vec2 dir = d / len;
+    const eco::Vec2 perp{-dir.y, dir.x};
+
+    // Sede incassata nel travertino
+    DrawLineEx(va, vb, 8.5f, Color{34, 30, 26, 155});
+    DrawLineEx(va, vb, 6.2f, Color{58, 50, 42, 195});
+
+    Color rail_col = pal::kConduitOxidized;
+    if (approach == eco::CalibrationApproach::CleanSlow) {
+        rail_col = pal::kConduitCleanGold;
+    } else if (approach == eco::CalibrationApproach::RiskyEfficient) {
+        rail_col = pal::kConduitRiskyAmber;
+    } else if (approach == eco::CalibrationApproach::DirtyImmediate) {
+        rail_col = pal::kConduitDirtySoot;
+    } else if (energized_hint) {
+        rail_col = pal::LerpColor(pal::kConduitOxidized, pal::kBronzeBright, 0.55f);
+    }
+
+    if (approach == eco::CalibrationApproach::DirtyImmediate) {
+        // Aloni di fuliggine e pece lungo i bordi del condotto
+        const int soot_spots = std::max(1, static_cast<int>(len / 48.0f));
+        for (int i = 0; i <= soot_spots; ++i) {
+            const float t = static_cast<float>(i) / static_cast<float>(std::max(1, soot_spots));
+            const float sx = a.x + d.x * t;
+            const float sy = a.y + d.y * t;
+            DrawCircleV({sx, sy}, 7.5f, Color{24, 18, 16, 120});
+        }
+    }
+
+    DrawLineEx(va, vb, 3.4f, rail_col);
+
+    // Giunti bullonati in ottone ogni ~56 px + tacche direzionali diegetiche
+    const int joints = std::max(1, static_cast<int>(len / 56.0f));
+    for (int i = 0; i <= joints; ++i) {
+        const float t = static_cast<float>(i) / static_cast<float>(std::max(1, joints));
+        const float jx = a.x + d.x * t;
+        const float jy = a.y + d.y * t;
+        DrawCircleV({jx, jy}, 4.2f, pal::kBronzeDark);
+        DrawCircleV({jx, jy}, 2.4f, rail_col);
+
+        if (i < joints) {
+            const float mx = a.x + d.x * (t + 0.5f / static_cast<float>(joints));
+            const float my = a.y + d.y * (t + 0.5f / static_cast<float>(joints));
+            const Vector2 tip{mx + dir.x * 5.0f, my + dir.y * 5.0f};
+            const Vector2 wl{mx - dir.x * 3.0f + perp.x * 4.0f, my - dir.y * 3.0f + perp.y * 4.0f};
+            const Vector2 wr{mx - dir.x * 3.0f - perp.x * 4.0f, my - dir.y * 3.0f - perp.y * 4.0f};
+            DrawLineEx(wl, tip, 1.5f, pal::WithAlpha(rail_col, 210));
+            DrawLineEx(wr, tip, 1.5f, pal::WithAlpha(rail_col, 210));
+        }
+    }
+
+    // Flusso energetico vivo lungo il condotto in base all'esito di calibrazione
+    const int packets = std::clamp(static_cast<int>(len / 72.0f), 1, 6);
+    if (approach == eco::CalibrationApproach::CleanSlow ||
+        (approach == eco::CalibrationApproach::None && energized_hint)) {
+        const float spd = (approach == eco::CalibrationApproach::CleanSlow) ? 0.52f : 0.25f;
+        const Color pcol = (approach == eco::CalibrationApproach::CleanSlow) ? pal::kSolarBeamCore : pal::kAmberGlow;
+        for (int p = 0; p < packets; ++p) {
+            const float ph = std::fmod(sim_time * spd + static_cast<float>(p) / static_cast<float>(packets) +
+                                           static_cast<float>(seg_seed) * 0.17f,
+                                       1.0f);
+            const Vector2 pos{a.x + d.x * ph, a.y + d.y * ph};
+            DrawCircleV(pos, 5.8f, pal::WithAlpha(pal::kConduitCleanGold, 85));
+            DrawCircleV(pos, 2.8f, pcol);
+        }
+    } else if (approach == eco::CalibrationApproach::RiskyEfficient) {
+        // Ambra incandescente con scintille elettriche rapide
+        for (int p = 0; p < packets + 2; ++p) {
+            const float ph = std::fmod(sim_time * 1.35f + static_cast<float>(p) * 0.23f +
+                                           static_cast<float>(seg_seed) * 0.11f,
+                                       1.0f);
+            const float jitter = std::sin(sim_time * 34.0f + static_cast<float>(p * 7 + seg_seed)) * 3.2f;
+            const Vector2 pos{a.x + d.x * ph + perp.x * jitter, a.y + d.y * ph + perp.y * jitter};
+            DrawCircleV(pos, 6.5f, pal::WithAlpha(pal::kConduitRiskyAmber, 110));
+            DrawCircleV(pos, 2.6f, pal::kSolarBeamCore);
+            DrawLineEx(
+                {pos.x - perp.x * 4.5f, pos.y - perp.y * 4.5f},
+                {pos.x + perp.x * 4.5f, pos.y + perp.y * 4.5f},
+                1.4f,
+                pal::kSolarBeamCore);
+        }
+    } else if (approach == eco::CalibrationApproach::DirtyImmediate) {
+        // Braci di pece torbide e lente
+        for (int p = 0; p < packets; ++p) {
+            const float ph = std::fmod(sim_time * 0.22f + static_cast<float>(p) * 0.37f, 1.0f);
+            const Vector2 pos{a.x + d.x * ph, a.y + d.y * ph};
+            DrawCircleV(pos, 3.8f, Color{168, 64, 28, 165});
+        }
+    }
+}
+
+void DrawDawnBrassConduits(const eco::WorldContext& world) {
+    const eco::ZoneMechanicState& zm = world.zone_mechanics;
+    const eco::Machine& solar = world.GetMachine(eco::MachineType::SolarArray);
+    const float ts = world.overworld.tilemap.TileSize();
+    const float sim_time = world.sim_time;
+    eco::CalibrationApproach app = solar.approach;
+    if (app == eco::CalibrationApproach::None) {
+        if (solar.state == eco::MachineState::CleanActive) {
+            app = eco::CalibrationApproach::CleanSlow;
+        } else if (solar.state == eco::MachineState::BypassedDirty) {
+            app = eco::CalibrationApproach::DirtyImmediate;
+        }
+    }
+    const bool trial_flash = (zm.solar_trial_flash_timer > 0.05f || world.trial_pulse_timer > 0.05f);
+    if (trial_flash && app == eco::CalibrationApproach::None) {
+        app = eco::CalibrationApproach::RiskyEfficient;
+    }
+
+    const eco::Vec2 gate_center{28.5f * ts, 12.5f * ts};
+    const eco::Vec2 north_gw{18.0f * ts, 1.5f * ts};
+
+    // 1. Emettitore solare -> Specchio 0 -> Piazza dell'Eliostato
+    const eco::Vec2 elbow_em{zm.solar_emitter_pos.x, solar.pos.y};
+    DrawDawnBrassConduitSegment(zm.solar_emitter_pos, elbow_em, app, true, sim_time, 1);
+    DrawDawnBrassConduitSegment(elbow_em, solar.pos, app, true, sim_time, 2);
+
+    // 2. Piastre fotosensibili -> Barriera Solare (SolarGate) -> Eliostato Solare
+    for (std::size_t i = 0; i < zm.solar_plates.size(); ++i) {
+        const auto& pl = zm.solar_plates[i];
+        const eco::Vec2 corner{gate_center.x - 24.0f, pl.pos.y};
+        const bool lit_hint = pl.lit || zm.solar_gate_open;
+        DrawDawnBrassConduitSegment(pl.pos, corner, app, lit_hint, sim_time, 10 + static_cast<int>(i));
+        DrawDawnBrassConduitSegment(corner, gate_center, app, lit_hint, sim_time, 20 + static_cast<int>(i));
+    }
+    DrawDawnBrassConduitSegment(gate_center, solar.pos, app, zm.solar_gate_open, sim_time, 30);
+
+    // 3. Eliostato Solare -> Varco Nord (guida diegetica verso il Quartiere dei Canali)
+    const eco::Vec2 north_elbow{north_gw.x, solar.pos.y};
+    DrawDawnBrassConduitSegment(solar.pos, north_elbow, app, solar.state != eco::MachineState::Broken, sim_time, 40);
+    DrawDawnBrassConduitSegment(north_elbow, north_gw, app, solar.state != eco::MachineState::Broken, sim_time, 41);
+}
+
+void DrawCanalHydrometerPillar(
+    float x,
+    float y,
+    float poll,
+    float sim_time,
+    const eco::ZoneEcoStatus& eco_st,
+    bool laminar_active) {
+    const bool risky = (eco_st.current_speed_mult > 1.2f);
+    const bool dirty = (eco_st.band == eco::EcoHealthBand::Critical ||
+                        (eco_st.band == eco::EcoHealthBand::Polluted && poll > 0.45f));
+
+    DrawEllipse(static_cast<int>(x + 2.0f), static_cast<int>(y + 10.0f), 11.0f, 4.5f, Color{0, 0, 0, 105});
+    const Color stone = pal::WorldColor(Color{74, 82, 86, 255}, Color{138, 166, 184, 255}, poll);
+    DrawRectangle(static_cast<int>(x - 7.0f), static_cast<int>(y - 18.0f), 14, 28, stone);
+    DrawRectangleLines(static_cast<int>(x - 7.0f), static_cast<int>(y - 18.0f), 14, 28, pal::kBronze);
+
+    // Colonna graduata idrometrica con 5 tacche in bronzo e calce
+    for (int t = 0; t < 5; ++t) {
+        const int ty = static_cast<int>(y + 5.0f) - t * 5;
+        DrawLine(static_cast<int>(x - 5.0f), ty, static_cast<int>(x + 2.0f), ty,
+                 (t == 2) ? pal::kAccentClean : pal::kStevinoChalk);
+    }
+
+    // Livello menisco d'acqua reattivo alla portata reale
+    float level_norm = 0.50f;
+    Color level_col = pal::kLaminarSapphire;
+    if (risky) {
+        level_norm = 0.88f + 0.08f * std::sin(sim_time * 14.0f);
+        level_col = pal::kAccentRisky;
+    } else if (laminar_active || eco_st.band == eco::EcoHealthBand::Flourishing) {
+        level_norm = 0.48f;
+        level_col = pal::kJadeGlow;
+    } else if (dirty) {
+        level_norm = 0.68f + 0.10f * std::sin(sim_time * 6.0f);
+        level_col = pal::kAccentDirty;
+    }
+    const float wy = y + 7.0f - level_norm * 21.0f;
+    DrawRectangle(static_cast<int>(x + 2.0f), static_cast<int>(wy), 4,
+                  std::max(2, static_cast<int>((y + 8.0f) - wy)), level_col);
+    DrawCircleV({x, y - 21.0f}, 4.2f, level_col);
+    DrawCircleLines(static_cast<int>(x), static_cast<int>(y - 21.0f), 4.2f, pal::kBronzeBright);
+}
+
+void DrawDynamicPassagesGround(const eco::WorldContext& world, eco::Vec2 cam, float half_w, float half_h) {
+    const eco::LocationId loc = world.ActiveLocation();
+    const eco::ZoneId zone = world.overworld.active_zone;
+    const float sim_time = world.sim_time;
+    const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
+
+    for (const auto& pas : world.zone_mechanics.dynamic_passages) {
+        if (pas.location != loc) {
+            continue;
+        }
+        if (loc == eco::LocationId::Overworld && pas.zone != zone) {
+            continue;
+        }
+        const eco::Vec2 c = pas.bounds.Center();
+        if (std::fabs(c.x - cam.x) > half_w + pas.bounds.width ||
+            std::fabs(c.y - cam.y) > half_h + pas.bounds.height) {
+            continue;
+        }
+
+        const int rx = static_cast<int>(pas.bounds.x);
+        const int ry = static_cast<int>(pas.bounds.y);
+        const int rw = std::max(24, static_cast<int>(pas.bounds.width));
+        const int rh = std::max(24, static_cast<int>(pas.bounds.height));
+
+        switch (pas.kind) {
+            case eco::PassageKind::PitchBramble: {
+                if (pas.open) {
+                    // Sentiero rigenerato: lastricato fiorito con scie di vento leggero e polline
+                    const Color stone = pal::LerpColor(dp.path_healthy, pal::kStoneIvory, 0.28f);
+                    DrawRectangle(rx + 2, ry + 2, rw - 4, rh - 4, stone);
+                    DrawRectangleLines(rx + 2, ry + 2, rw - 4, rh - 4, pal::WithAlpha(pal::kJadeGlow, 175));
+                    const int flowers = std::clamp((rw * rh) / 900, 4, 16);
+                    for (int i = 0; i < flowers; ++i) {
+                        const std::uint32_t h = Hash2(pas.id * 31 + i, i * 17, 701);
+                        const float fx = pas.bounds.x + 8.0f + static_cast<float>(h % static_cast<unsigned>(std::max(8, rw - 16)));
+                        const float fy = pas.bounds.y + 8.0f + static_cast<float>((h >> 7) % static_cast<unsigned>(std::max(8, rh - 16)));
+                        const Color fc = (i % 3 == 0) ? pal::kFloraPollenGold : ((i & 1) ? dp.blossom_a : pal::kJadeGlow);
+                        DrawCircleV({fx, fy}, 3.0f, fc);
+                        DrawCircleV({fx, fy}, 1.3f, pal::kStoneIvory);
+                    }
+                    // Scie di brezza veloce (+12% movimento)
+                    for (int w = 0; w < 3; ++w) {
+                        const float phase = std::fmod(sim_time * 1.4f + static_cast<float>(w) * 0.33f, 1.0f);
+                        const float wx = pas.bounds.x + 8.0f + phase * std::max(12.0f, pas.bounds.width - 28.0f);
+                        const float wy = pas.bounds.y + (0.25f + 0.25f * static_cast<float>(w)) * pas.bounds.height +
+                                         std::sin(sim_time * 3.0f + static_cast<float>(w)) * 3.0f;
+                        DrawLineEx({wx, wy}, {wx + 18.0f, wy}, 1.8f,
+                                   pal::WithAlpha(pal::kJadeGlow, static_cast<unsigned char>((1.0f - phase) * 195.0f)));
+                    }
+                } else {
+                    // Bloccato da Rovi di Pece: fondo bituminoso
+                    DrawRectangle(rx, ry, rw, rh, pal::WithAlpha(pal::kBramblePitch, 210));
+                    DrawRectangleLines(rx, ry, rw, rh, pal::kBrambleAmberGlow);
+                }
+                break;
+            }
+            case eco::PassageKind::ScorchedCrest: {
+                if (pas.open) {
+                    // Scorciatoia della Cresta Arsa (RiskyEfficient): roccia vetrificata con vene incandescenti
+                    DrawRectangle(rx, ry, rw, rh, pal::kScorchedVitrified);
+                    DrawRectangleLines(rx, ry, rw, rh, pal::kScorchedEmber);
+                    const int veins = std::clamp(rw / 28, 3, 9);
+                    const float pulse = 0.65f + 0.35f * std::sin(sim_time * 5.2f);
+                    for (int v = 0; v < veins; ++v) {
+                        const float vx = pas.bounds.x + (static_cast<float>(v) + 0.5f) * (pas.bounds.width / static_cast<float>(veins));
+                        DrawLineEx(
+                            {vx - 6.0f, pas.bounds.y + 4.0f},
+                            {vx + 6.0f, pas.bounds.Bottom() - 4.0f},
+                            2.2f,
+                            pal::WithAlpha(pal::kScorchedEmber, static_cast<unsigned char>(210.0f * pulse)));
+                    }
+                } else {
+                    // Cresta rocciosa grezza chiusa
+                    DrawRectangle(rx, ry, rw, rh, Color{62, 52, 44, 245});
+                    DrawRectangleLines(rx, ry, rw, rh, pal::kBronzeDark);
+                }
+                break;
+            }
+            case eco::PassageKind::LaminarFord: {
+                // Il Guado degli Idraulici: pietre affioranti sommerse quando bloccato, ben emerse e asciutte quando aperto!
+                const int cols = std::max(2, rw / 36);
+                const int rows = std::max(2, rh / 36);
+                for (int r = 0; r < rows; ++r) {
+                    for (int cl = 0; cl < cols; ++cl) {
+                        const float sx = pas.bounds.x + (static_cast<float>(cl) + 0.5f) * (pas.bounds.width / static_cast<float>(cols));
+                        const float sy = pas.bounds.y + (static_cast<float>(r) + 0.5f) * (pas.bounds.height / static_cast<float>(rows));
+                        if (pas.open) {
+                            // Pietre ben emerse, asciutte in calcare chiaro con grappe in bronzo
+                            DrawEllipse(static_cast<int>(sx + 2.0f), static_cast<int>(sy + 4.0f), 14.0f, 10.0f, Color{0, 0, 0, 95});
+                            DrawEllipse(static_cast<int>(sx), static_cast<int>(sy), 13.5f, 9.5f, pal::kFordStoneDry);
+                            DrawEllipseLines(static_cast<int>(sx), static_cast<int>(sy), 13.5f, 9.5f, pal::kBronze);
+                            DrawLineEx({sx - 5.0f, sy}, {sx + 5.0f, sy}, 2.0f, pal::kBronzeBright);
+                            DrawRing({sx, sy}, 15.0f, 16.5f, 0.0f, 360.0f, 18,
+                                     pal::WithAlpha(pal::kJadeGlow, 145));
+                        } else {
+                            // Pietre sommerse da acqua torbida e vorticosa
+                            const float turb = std::sin(sim_time * 4.5f + static_cast<float>(r + cl)) * 2.0f;
+                            DrawEllipse(static_cast<int>(sx + turb), static_cast<int>(sy), 11.0f, 7.5f,
+                                        pal::WithAlpha(pal::kFordStoneWet, 120));
+                            DrawRing({sx, sy}, 8.0f, 10.5f, sim_time * 90.0f, sim_time * 90.0f + 220.0f, 14,
+                                     Color{136, 122, 96, 175});
+                        }
+                    }
+                }
+                break;
+            }
+            case eco::PassageKind::ArtisanArchway:
+            case eco::PassageKind::HighSpillway:
+            case eco::PassageKind::ArchivistNiche: {
+                if (pas.open) {
+                    DrawRectangle(rx + 2, ry + 2, rw - 4, rh - 4, pal::WithAlpha(pal::kJade, 52));
+                    DrawRectangleLines(rx + 2, ry + 2, rw - 4, rh - 4, pal::kJadeGlow);
+                } else {
+                    DrawRectangle(rx + 2, ry + 2, rw - 4, rh - 4, Color{42, 38, 36, 220});
+                    DrawRectangleLines(rx + 2, ry + 2, rw - 4, rh - 4, pal::kBronze);
+                }
+                break;
+            }
+        }
+    }
+}
+
+void DrawDynamicPassagesElevated(const eco::WorldContext& world, eco::Vec2 cam, float half_w, float half_h) {
+    const eco::LocationId loc = world.ActiveLocation();
+    const eco::ZoneId zone = world.overworld.active_zone;
+    const float sim_time = world.sim_time;
+
+    for (const auto& pas : world.zone_mechanics.dynamic_passages) {
+        if (pas.location != loc) {
+            continue;
+        }
+        if (loc == eco::LocationId::Overworld && pas.zone != zone) {
+            continue;
+        }
+        const eco::Vec2 c = pas.bounds.Center();
+        if (std::fabs(c.x - cam.x) > half_w + pas.bounds.width ||
+            std::fabs(c.y - cam.y) > half_h + pas.bounds.height) {
+            continue;
+        }
+
+        if (pas.kind == eco::PassageKind::PitchBramble && !pas.open) {
+            // Masse spinose nero-ambra 2.5D con esalazioni scure
+            const int clusters = std::clamp(static_cast<int>((pas.bounds.width * pas.bounds.height) / 750.0f), 4, 18);
+            for (int i = 0; i < clusters; ++i) {
+                const std::uint32_t h = Hash2(pas.id * 19 + i, i * 23, 881);
+                const float bx = pas.bounds.x + 10.0f +
+                                 static_cast<float>(h % static_cast<unsigned>(std::max(12, static_cast<int>(pas.bounds.width) - 20)));
+                const float by = pas.bounds.y + 10.0f +
+                                 static_cast<float>((h >> 6) % static_cast<unsigned>(std::max(12, static_cast<int>(pas.bounds.height) - 20)));
+                DrawCircleV({bx, by}, 10.5f, pal::kBramblePitch);
+                DrawPoly({bx, by}, 5, 9.0f, static_cast<float>(h % 360u), pal::kBrambleThorns);
+                for (int sp = 0; sp < 4; ++sp) {
+                    const float ang = static_cast<float>(sp) * (eco::kPi * 0.5f) + static_cast<float>(i) * 0.6f;
+                    DrawLineEx(
+                        {bx - std::cos(ang) * 9.0f, by - std::sin(ang) * 9.0f},
+                        {bx + std::cos(ang) * 11.0f, by + std::sin(ang) * 11.0f},
+                        2.0f,
+                        (sp & 1) ? pal::kBrambleAmberGlow : pal::kBrambleThorns);
+                }
+            }
+            // Esalazioni scure di pece ascendenti
+            for (int m = 0; m < 4; ++m) {
+                const float life = std::fmod(sim_time * 0.65f + static_cast<float>(m) * 0.25f, 1.0f);
+                const float mx = c.x + std::sin(sim_time * 2.1f + static_cast<float>(m * 3)) * (pas.bounds.width * 0.3f);
+                const float my = c.y - life * 26.0f;
+                const auto ma = static_cast<unsigned char>((1.0f - life) * 145.0f);
+                DrawCircleV({mx, my}, 4.5f + life * 4.5f, Color{42, 32, 30, ma});
+            }
+        } else if (pas.kind == eco::PassageKind::ScorchedCrest) {
+            if (!pas.open) {
+                // Barriera rocciosa di rovi e massi prima della vetrificazione
+                const int rocks = std::clamp(static_cast<int>(pas.bounds.width / 26.0f), 2, 8);
+                for (int i = 0; i < rocks; ++i) {
+                    const float rx = pas.bounds.x + (static_cast<float>(i) + 0.5f) * (pas.bounds.width / static_cast<float>(rocks));
+                    const float ry = c.y + ((i & 1) ? -4.0f : 4.0f);
+                    DrawPoly({rx, ry}, 6, 14.0f, 15.0f, Color{78, 66, 54, 255});
+                    DrawPolyLines({rx, ry}, 6, 14.0f, 15.0f, pal::kBrambleThorns);
+                }
+            } else {
+                // Fumo termico che sale dalla roccia vetrificata
+                for (int s = 0; s < 4; ++s) {
+                    const float life = std::fmod(sim_time * 0.95f + static_cast<float>(s) * 0.25f, 1.0f);
+                    const float sx = pas.bounds.x + (0.2f + 0.2f * static_cast<float>(s)) * pas.bounds.width;
+                    const float sy = c.y - life * 28.0f;
+                    const auto sa = static_cast<unsigned char>((1.0f - life) * 140.0f);
+                    DrawCircleV({sx, sy}, 3.5f + life * 4.0f, Color{252, 162, 76, sa});
+                }
+            }
+        } else if (pas.kind == eco::PassageKind::ArtisanArchway && !pas.open) {
+            // Grata in bronzo chiusa del Passaggio degli Artigiani
+            const int bars = std::max(3, static_cast<int>(pas.bounds.width / 14.0f));
+            for (int b = 1; b < bars; ++b) {
+                const float bx = pas.bounds.x + static_cast<float>(b) * (pas.bounds.width / static_cast<float>(bars));
+                DrawLineEx({bx, pas.bounds.y + 3.0f}, {bx, pas.bounds.Bottom() - 3.0f}, 2.4f, pal::kBronze);
+            }
+        }
+    }
+}
+
+void DrawObservationNodeProp(const eco::ObservationNode& node, float poll, float sim_time) {
+    const float x = node.pos.x;
+    const float y = node.pos.y;
+    const bool read = node.inspected || node.scanned;
+    const float pulse = 0.68f + 0.32f * std::sin(sim_time * 3.4f + static_cast<float>(node.id));
+    const Color accent = read ? pal::kJadeGlow : pal::kAmberGlow;
+
+    DrawEllipse(static_cast<int>(x + 3.0f), static_cast<int>(y + 11.0f), 16.0f, 6.0f, Color{0, 0, 0, 108});
+
+    if (node.location == eco::LocationId::Overworld && node.zone == eco::ZoneId::DawnTerraces) {
+        // Stazione Gnomonica / Meridiana di Bronzo Antico
+        DrawPoly({x, y + 4.0f}, 8, 15.0f, 22.5f, pal::WorldColor(Color{96, 84, 68, 255}, pal::kTravertineLight, poll));
+        DrawPolyLines({x, y + 4.0f}, 8, 15.0f, 22.5f, pal::kBronzeBright);
+        DrawRing({x, y + 4.0f}, 9.0f, 11.5f, 0.0f, 360.0f, 20, pal::kBronze);
+        // Ombra a 45 deg + stilo in ottone
+        DrawLineEx({x, y + 4.0f}, {x + 9.5f, y + 13.5f}, 2.4f, Color{20, 16, 12, 185});
+        DrawTriangle({x - 2.5f, y + 4.0f}, {x + 2.5f, y + 4.0f}, {x, y - 16.0f}, pal::kBronzeBright);
+        DrawCircleV({x, y - 16.0f}, 3.2f, accent);
+    } else if (node.location == eco::LocationId::Overworld && node.zone == eco::ZoneId::CanalQuarter) {
+        // Idrometro / Leggio Idraulico di Bronzo
+        DrawRectangle(static_cast<int>(x - 10.0f), static_cast<int>(y - 2.0f), 20, 12, pal::kBasaltMid);
+        DrawRectangleLines(static_cast<int>(x - 10.0f), static_cast<int>(y - 2.0f), 20, 12, pal::kBronze);
+        DrawRectangle(static_cast<int>(x - 5.0f), static_cast<int>(y - 22.0f), 10, 20, Color{24, 42, 58, 240});
+        DrawRectangleLines(static_cast<int>(x - 5.0f), static_cast<int>(y - 22.0f), 10, 20, pal::kBronzeBright);
+        for (int t = 0; t < 4; ++t) {
+            const int ty = static_cast<int>(y - 6.0f) - t * 4;
+            DrawLine(static_cast<int>(x - 4.0f), ty, static_cast<int>(x + 3.0f), ty, pal::kStevinoChalk);
+        }
+        DrawCircleV({x, y - 24.0f}, 3.5f, accent);
+    } else {
+        // Colonna Piezometrica / Leggio di Stevino (Cisterne Ipogee & Strutture)
+        DrawRectangle(static_cast<int>(x - 11.0f), static_cast<int>(y + 8.0f), 22, 14, pal::kBasaltDark);
+        DrawRectangleLines(static_cast<int>(x - 11.0f), static_cast<int>(y + 8.0f), 22, 14, pal::kBronze);
+        DrawRectangle(static_cast<int>(x - 4.0f), static_cast<int>(y - 18.0f), 8, 26, Color{22, 48, 64, 235});
+        DrawRectangleLines(static_cast<int>(x - 4.0f), static_cast<int>(y - 18.0f), 8, 26, pal::kBronzeBright);
+        DrawLineEx({x, y + 6.0f}, {x, y - 10.0f}, 3.0f, pal::kLaminarSapphire);
+        DrawCircleV({x, y - 20.0f}, 3.8f, accent);
+    }
+
+    DrawRing({x, y + 4.0f}, 17.0f, 19.0f, 0.0f, 360.0f, 24,
+             pal::WithAlpha(accent, static_cast<unsigned char>((read ? 185.0f : 120.0f) * pulse)));
+}
+
+void DrawBioPlanterProp(
+    const eco::BioPlanter& bp,
+    float poll,
+    float sim_time,
+    const pal::DistrictPalette& dp) {
+    const float x = bp.pos.x;
+    const float y = bp.pos.y;
+    const float pulse = 0.72f + 0.28f * std::sin(sim_time * 2.6f + static_cast<float>(bp.id));
+
+    DrawEllipse(static_cast<int>(x + 4.0f), static_cast<int>(y + 12.0f), 26.0f, 10.5f, Color{0, 0, 0, 112});
+
+    const bool planted_visual = bp.planted || (poll <= 0.12f);
+
+    // Conca ottagonale scolpita in pietra e bronzo
+    const Color rim_stone = planted_visual
+                                ? pal::LerpColor(dp.wall_top_healthy, pal::kStoneIvory, 0.35f)
+                                : pal::WorldColor(dp.wall_top_sick, dp.wall_top_healthy, poll);
+    DrawPoly({x, y + 4.0f}, 8, 24.0f, 22.5f, pal::ShiftBrightness(rim_stone, -24));
+    DrawPoly({x, y + 1.0f}, 8, 22.0f, 22.5f, rim_stone);
+    DrawPolyLines({x, y + 1.0f}, 8, 22.5f, 22.5f, planted_visual ? pal::kJadeGlow : pal::kBronze);
+
+    if (!planted_visual) {
+        // Vasca arida: terra screpolata e radici secche in attesa del Seme d'Ulivo Bianco
+        DrawPoly({x, y + 1.0f}, 8, 16.5f, 22.5f, Color{72, 56, 44, 255});
+        DrawLineEx({x - 8.0f, y + 1.0f}, {x + 7.0f, y + 3.0f}, 1.5f, Color{42, 32, 26, 220});
+        DrawLineEx({x - 2.0f, y - 5.0f}, {x + 3.0f, y + 7.0f}, 1.5f, Color{42, 32, 26, 220});
+        DrawLineEx({x, y + 1.0f}, {x - 5.0f, y - 8.0f}, 2.2f, pal::kFloraDeadWood);
+        DrawLineEx({x, y + 1.0f}, {x + 5.0f, y - 7.0f}, 2.0f, pal::kFloraDeadWood);
+        DrawRing({x, y + 1.0f}, 18.0f, 20.0f, 0.0f, 360.0f, 24,
+                 pal::WithAlpha(pal::kAmberGlow, static_cast<unsigned char>(115.0f * pulse)));
+        return;
+    }
+
+    // Vasca rigenerata: aura botanica a terra + giovane Ulivo Bianco luminoso
+    DrawPoly({x, y + 1.0f}, 8, 16.5f, 22.5f, Color{64, 134, 86, 255});
+    DrawRing({x, y + 2.0f}, 26.0f, 29.0f + pulse * 3.0f, 0.0f, 360.0f, 32,
+             pal::WithAlpha(pal::kJadeGlow, static_cast<unsigned char>(135.0f * pulse)));
+    DrawRing({x, y + 2.0f}, 54.0f, 56.5f, sim_time * 18.0f, sim_time * 18.0f + 240.0f, 28,
+             pal::WithAlpha(pal::kFloraPollenGold, 85));
+
+    const float sway = std::sin(sim_time * 1.9f + static_cast<float>(bp.id)) * 2.2f;
+    // Tronco argenteo-avorio
+    DrawLineEx({x - 2.0f, y + 2.0f}, {x + sway * 0.3f, y - 20.0f}, 5.2f, Color{154, 148, 136, 255});
+    DrawLineEx({x - 1.0f, y + 1.0f}, {x + sway * 0.3f, y - 20.0f}, 2.4f, pal::kStoneIvory);
+    DrawLineEx({x, y - 10.0f}, {x - 11.0f + sway * 0.5f, y - 20.0f}, 3.0f, Color{154, 148, 136, 255});
+    DrawLineEx({x, y - 11.0f}, {x + 11.0f + sway * 0.5f, y - 21.0f}, 3.0f, Color{154, 148, 136, 255});
+
+    // Chioma d'Ulivo Bianco argentea e radiosa
+    const Vector2 c{x + sway, y - 25.0f};
+    DrawCircleV(c, 22.0f * pulse, pal::WithAlpha(pal::kJadeGlow, 55));
+    DrawCircleV({c.x - 10.0f, c.y + 3.0f}, 11.5f, pal::kFloraWhiteOliveSilver);
+    DrawCircleV({c.x + 10.0f, c.y + 3.0f}, 11.5f, pal::kFloraWhiteOliveSilver);
+    DrawCircleV(c, 14.5f, pal::kFloraWhiteOliveSilver);
+    DrawCircleV({c.x - 4.0f, c.y - 4.0f}, 9.5f, pal::kFloraWhiteOliveHi);
+    DrawCircleV({c.x + 5.0f, c.y - 3.0f}, 8.0f, pal::kFloraWhiteOliveHi);
+
+    // Fiori dorati e polline luminoso
+    DrawCircleV({c.x - 8.0f, c.y - 1.0f}, 2.6f, pal::kFloraPollenGold);
+    DrawCircleV({c.x + 7.0f, c.y + 1.0f}, 2.5f, pal::kFloraPollenGold);
+    DrawCircleV({c.x + 1.0f, c.y - 8.0f}, 2.8f, pal::kSolarBeamCore);
+    DrawHealedPollenMotes(x, y, 1.15f, sim_time, bp.id * 37 + 11, pal::kFloraPollenGold);
+}
+
+void DrawSingleAmbientCritter(const eco::AmbientCritter& cr, float sim_time) {
+    if (!cr.active) {
+        return;
+    }
+    const float x = cr.pos.x;
+    const float y = cr.pos.y;
+    const float spd_len = cr.velocity.Length();
+    const eco::Vec2 dir = (spd_len > 1e-3f)
+                              ? (cr.velocity / spd_len)
+                              : eco::Vec2{std::cos(sim_time + cr.phase), std::sin(sim_time + cr.phase)};
+    const eco::Vec2 perp{-dir.y, dir.x};
+
+    switch (cr.kind) {
+        case eco::CritterKind::Swallow: {
+            // Rondine chiara in volo radente con piccola ombra sul travertino
+            const Vector2 sh{x + 12.0f, y + 20.0f};
+            DrawEllipse(static_cast<int>(sh.x), static_cast<int>(sh.y), 6.5f, 3.0f, Color{0, 0, 0, 78});
+
+            const float flap = std::sin(sim_time * 15.0f + cr.phase) * 5.5f;
+            const Vector2 nose{x + dir.x * 7.5f, y + dir.y * 7.5f};
+            const Vector2 tail{x - dir.x * 8.5f, y - dir.y * 8.5f};
+            const Vector2 wl{x - dir.x * 2.0f + perp.x * (11.5f + flap * 0.4f),
+                             y - dir.y * 2.0f + perp.y * (11.5f + flap * 0.4f) - flap * 0.5f};
+            const Vector2 wr{x - dir.x * 2.0f - perp.x * (11.5f + flap * 0.4f),
+                             y - dir.y * 2.0f - perp.y * (11.5f + flap * 0.4f) - flap * 0.5f};
+            DrawLineEx(nose, wl, 2.4f, pal::kSwallowWing);
+            DrawLineEx(nose, wr, 2.4f, pal::kSwallowWing);
+            DrawLineEx(nose, tail, 2.6f, pal::kSwallowBack);
+            DrawCircleV({x, y}, 2.2f, pal::kStoneIvory);
+            break;
+        }
+        case eco::CritterKind::SilverCarp: {
+            // Carpa argentata/dorata che guizza sotto il pelo dell'acqua limpida
+            const float wiggle = std::sin(sim_time * 11.0f + cr.phase) * 3.2f;
+            const Color body_col = (static_cast<int>(cr.phase * 10.0f) & 1) ? pal::kCarpSilver : pal::kCarpGold;
+            const Vector2 head{x + dir.x * 6.5f, y + dir.y * 6.5f};
+            const Vector2 mid{x + perp.x * wiggle * 0.5f, y + perp.y * wiggle * 0.5f};
+            const Vector2 tail{x - dir.x * 8.0f + perp.x * wiggle, y - dir.y * 8.0f + perp.y * wiggle};
+            DrawRing({x, y}, 7.0f, 8.5f, 0.0f, 360.0f, 16, Color{178, 244, 255, 75});
+            DrawLineEx(head, mid, 4.2f, body_col);
+            DrawLineEx(mid, tail, 2.4f, pal::WithAlpha(body_col, 210));
+            DrawCircleV(head, 2.4f, pal::kStoneIvory);
+            break;
+        }
+        case eco::CritterKind::Dragonfly: {
+            // Libellula turchese vicino alle sponde
+            const float buzz = std::sin(sim_time * 32.0f + cr.phase) * 2.0f;
+            DrawEllipse(static_cast<int>(x + 3.0f), static_cast<int>(y + 10.0f), 4.0f, 1.8f, Color{0, 0, 0, 62});
+            DrawLineEx({x - dir.x * 6.5f, y - dir.y * 6.5f}, {x + dir.x * 5.5f, y + dir.y * 5.5f}, 2.0f, pal::kDragonflyCyan);
+            DrawCircleV({x + perp.x * (5.5f + buzz * 0.3f), y + perp.y * (5.5f + buzz * 0.3f)}, 3.4f, Color{210, 252, 255, 155});
+            DrawCircleV({x - perp.x * (5.5f + buzz * 0.3f), y - perp.y * (5.5f + buzz * 0.3f)}, 3.4f, Color{210, 252, 255, 155});
+            DrawCircleV({x + dir.x * 5.5f, y + dir.y * 5.5f}, 1.8f, pal::kStoneIvory);
+            break;
+        }
+        case eco::CritterKind::GlowNewt: {
+            // Piccolo tritone/salamandra bioluminescente nelle Cisterne Ipogee
+            const float pulse = 0.65f + 0.35f * std::sin(sim_time * 4.2f + cr.phase);
+            const float wave = std::sin(sim_time * 7.5f + cr.phase) * 2.2f;
+            DrawCircleV({x, y}, 10.0f * pulse, pal::WithAlpha(pal::kNewtBioGlow, 48));
+            const Vector2 head{x + dir.x * 5.5f, y + dir.y * 5.5f};
+            const Vector2 tail{x - dir.x * 7.5f + perp.x * wave, y - dir.y * 7.5f + perp.y * wave};
+            DrawLineEx(head, {x, y}, 3.4f, Color{28, 92, 84, 245});
+            DrawLineEx({x, y}, tail, 2.0f, pal::kNewtBioGlow);
+            DrawCircleV(head, 2.2f, pal::kNewtBioGlow);
+            DrawCircleV({x, y}, 1.6f, pal::kStoneIvory);
+            break;
+        }
+        case eco::CritterKind::CaveFirefly: {
+            // Sciame di lucciole di grotta
+            const float glow = 0.55f + 0.45f * std::sin(sim_time * 4.8f + cr.phase);
+            DrawCircleV({x, y}, 8.5f * glow, pal::WithAlpha(pal::kBioMossCyan, static_cast<unsigned char>(65.0f * glow)));
+            DrawCircleV({x, y}, 2.4f, pal::kNewtBioGlow);
+            DrawCircleV({x, y}, 1.2f, pal::kStoneIvory);
+            break;
+        }
+    }
+}
+
+void DrawAmbientFauna(const eco::WorldContext& world, eco::Vec2 cam, float half_w, float half_h) {
+    const eco::ZoneEcoStatus eco_st = world.ActiveSceneEcoStatus();
+    // Quando l'inquinamento e' alto o si usa il bypass sporco, la fauna sparisce completamente!
+    if (eco_st.fauna_count <= 0 ||
+        eco_st.band == eco::EcoHealthBand::Critical ||
+        (eco_st.band == eco::EcoHealthBand::Polluted && world.ecosystem.PollutionRatio() > 0.42f)) {
+        return;
+    }
+
+    const auto& zm = world.zone_mechanics;
+    const float sim_time = world.sim_time;
+    int drawn = 0;
+
+    if (world.current_mode == eco::GameMode::Overworld && zm.active_critter_count > 0) {
+        const int limit = std::min(zm.active_critter_count, static_cast<int>(zm.ambient_critters.size()));
+        for (int i = 0; i < limit; ++i) {
+            const auto& cr = zm.ambient_critters[static_cast<std::size_t>(i)];
+            if (!cr.active) {
+                continue;
+            }
+            if (std::fabs(cr.pos.x - cam.x) <= half_w + 48.0f &&
+                std::fabs(cr.pos.y - cam.y) <= half_h + 48.0f) {
+                DrawSingleAmbientCritter(cr, sim_time);
+            }
+            ++drawn;
+        }
+    }
+
+    // Fallback deterministico zero-heap (per Cisterne Ipogee o primo frame di screenshot --clean-all)
+    if (drawn == 0 && eco_st.fauna_count > 0) {
+        const int count = std::clamp(eco_st.fauna_count, 1, 12);
+        for (int i = 0; i < count; ++i) {
+            eco::AmbientCritter cr{};
+            cr.active = true;
+            cr.phase = static_cast<float>(i) * 1.13f;
+            const float ang = sim_time * (0.85f + static_cast<float>(i % 3) * 0.22f) + cr.phase;
+            if (world.current_mode == eco::GameMode::Structure) {
+                cr.kind = (i % 2 == 0) ? eco::CritterKind::GlowNewt : eco::CritterKind::CaveFirefly;
+                const float ax = 220.0f + static_cast<float>(i) * 135.0f;
+                const float ay = (cr.kind == eco::CritterKind::GlowNewt) ? 758.0f : (420.0f + static_cast<float>((i % 3) * 110));
+                const float rx = (cr.kind == eco::CritterKind::GlowNewt) ? 26.0f : 42.0f;
+                const float ry = (cr.kind == eco::CritterKind::GlowNewt) ? 4.0f : 24.0f;
+                cr.pos = {ax + std::cos(ang) * rx, ay + std::sin(ang * 1.3f) * ry};
+                cr.velocity = {-std::sin(ang) * rx, std::cos(ang * 1.3f) * ry};
+            } else if (world.current_zone == eco::ZoneId::CanalQuarter) {
+                cr.kind = (i % 2 == 0) ? eco::CritterKind::SilverCarp : eco::CritterKind::Dragonfly;
+                const float ax = 280.0f + static_cast<float>((i * 173) % 1180);
+                const float ay = (cr.kind == eco::CritterKind::SilverCarp) ? 576.0f : 510.0f;
+                cr.pos = {ax + std::cos(ang) * 44.0f, ay + std::sin(ang * 1.4f) * 18.0f};
+                cr.velocity = {-std::sin(ang) * 44.0f, std::cos(ang * 1.4f) * 18.0f};
+            } else {
+                cr.kind = eco::CritterKind::Swallow;
+                const float ax = 340.0f + static_cast<float>((i * 197) % 1080);
+                const float ay = 320.0f + static_cast<float>((i * 131) % 620);
+                cr.pos = {ax + std::cos(ang) * 72.0f, ay + std::sin(ang * 0.8f) * 44.0f};
+                cr.velocity = {-std::sin(ang) * 72.0f, std::cos(ang * 0.8f) * 35.0f};
+            }
+            if (std::fabs(cr.pos.x - cam.x) <= half_w + 64.0f &&
+                std::fabs(cr.pos.y - cam.y) <= half_h + 64.0f) {
+                DrawSingleAmbientCritter(cr, sim_time);
+            }
+        }
+    }
+}
+
+// =============================================================================
 // Rendering delle 6 Meccaniche Top-Down (Passata a Terra + Passata Elevata)
 // =============================================================================
 void DrawZoneMechanicsGround(const eco::WorldContext& world, eco::Vec2 cam, float half_w, float half_h) {
@@ -614,7 +1450,13 @@ void DrawZoneMechanicsGround(const eco::WorldContext& world, eco::Vec2 cam, floa
     const auto& env_cfg = GetEnvironmentEffectsConfig();
     const float weather_scale = env_cfg.atmosphere_enabled ? env_cfg.zone_weather_intensity : 0.35f;
 
+    // 0. Passaggi sistemici a terra (lastricati rigenerati, roccia vetrificata, Guado degli Idraulici)
+    DrawDynamicPassagesGround(world, cam, half_w, half_h);
+
     if (zone == eco::ZoneId::DawnTerraces) {
+        // Condotti d'ottone incastonati nel travertino (spenti -> oro Clean -> ambra Risky -> fuliggine Dirty)
+        DrawDawnBrassConduits(world);
+
         // Piastre fotosensibili (Terrazze dell'Alba)
         for (const auto& plate : zm.solar_plates) {
             if (std::fabs(plate.pos.x - cam.x) > half_w || std::fabs(plate.pos.y - cam.y) > half_h) {
@@ -651,8 +1493,17 @@ void DrawZoneMechanicsGround(const eco::WorldContext& world, eco::Vec2 cam, floa
             }
         }
     } else if (zone == eco::ZoneId::CanalQuarter) {
-        // Correnti d'acqua direzionali animate (Quartiere dei Canali)
-        for (const auto& cur : zm.water_currents) {
+        // Correnti d'acqua direzionali animate (Quartiere dei Canali — 3 regimi: Torbido/Pece, Supercritico Risky, Laminare Zaffiro)
+        const eco::ZoneEcoStatus eco_st = world.GetZoneEcoStatus(zone);
+        const bool risky_flow = (eco_st.current_speed_mult > 1.2f);
+        const bool laminar_flow = zm.laminar_flow_active ||
+                                  (eco_st.band == eco::EcoHealthBand::Flourishing && !risky_flow);
+        const bool polluted_flow = !laminar_flow && !risky_flow &&
+                                   (eco_st.band == eco::EcoHealthBand::Critical ||
+                                    (eco_st.band == eco::EcoHealthBand::Polluted && poll > 0.40f));
+
+        for (std::size_t idx = 0; idx < zm.water_currents.size(); ++idx) {
+            const auto& cur = zm.water_currents[idx];
             const float cx = cur.bounds.x + cur.bounds.width * 0.5f;
             const float cy = cur.bounds.y + cur.bounds.height * 0.5f;
             if (std::fabs(cx - cam.x) > half_w + cur.bounds.width ||
@@ -664,13 +1515,35 @@ void DrawZoneMechanicsGround(const eco::WorldContext& world, eco::Vec2 cam, floa
                 continue;
             }
             const eco::Vec2 perp{-dir.y, dir.x};
-            const Color arrow_col = cur.active
-                                        ? pal::WithAlpha(pal::kCurrentArrow, static_cast<unsigned char>(150.0f + 70.0f * health))
-                                        : pal::WithAlpha(pal::kCurrentFoam, 68);
-            const float speed = cur.active ? 54.0f : 10.0f;
+            Color arrow_col = cur.active
+                                  ? pal::WithAlpha(pal::kCurrentArrow, static_cast<unsigned char>(150.0f + 70.0f * health))
+                                  : pal::WithAlpha(pal::kCurrentFoam, 68);
+            if (laminar_flow) {
+                arrow_col = pal::WithAlpha(pal::kLaminarSapphire, 225);
+            } else if (risky_flow && cur.active) {
+                arrow_col = Color{240, 252, 255, 245};
+            } else if (polluted_flow) {
+                arrow_col = Color{138, 112, 78, 210};
+            }
+
+            const float speed = cur.active
+                                    ? (laminar_flow ? 34.0f : (risky_flow ? 96.0f : 54.0f))
+                                    : 12.0f;
             const int cols = std::max(1, static_cast<int>(cur.bounds.width / 44.0f));
             const int rows = std::max(1, static_cast<int>(cur.bounds.height / 44.0f));
             const float span = std::max(cur.bounds.width, cur.bounds.height);
+
+            // Onde laminari parallele zaffiro trasparenti quando guarito o col Diario Idraulico
+            if (laminar_flow) {
+                for (int r = 0; r < rows; ++r) {
+                    const float ry = cur.bounds.y + (static_cast<float>(r) + 0.5f) * (cur.bounds.height / static_cast<float>(rows));
+                    DrawLineEx(
+                        {cur.bounds.x + 6.0f, ry},
+                        {cur.bounds.Right() - 6.0f, ry},
+                        2.0f,
+                        pal::WithAlpha(pal::kJadeGlow, 95));
+                }
+            }
 
             for (int r = 0; r < rows; ++r) {
                 for (int c = 0; c < cols; ++c) {
@@ -680,15 +1553,34 @@ void DrawZoneMechanicsGround(const eco::WorldContext& world, eco::Vec2 cam, floa
                     const float ax = std::clamp(base_x + dir.x * shift, cur.bounds.x + 8.0f, cur.bounds.Right() - 8.0f);
                     const float ay = std::clamp(base_y + dir.y * shift, cur.bounds.y + 8.0f, cur.bounds.Bottom() - 8.0f);
 
+                    if (polluted_flow && ((r + c) & 1) == 0) {
+                        // Schiuma densa bruno-pece e vortici erratici
+                        const float spin = sim_time * ((c & 1) ? 115.0f : -115.0f) + static_cast<float>(r * 47);
+                        DrawRing({ax, ay}, 5.0f, 8.5f, spin, spin + 235.0f, 14, Color{102, 82, 58, 195});
+                        DrawCircleV({ax, ay}, 2.6f, Color{58, 46, 36, 180});
+                    }
+
                     // Freccia a chevron idraulico super leggibile
-                    const Vector2 tip{ax + dir.x * 9.0f, ay + dir.y * 9.0f};
+                    const Vector2 tip{ax + dir.x * (risky_flow ? 11.5f : 9.0f), ay + dir.y * (risky_flow ? 11.5f : 9.0f)};
                     const Vector2 wing_l{ax - dir.x * 5.0f + perp.x * 7.5f, ay - dir.y * 5.0f + perp.y * 7.5f};
                     const Vector2 wing_r{ax - dir.x * 5.0f - perp.x * 7.5f, ay - dir.y * 5.0f - perp.y * 7.5f};
-                    DrawLineEx(wing_l, tip, cur.active ? 2.4f : 1.4f, arrow_col);
-                    DrawLineEx(wing_r, tip, cur.active ? 2.4f : 1.4f, arrow_col);
-                    if (cur.active && span > 64.0f) {
+                    DrawLineEx(wing_l, tip, cur.active ? (risky_flow ? 2.8f : 2.4f) : 1.4f, arrow_col);
+                    DrawLineEx(wing_r, tip, cur.active ? (risky_flow ? 2.8f : 2.4f) : 1.4f, arrow_col);
+
+                    if (risky_flow && cur.active) {
+                        // Secondo chevron teso + getto bianco rapido e spruzzi in RiskyEfficient
+                        const Vector2 tip2{ax + dir.x * 4.0f, ay + dir.y * 4.0f};
+                        const Vector2 wl2{ax - dir.x * 9.0f + perp.x * 6.0f, ay - dir.y * 9.0f + perp.y * 6.0f};
+                        const Vector2 wr2{ax - dir.x * 9.0f - perp.x * 6.0f, ay - dir.y * 9.0f - perp.y * 6.0f};
+                        DrawLineEx(wl2, tip2, 2.0f, pal::WithAlpha(pal::kAccentRisky, 190));
+                        DrawLineEx(wr2, tip2, 2.0f, pal::WithAlpha(pal::kAccentRisky, 190));
+                        DrawLineEx({ax - dir.x * 16.0f, ay - dir.y * 16.0f}, tip, 2.2f, Color{255, 255, 255, 195});
+                    } else if (cur.active && span > 64.0f) {
+                        const Color tail_c = laminar_flow
+                                                 ? pal::WithAlpha(pal::kJadeGlow, 150)
+                                                 : pal::WithAlpha(pal::kCurrentFoam, 115);
                         DrawLineEx({ax - dir.x * 12.0f, ay - dir.y * 12.0f}, {ax + dir.x * 3.0f, ay + dir.y * 3.0f},
-                                   1.6f, pal::WithAlpha(pal::kCurrentFoam, 115));
+                                   1.6f, tail_c);
                     }
                 }
             }
@@ -937,6 +1829,23 @@ void DrawZoneMechanicsElevated(const eco::WorldContext& world, eco::Vec2 cam, fl
                          pal::WithAlpha(state_col, static_cast<unsigned char>(205.0f * pulse)));
             }
         }
+
+        // Colonnine idrometriche scolpite lungo le sponde dei canali
+        const eco::ZoneEcoStatus eco_st = world.GetZoneEcoStatus(zone);
+        const float ts = world.overworld.tilemap.TileSize();
+        static constexpr std::array<eco::TileCoord, 4> kHydrometerTiles{{
+            {10, 8},
+            {10, 21},
+            {17, 14},
+            {14, 30}
+        }};
+        for (const auto& ht : kHydrometerTiles) {
+            const float hx = (static_cast<float>(ht.col) + 0.5f) * ts;
+            const float hy = (static_cast<float>(ht.row) + 0.5f) * ts;
+            if (std::fabs(hx - cam.x) <= half_w && std::fabs(hy - cam.y) <= half_h) {
+                DrawCanalHydrometerPillar(hx, hy, poll, sim_time, eco_st, zm.laminar_flow_active);
+            }
+        }
     } else if (zone == eco::ZoneId::WindPlateau) {
         // 1. Monoliti Frangivento 2.5D scolpiti a spirale
         const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
@@ -1068,6 +1977,36 @@ void DrawZoneMechanicsElevated(const eco::WorldContext& world, eco::Vec2 cam, fl
             DrawPolyLines({seal.pos.x, seal.pos.y - 18.0f + hover}, 4, 8.5f, 45.0f, pal::kStoneIvory);
         }
     }
+
+    // Elementi sistemici Vertical Slice per tutte le zone Overworld:
+    // 1. Rovi di Pece / Cresta Arsa / Passaggi elevati
+    DrawDynamicPassagesElevated(world, cam, half_w, half_h);
+
+    // 2. Vasche Botaniche (BioPlanter: aride vs Ulivo Bianco luminoso)
+    const pal::DistrictPalette& dp = pal::GetDistrictPalette(zone);
+    for (const auto& bp : zm.bio_planters) {
+        if (bp.zone != zone) {
+            continue;
+        }
+        if (std::fabs(bp.pos.x - cam.x) <= half_w + 48.0f &&
+            std::fabs(bp.pos.y - cam.y) <= half_h + 48.0f) {
+            DrawBioPlanterProp(bp, poll, sim_time, dp);
+        }
+    }
+
+    // 3. Stazioni di Osservazione Diegetica (ObservationNode: gnomoni/idrometri/leggi)
+    for (const auto& node : zm.observation_nodes) {
+        if (node.location != eco::LocationId::Overworld || node.zone != zone) {
+            continue;
+        }
+        if (std::fabs(node.pos.x - cam.x) <= half_w + 36.0f &&
+            std::fabs(node.pos.y - cam.y) <= half_h + 36.0f) {
+            DrawObservationNodeProp(node, poll, sim_time);
+        }
+    }
+
+    // 4. Fauna Sistemica Viva (rondini, carpe argentate, libellule; 0 se inquinato/Dirty)
+    DrawAmbientFauna(world, cam, half_w, half_h);
 }
 
 // =============================================================================
@@ -1197,6 +2136,22 @@ void DrawCisternsBackdrop(
         DrawRectangleLines(px, 48, 52, world_h - 136, pal::ShiftBrightness(arch_near, 18));
         DrawRectangle(px - 2, 160, 56, 6, pal::WithAlpha(pal::kBronze, 175));
         DrawRectangle(px - 2, 360, 56, 6, pal::WithAlpha(pal::kBronze, 175));
+
+        // Tacche metriche di profondita' di Stevino (h = 0m .. 15m) dipinte in calce/bronzo sulle colonne sommerse
+        static constexpr std::array<const char*, 5> kStevinoLabels{{"h=0m", "h=5m", "h=10m", "h=12m", "h=15m"}};
+        static constexpr std::array<int, 5> kStevinoY{{176, 336, 520, 616, 742}};
+        for (std::size_t m = 0; m < kStevinoLabels.size(); ++m) {
+            const int my = kStevinoY[m];
+            if (my >= world_h - 110) {
+                continue;
+            }
+            const Color mark_col = (m == 2) ? pal::kAccentClean : ((m >= 3) ? pal::kAccentRisky : pal::kStevinoChalk);
+            DrawLine(px + 4, my, px + 22, my, mark_col);
+            DrawLine(px + 4, my + 1, px + 18, my + 1, pal::WithAlpha(mark_col, 175));
+            if ((i & 1) == 0) {
+                DrawTextShadow(kStevinoLabels[m], px + 6, my - 13, 10, mark_col);
+            }
+        }
 
         if ((i & 1) == 0) {
             const int wx = px + 96;
@@ -1414,7 +2369,7 @@ int g_prop_cache_cols = -1;
         return false;
     }
     world.ForEachNpcInScene([&](const eco::WorldNpc& npc) {
-        if (pos.DistanceTo(npc.pos) < 80.0f) {
+        if (pos.DistanceTo(npc.pos) < 80.0f || pos.DistanceTo(npc.home_pos) < 80.0f) {
             blocked = true;
         }
     });
@@ -1437,9 +2392,29 @@ int g_prop_cache_cols = -1;
         }
     }
 
-    // Evita sovrapposizioni con le 6 meccaniche della zona attiva
+    // Evita sovrapposizioni con ObservationNode, BioPlanter e DynamicPassage della zona attiva
     const eco::ZoneId zone = world.overworld.active_zone;
     const eco::ZoneMechanicState& zm = world.zone_mechanics;
+    for (const auto& obs : zm.observation_nodes) {
+        if (obs.location == eco::LocationId::Overworld && obs.zone == zone &&
+            pos.DistanceTo(obs.pos) < 76.0f) {
+            return false;
+        }
+    }
+    for (const auto& bp : zm.bio_planters) {
+        if (bp.zone == zone && pos.DistanceTo(bp.pos) < 84.0f) {
+            return false;
+        }
+    }
+    for (const auto& pas : zm.dynamic_passages) {
+        if (pas.location == eco::LocationId::Overworld && pas.zone == zone) {
+            const float pad = 34.0f;
+            if (pos.x >= pas.bounds.x - pad && pos.x <= pas.bounds.Right() + pad &&
+                pos.y >= pas.bounds.y - pad && pos.y <= pas.bounds.Bottom() + pad) {
+                return false;
+            }
+        }
+    }
     if (zone == eco::ZoneId::DawnTerraces) {
         if (pos.DistanceTo(zm.solar_emitter_pos) < 74.0f) {
             return false;
@@ -2267,7 +3242,13 @@ void DrawOverworldProceduralMap(const eco::WorldContext& world) {
             return;
         }
         if (m.type == eco::MachineType::SolarArray) {
-            DrawSolarSundialMosaic(m.pos, poll, sim_time);
+            DrawSolarSundialMosaic(
+                m.pos,
+                poll,
+                sim_time,
+                m.target_param,
+                world.zone_mechanics.hidden_sundial_glyphs_revealed,
+                world.zone_mechanics.solar_trial_flash_timer);
         } else if (m.type == eco::MachineType::HarmonicResonator) {
             DrawHarmonicWaveMosaic(m.pos, poll, sim_time);
         } else if (m.type == eco::MachineType::CentralAstrolabe) {
@@ -2501,7 +3482,8 @@ void DrawOverworldProceduralProps(const eco::WorldContext& world) {
         }
     }
 
-    // 2. Prop statici pre-calcolati SOLO per la zona attiva
+    // 2. Prop statici pre-calcolati SOLO per la zona attiva (modulati dinamicamente da ZoneEcoStatus e BioPlanter!)
+    const eco::ZoneEcoStatus eco_st = world.GetZoneEcoStatus(zone);
     for (const StaticProp& sp : g_prop_cache) {
         if (std::fabs(sp.x - cam.x) > half_w || std::fabs(sp.y - cam.y) > half_h) {
             continue;
@@ -2511,6 +3493,7 @@ void DrawOverworldProceduralProps(const eco::WorldContext& world) {
         const std::uint32_t h = sp.h;
         const float scale = sp.scale;
         const unsigned roll = sp.roll;
+        const LocalFloraVisual bio = ComputeLocalFloraVisual(world, zone, eco_st, {px, py});
 
         if (roll == 0u) {
             DrawBioCrystalNode(px, py, sim_time, poll, dp.ambient_accent);
@@ -2529,14 +3512,14 @@ void DrawOverworldProceduralProps(const eco::WorldContext& world) {
             switch (zone) {
                 case eco::ZoneId::DawnTerraces:
                 case eco::ZoneId::HarmonySanctuary:
-                    DrawOliveTree(px, py, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu));
+                    DrawOliveTree(px, py, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu), bio);
                     break;
                 case eco::ZoneId::WindPlateau:
                 case eco::ZoneId::CanalQuarter:
-                    DrawWindCypress(px, py, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu), wind_gust);
+                    DrawWindCypress(px, py, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu), wind_gust, bio);
                     break;
                 case eco::ZoneId::HangingGardens:
-                    DrawFloweringGardenTree(px, py, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu));
+                    DrawFloweringGardenTree(px, py, scale, sim_time, poll, dp, static_cast<int>(h & 0xFFu), bio);
                     break;
                 case eco::ZoneId::FumaroleCaldera:
                     if ((h & 1u) == 0u) {
@@ -2798,6 +3781,138 @@ void DrawStructureProceduralBackdropAndMap(
             const int py = badge_y - 22;
             DrawActionPromptBadge(1, "E", px, py, pal::kAmberGlow);
         }
+    }
+
+    // =========================================================================
+    // Segnali Diegetici, Tubazioni Piezometriche, Muschi Bioluminescenti,
+    // Sfioratore Supercritico, Nicchia d'Archivio, Stazioni e Fauna nelle Cisterne Ipogee
+    // =========================================================================
+    if (sid == eco::StructureId::HypogeanCisterns) {
+        const eco::Machine& hydro = world.GetMachine(eco::MachineType::HydroTurbine);
+        const bool risky_hydro = (hydro.approach == eco::CalibrationApproach::RiskyEfficient) ||
+                                 (puzzle.trial_water_hammer_timer > 0.05f);
+        const bool dirty_hydro = (hydro.approach == eco::CalibrationApproach::DirtyImmediate) ||
+                                 (hydro.state == eco::MachineState::BypassedDirty);
+        const bool clean_hydro = (hydro.approach == eco::CalibrationApproach::CleanSlow) ||
+                                 (hydro.state == eco::MachineState::CleanActive && !risky_hydro);
+
+        // 1. Tubazioni piezometriche verticali lungo le paratoie (col 16 e col 28):
+        //    vibrano e gocciolano vapore in RiskyEfficient / colpo d'ariete!
+        static constexpr std::array<int, 2> kPipeCols{{16, 28}};
+        for (std::size_t pi = 0; pi < kPipeCols.size(); ++pi) {
+            const float vib = risky_hydro ? (std::sin(sim_time * 44.0f + static_cast<float>(pi) * 2.1f) * 2.2f) : 0.0f;
+            const float px = (static_cast<float>(kPipeCols[pi]) + 0.5f) * ts + vib;
+            const float top_y = 2.0f * ts;
+            const float bot_y = 14.8f * ts;
+            DrawLineEx({px, top_y}, {px, bot_y}, 8.0f, pal::kBronzeDark);
+            DrawLineEx({px - 1.5f, top_y}, {px - 1.5f, bot_y}, 3.0f,
+                       risky_hydro ? pal::kAccentRisky : (dirty_hydro ? pal::kConduitDirtySoot : pal::kBronzeBright));
+
+            // Vetrini piezometrici graduati lungo la colonna
+            for (int g = 0; g < 3; ++g) {
+                const float gy = top_y + 72.0f + static_cast<float>(g) * 160.0f;
+                const Color glass_c = risky_hydro
+                                          ? pal::kAccentRisky
+                                          : (dirty_hydro ? Color{96, 68, 44, 220} : pal::kLaminarSapphire);
+                DrawRectangle(static_cast<int>(px - 5.0f), static_cast<int>(gy), 10, 36, Color{14, 24, 34, 235});
+                DrawRectangle(static_cast<int>(px - 3.0f), static_cast<int>(gy + 4.0f), 6, 28, glass_c);
+                DrawRectangleLines(static_cast<int>(px - 5.0f), static_cast<int>(gy), 10, 36, pal::kBronzeBright);
+
+                if (risky_hydro) {
+                    // Sbuffi di vapore in pressione e gocce incandescenti dai giunti
+                    const float puff = std::fmod(sim_time * 1.85f + static_cast<float>(g) * 0.33f + static_cast<float>(pi) * 0.5f, 1.0f);
+                    const float sx = px + ((g & 1) ? 1.0f : -1.0f) * (8.0f + puff * 26.0f);
+                    const float sy = gy + 18.0f - puff * 14.0f;
+                    const auto sa = static_cast<unsigned char>((1.0f - puff) * 185.0f);
+                    DrawCircleV({sx, sy}, 4.0f + puff * 6.5f, Color{226, 244, 252, sa});
+                }
+            }
+        }
+
+        // 2. Muschi bioluminescenti azzurro-giada che guidano l'occhio verso le nicchie sane e lo sfioratore alto
+        if (!dirty_hydro && health > 0.25f) {
+            const float moss_glow = 0.65f + 0.35f * std::sin(sim_time * 2.8f);
+            static constexpr std::array<eco::TileCoord, 8> kBioMossSpots{{
+                {10, 3}, {10, 5}, {10, 8}, {10, 10}, // Galleria Alta / Sfioratore del Prisma
+                {14, 6}, {12, 21}, {10, 18},         // Scalata centrale
+                {17, 32}                             // Soglia dell'Archivista Lorenzo
+            }};
+            for (std::size_t mi = 0; mi < kBioMossSpots.size(); ++mi) {
+                const float mx = (static_cast<float>(kBioMossSpots[mi].col) + 0.5f) * ts;
+                const float my = static_cast<float>(kBioMossSpots[mi].row) * ts;
+                const Color mc = (mi < 4) ? pal::kBioMossCyan : pal::kBioMossJade;
+                DrawCircleV({mx, my + 2.0f}, 14.0f * moss_glow,
+                            pal::WithAlpha(mc, static_cast<unsigned char>(55.0f * health * moss_glow)));
+                DrawEllipse(static_cast<int>(mx), static_cast<int>(my + 2.0f), 14.0f, 3.8f,
+                            pal::WithAlpha(mc, static_cast<unsigned char>(195.0f * health)));
+                DrawCircleV({mx - 6.0f, my + 4.0f}, 2.4f, pal::kStoneIvory);
+                DrawCircleV({mx + 5.0f, my + 3.0f}, 2.0f, mc);
+            }
+        }
+
+        // 3. Sfioratore Supercritico / Galleria Alta del Prisma (col 4, rows 7..9)
+        {
+            const float sp_x = 4.5f * ts;
+            const float sp_top = 6.0f * ts;
+            const float sp_bot = 10.0f * ts;
+            if (puzzle.high_spillway_open || puzzle.trial_water_hammer_timer > 0.05f) {
+                // Paratoia spalancata a pressione con getti d'acqua supercritici laterali
+                DrawRectangle(static_cast<int>(sp_x - 16.0f), static_cast<int>(sp_top), 32, 12, pal::kBronzeBright);
+                for (int j = 0; j < 4; ++j) {
+                    const float jy = sp_top + 12.0f + std::fmod(sim_time * 160.0f + static_cast<float>(j) * 32.0f, sp_bot - sp_top - 16.0f);
+                    DrawLineEx({sp_x - 14.0f, jy}, {sp_x - 14.0f, std::min(sp_bot, jy + 22.0f)}, 3.0f, Color{220, 250, 255, 220});
+                    DrawLineEx({sp_x + 14.0f, jy}, {sp_x + 14.0f, std::min(sp_bot, jy + 22.0f)}, 3.0f, Color{220, 250, 255, 220});
+                }
+            }
+        }
+
+        // 4. Nicchia Sigillata d'Archivio di Lorenzo (col 31..32, row 16..17)
+        {
+            const float nx = 31.5f * ts;
+            const float ny = 16.5f * ts;
+            DrawRectangle(static_cast<int>(nx - 20.0f), static_cast<int>(ny - 28.0f), 40, 52,
+                          puzzle.archivist_niche_open ? Color{18, 44, 52, 235} : Color{32, 30, 34, 235});
+            DrawRectangleLines(static_cast<int>(nx - 20.0f), static_cast<int>(ny - 28.0f), 40, 52,
+                               puzzle.archivist_niche_open ? pal::kJadeGlow : pal::kBronze);
+            if (puzzle.archivist_niche_open || clean_hydro) {
+                for (int shelf = 0; shelf < 3; ++shelf) {
+                    const int sy = static_cast<int>(ny - 18.0f) + shelf * 14;
+                    DrawLine(static_cast<int>(nx - 14.0f), sy, static_cast<int>(nx + 14.0f), sy, pal::kBronzeBright);
+                    DrawCircle(static_cast<int>(nx - 6.0f), sy - 3, 2.6f, pal::kJadeGlow);
+                    DrawCircle(static_cast<int>(nx + 6.0f), sy - 3, 2.6f, pal::kAmberGlow);
+                }
+            }
+        }
+
+        // 5. Valvola di Equilibrio Ausiliaria di Stevino (sbloccata da Waters_SluiceStele)
+        {
+            const float vx = puzzle.aux_stevino_valve_pos.x;
+            const float vy = puzzle.aux_stevino_valve_pos.y + ts * 0.5f;
+            const Color vc = puzzle.aux_stevino_valve_open
+                                 ? pal::kJadeGlow
+                                 : (puzzle.aux_stevino_valve_unlocked ? pal::kAmberGlow : pal::kBronzeDark);
+            DrawRectangle(static_cast<int>(vx - 12.0f), static_cast<int>(vy - 10.0f), 24, 10, pal::kBasaltDark);
+            DrawRectangleLines(static_cast<int>(vx - 12.0f), static_cast<int>(vy - 10.0f), 24, 10, pal::kBronze);
+            DrawRing({vx, vy - 22.0f}, 9.0f, 12.5f, 0.0f, 360.0f, 20, vc);
+            const float spin = puzzle.aux_stevino_valve_open ? (sim_time * 2.2f) : 0.0f;
+            for (int sp_i = 0; sp_i < 4; ++sp_i) {
+                const float ang = spin + static_cast<float>(sp_i) * (eco::kPi * 0.5f);
+                DrawLineEx({vx, vy - 22.0f}, {vx + std::cos(ang) * 10.5f, vy - 22.0f + std::sin(ang) * 10.5f}, 2.2f, pal::kBronzeBright);
+            }
+            DrawCircleV({vx, vy - 22.0f}, 3.6f, vc);
+        }
+
+        // 6. Stazioni di Osservazione Diegetica nelle Cisterne Ipogee
+        for (const auto& obs : puzzle.observation_nodes) {
+            DrawObservationNodeProp(obs, poll, sim_time);
+        }
+
+        // 7. Fauna Sistemica Viva delle Cisterne (tritoni bioluminescenti e lucciole di grotta)
+        DrawAmbientFauna(
+            world,
+            camera_target,
+            static_cast<float>(eco::kWindowWidth) * 0.6f,
+            static_cast<float>(eco::kWindowHeight) * 0.6f);
     }
 
     // Iscrizione diegetica della camera vicino allo spawn

@@ -172,6 +172,141 @@ void DrawCollectiblePickupBurst(const eco::WorldContext& world) {
     }
 }
 
+void DrawSystemicActionBursts(const eco::WorldContext& world) {
+    // 1. Impulso di Prova (RunTrial): onde diagnostiche graduate + scintille empiriche
+    if (world.trial_pulse_timer > 0.01f) {
+        const float t = 1.0f - std::clamp(world.trial_pulse_timer / 1.25f, 0.0f, 1.0f);
+        const float fade = (1.0f - t) * (1.0f - t);
+        const eco::Vec2 origin = world.trial_pulse_origin;
+        const bool is_hydraulic = (world.last_trial_machine == eco::MachineType::HydroTurbine) ||
+                                  (world.current_mode == eco::GameMode::Structure &&
+                                   world.active_structure == eco::StructureId::HypogeanCisterns);
+        const Color ring_primary = is_hydraulic ? pal::kAccentTrial : pal::kAccentRisky;
+        const Color ring_secondary = is_hydraulic ? pal::kBioMossCyan : pal::kConduitCleanGold;
+
+        const float r1 = 18.0f + t * 155.0f;
+        const float r2 = 10.0f + t * 102.0f;
+        const float r3 = 6.0f + t * 56.0f;
+
+        DrawCircleLines(
+            static_cast<int>(origin.x),
+            static_cast<int>(origin.y),
+            r1,
+            pal::WithAlpha(ring_primary, static_cast<unsigned char>(235.0f * fade)));
+        DrawCircleLines(
+            static_cast<int>(origin.x),
+            static_cast<int>(origin.y),
+            r2,
+            pal::WithAlpha(ring_secondary, static_cast<unsigned char>(205.0f * fade)));
+        DrawCircleLines(
+            static_cast<int>(origin.x),
+            static_cast<int>(origin.y),
+            r3,
+            pal::WithAlpha(RAYWHITE, static_cast<unsigned char>(190.0f * fade)));
+
+        // Tacche goniometriche/manometriche sull'onda esterna per lettura empirica
+        for (int deg = 0; deg < 12; ++deg) {
+            const float ang = static_cast<float>(deg) * (2.0f * eco::kPi / 12.0f) + t * 0.35f;
+            const Vector2 p0{origin.x + std::cos(ang) * (r1 - 6.0f), origin.y + std::sin(ang) * (r1 - 6.0f)};
+            const Vector2 p1{origin.x + std::cos(ang) * (r1 + 5.0f), origin.y + std::sin(ang) * (r1 + 5.0f)};
+            DrawLineEx(p0, p1, 1.8f, pal::WithAlpha(ring_primary, static_cast<unsigned char>(210.0f * fade)));
+        }
+
+        // 18 scintille diagnostiche radiali
+        for (int i = 0; i < 18; ++i) {
+            const float ang = static_cast<float>(i) * (2.0f * eco::kPi / 18.0f) + HashFloat01(i, 311) * 0.2f;
+            const float dist = (14.0f + HashFloat01(i, 317) * 118.0f) * t;
+            const Vector2 p{
+                origin.x + std::cos(ang) * dist,
+                origin.y + std::sin(ang) * dist - t * 14.0f
+            };
+            const float rad = (2.4f + HashFloat01(i, 331) * 1.6f) * (1.0f - t * 0.5f);
+            DrawCircleV(p, rad * 1.9f, pal::WithAlpha(ring_primary, static_cast<unsigned char>(95.0f * fade)));
+            DrawCircleV(p, rad, pal::WithAlpha(RAYWHITE, static_cast<unsigned char>(235.0f * fade)));
+        }
+    }
+
+    // 2. Fioritura Vasca Botanica (Seme d'Ulivo Bianco): onda d'argento/giada e foglioline ascendenti
+    if (world.planter_bloom_timer > 0.01f) {
+        const float t = 1.0f - std::clamp(world.planter_bloom_timer / 1.50f, 0.0f, 1.0f);
+        const float fade = 1.0f - t * t;
+        const eco::Vec2 pos = world.planter_bloom_pos;
+
+        const float r_outer = 20.0f + t * 175.0f;
+        const float r_inner = 12.0f + t * 110.0f;
+        DrawCircleV(
+            {pos.x, pos.y},
+            r_inner * 0.65f,
+            pal::WithAlpha(pal::kJadeGlow, static_cast<unsigned char>(46.0f * fade)));
+        DrawCircleLines(
+            static_cast<int>(pos.x),
+            static_cast<int>(pos.y),
+            r_outer,
+            pal::WithAlpha(pal::kFloraWhiteOliveHi, static_cast<unsigned char>(230.0f * fade)));
+        DrawCircleLines(
+            static_cast<int>(pos.x),
+            static_cast<int>(pos.y),
+            r_inner,
+            pal::WithAlpha(pal::kFloraPollenGold, static_cast<unsigned char>(210.0f * fade)));
+
+        for (int i = 0; i < 22; ++i) {
+            const float ang = static_cast<float>(i) * (2.0f * eco::kPi / 22.0f) + t * 1.4f;
+            const float dist = (12.0f + HashFloat01(i, 419) * 120.0f) * std::sqrt(t);
+            const float lift = t * (22.0f + HashFloat01(i, 431) * 32.0f);
+            const Vector2 lp{
+                pos.x + std::cos(ang) * dist,
+                pos.y + std::sin(ang) * dist * 0.72f - lift
+            };
+            const Color leaf_col = (i % 3 == 0)
+                                       ? pal::kFloraPollenGold
+                                       : ((i % 2 == 0) ? pal::kFloraWhiteOliveHi : pal::kJadeGlow);
+            DrawPoly(
+                lp,
+                4,
+                3.2f * (1.0f - t * 0.35f),
+                world.sim_time * 90.0f + static_cast<float>(i * 19),
+                pal::WithAlpha(leaf_col, static_cast<unsigned char>(225.0f * fade)));
+        }
+    }
+
+    // 3. Impulso Remoto del Prisma del Congedo: raggio rifratto tra Elena e il nodo bersaglio
+    if (world.prism_pulse_timer > 0.01f) {
+        const float t = 1.0f - std::clamp(world.prism_pulse_timer / 1.10f, 0.0f, 1.0f);
+        const float fade = (1.0f - t);
+        const Vector2 a{world.prism_pulse_from.x, world.prism_pulse_from.y};
+        const Vector2 b{world.prism_pulse_to.x, world.prism_pulse_to.y};
+
+        DrawLineEx(a, b, 7.5f * fade, pal::WithAlpha(pal::kBioMossCyan, static_cast<unsigned char>(95.0f * fade)));
+        DrawLineEx(a, b, 3.6f * fade, pal::WithAlpha(pal::kConduitCleanGold, static_cast<unsigned char>(195.0f * fade)));
+        DrawLineEx(a, b, 1.6f, pal::WithAlpha(RAYWHITE, static_cast<unsigned char>(240.0f * fade)));
+
+        DrawCircleLines(
+            static_cast<int>(a.x),
+            static_cast<int>(a.y),
+            12.0f + t * 34.0f,
+            pal::WithAlpha(pal::kBioMossCyan, static_cast<unsigned char>(210.0f * fade)));
+        DrawCircleLines(
+            static_cast<int>(b.x),
+            static_cast<int>(b.y),
+            14.0f + t * 52.0f,
+            pal::WithAlpha(pal::kConduitCleanGold, static_cast<unsigned char>(235.0f * fade)));
+
+        for (int k = 0; k < 7; ++k) {
+            const float u = std::fmod(static_cast<float>(k) / 7.0f + t * 1.35f, 1.0f);
+            const Vector2 node{
+                a.x + (b.x - a.x) * u,
+                a.y + (b.y - a.y) * u
+            };
+            DrawPoly(
+                node,
+                6,
+                4.2f * fade,
+                world.sim_time * 120.0f + static_cast<float>(k * 30),
+                pal::WithAlpha(RAYWHITE, static_cast<unsigned char>(220.0f * fade)));
+        }
+    }
+}
+
 void DrawZoneMechanicParticles(
     const eco::WorldContext& world,
     float min_x,
@@ -826,8 +961,9 @@ float GetParticleQualityScale() noexcept {
 void DrawWorldAtmosphericParticles(
     const eco::WorldContext& world,
     eco::Vec2 camera_target) {
-    // Il burst della raccolta reliquia e' sempre leggibile anche con particelle ridotte
+    // Il burst della raccolta reliquia e gli impulsi sistemici sono sempre leggibili
     DrawCollectiblePickupBurst(world);
+    DrawSystemicActionBursts(world);
 
     const float p_scale = g_env_effects.particle_density;
     if (p_scale <= 0.01f) {
@@ -836,21 +972,70 @@ void DrawWorldAtmosphericParticles(
     const float w_scale = p_scale * g_env_effects.zone_weather_intensity;
 
     const float sim_time = world.sim_time;
-    const float poll = world.ecosystem.PollutionRatio();
+    const eco::ZoneEcoStatus eco_status = world.ActiveSceneEcoStatus();
+    const float local_poll = 1.0f - std::clamp(eco_status.local_vitality, 0.0f, 1.0f);
+    const float poll = std::clamp(local_poll * 0.72f + world.ecosystem.PollutionRatio() * 0.28f, 0.0f, 1.0f);
     const float health = 1.0f - poll;
+    const eco::CalibrationApproach approach = world.ActiveMachine().approach;
     const float min_x = camera_target.x - static_cast<float>(eco::kWindowWidth) * 0.58f;
     const float min_y = camera_target.y - static_cast<float>(eco::kWindowHeight) * 0.58f;
     const float span_x = static_cast<float>(eco::kWindowWidth) * 1.16f;
     const float span_y = static_cast<float>(eco::kWindowHeight) * 1.16f;
 
+    // Particelle specifiche del regime di calibrazione attivo (CleanSlow vs RiskyEfficient vs DirtyImmediate)
+    if (approach == eco::CalibrationApproach::CleanSlow) {
+        const int clean_motes = static_cast<int>(18.0f * w_scale);
+        for (int i = 0; i < clean_motes; ++i) {
+            const float rx = HashFloat01(i, 1901);
+            const float ry = HashFloat01(i, 1907);
+            const float phase = HashFloat01(i, 1913) * 6.28318f;
+            const float wx = min_x + std::fmod(rx * span_x + std::sin(sim_time * 1.1f + phase) * 28.0f + span_x, span_x);
+            const float wy = min_y + std::fmod(ry * span_y - sim_time * (11.0f + (i % 4) * 3.0f) + span_y * 10.0f, span_y);
+            const float pulse = 0.5f + 0.5f * std::sin(sim_time * 2.8f + phase);
+            const Color col = (i % 2 == 0) ? pal::kFloraPollenGold : pal::kFloraWhiteOliveHi;
+            DrawCircleV({wx, wy}, 2.4f * pulse, pal::WithAlpha(col, static_cast<unsigned char>(175.0f * pulse)));
+        }
+    } else if (approach == eco::CalibrationApproach::RiskyEfficient) {
+        const int risky_sparks = static_cast<int>(24.0f * w_scale);
+        for (int i = 0; i < risky_sparks; ++i) {
+            const float rx = HashFloat01(i, 1931);
+            const float ry = HashFloat01(i, 1949);
+            const float spd = 34.0f + HashFloat01(i, 1951) * 42.0f;
+            const float phase = HashFloat01(i, 1973) * 6.28318f;
+            const float wx = min_x + std::fmod(rx * span_x + std::sin(sim_time * 6.5f + phase) * 10.0f + span_x, span_x);
+            const float wy = min_y + std::fmod(ry * span_y - sim_time * spd + span_y * 20.0f, span_y);
+            const float flicker = 0.55f + 0.45f * std::sin(sim_time * 11.0f + phase);
+            DrawLineEx(
+                {wx, wy},
+                {wx + std::sin(sim_time * 9.0f + phase) * 3.0f, wy + 7.5f},
+                1.6f,
+                pal::WithAlpha(pal::kConduitRiskyAmber, static_cast<unsigned char>(210.0f * flicker)));
+            DrawCircleV({wx, wy}, 1.6f, pal::WithAlpha(RAYWHITE, static_cast<unsigned char>(220.0f * flicker)));
+        }
+    } else if (approach == eco::CalibrationApproach::DirtyImmediate) {
+        const int soot_flakes = static_cast<int>(28.0f * w_scale);
+        for (int i = 0; i < soot_flakes; ++i) {
+            const float rx = HashFloat01(i, 1979);
+            const float ry = HashFloat01(i, 1987);
+            const float vx = 16.0f + HashFloat01(i, 1993) * 20.0f;
+            const float vy = 22.0f + HashFloat01(i, 1997) * 26.0f;
+            const float wx = min_x + std::fmod(rx * span_x + sim_time * vx, span_x);
+            const float wy = min_y + std::fmod(ry * span_y + sim_time * vy, span_y);
+            DrawCircleV({wx, wy}, 2.4f + static_cast<float>(i % 2) * 0.9f, pal::WithAlpha(pal::kConduitDirtySoot, 175));
+        }
+    }
+
     if (world.current_mode == eco::GameMode::Overworld) {
         const eco::ZoneId zone = world.current_zone;
 
-        // 1. Lucciole e pulviscolo luminoso della Conca
+        // 1. Lucciole e pulviscolo luminoso della Conca (spariscono con il bypass sporco)
         const int firefly_base = (zone == eco::ZoneId::HangingGardens || zone == eco::ZoneId::HarmonySanctuary) ? 52 : 34;
+        const float approach_mult = (approach == eco::CalibrationApproach::DirtyImmediate)
+                                        ? 0.0f
+                                        : ((approach == eco::CalibrationApproach::CleanSlow) ? 1.35f : 1.0f);
         const int firefly_count = static_cast<int>(
-            std::max(0.20f, health) * static_cast<float>(firefly_base) * p_scale *
-            (0.35f + 0.65f * g_env_effects.zone_weather_intensity));
+            std::max(0.15f, health) * static_cast<float>(firefly_base) * p_scale *
+            (0.35f + 0.65f * g_env_effects.zone_weather_intensity) * approach_mult);
         for (int i = 0; i < firefly_count; ++i) {
             const float rx = HashFloat01(i, 101);
             const float ry = HashFloat01(i, 202);
@@ -902,10 +1087,12 @@ void DrawWorldAtmosphericParticles(
                         continue;
                     }
                     const auto alpha = static_cast<unsigned char>(55 + (i % 4) * 24);
-                    const Color drop_col = pal::WorldColor(
-                        Color{140, 145, 118, alpha},
-                        Color{132, 228, 255, alpha},
-                        poll);
+                    const Color drop_col = (approach == eco::CalibrationApproach::RiskyEfficient)
+                                               ? Color{255, 206, 122, alpha}
+                                               : pal::WorldColor(
+                                                     Color{140, 145, 118, alpha},
+                                                     Color{132, 228, 255, alpha},
+                                                     poll);
                     DrawCircleV({wx, wy}, 2.1f + static_cast<float>(i % 3) * 0.8f, drop_col);
                 }
                 break;
@@ -962,8 +1149,11 @@ void DrawScreenSpaceAtmosphere(const eco::WorldContext& world) {
     }
 
     const float sim_time = world.sim_time;
-    const float poll = world.ecosystem.PollutionRatio();
+    const eco::ZoneEcoStatus eco_status = world.ActiveSceneEcoStatus();
+    const float local_poll = 1.0f - std::clamp(eco_status.local_vitality, 0.0f, 1.0f);
+    const float poll = std::clamp(local_poll * 0.72f + world.ecosystem.PollutionRatio() * 0.28f, 0.0f, 1.0f);
     const float health = 1.0f - poll;
+    const eco::CalibrationApproach approach = world.ActiveMachine().approach;
     const int sw = eco::kWindowWidth;
     const int sh = eco::kWindowHeight;
 
@@ -986,20 +1176,22 @@ void DrawScreenSpaceAtmosphere(const eco::WorldContext& world) {
         }
     }
 
-    // 1. Raggi solari d'alba (God-Rays) scalati da sun_rays_intensity
-    if (world.current_mode == eco::GameMode::Overworld && ray_k > 0.01f) {
+    // 1. Raggi solari d'alba (God-Rays) scalati da sun_rays_intensity e potenziati in CleanSlow
+    if (world.current_mode == eco::GameMode::Overworld && ray_k > 0.01f &&
+        approach != eco::CalibrationApproach::DirtyImmediate) {
         const bool sunlit_zone = (world.current_zone == eco::ZoneId::DawnTerraces ||
                                   world.current_zone == eco::ZoneId::HarmonySanctuary);
+        const float clean_boost = (approach == eco::CalibrationApproach::CleanSlow) ? 0.22f : 0.0f;
         const float base_strength = sunlit_zone
-                                        ? std::clamp(0.38f + health * 0.62f, 0.25f, 1.0f)
-                                        : std::clamp((health - 0.55f) / 0.45f, 0.0f, 1.0f);
+                                        ? std::clamp(0.38f + health * 0.62f + clean_boost, 0.25f, 1.0f)
+                                        : std::clamp((health - 0.50f) / 0.50f + clean_boost, 0.0f, 1.0f);
         const float ray_strength = base_strength * ray_k;
         if (ray_strength > 0.02f) {
             for (int r = 0; r < 4; ++r) {
                 const float shift = std::sin(sim_time * 0.42f + static_cast<float>(r) * 1.35f) * 32.0f;
                 const float x0 = 130.0f + static_cast<float>(r) * 295.0f + shift;
                 const float w = 72.0f + static_cast<float>(r % 2) * 36.0f;
-                const auto alpha = static_cast<unsigned char>(24.0f * ray_strength);
+                const auto alpha = static_cast<unsigned char>(26.0f * ray_strength);
                 const Color sun_ray = (world.current_zone == eco::ZoneId::HarmonySanctuary)
                                           ? Color{188, 250, 232, alpha}
                                           : Color{255, 238, 172, alpha};
@@ -1012,14 +1204,33 @@ void DrawScreenSpaceAtmosphere(const eco::WorldContext& world) {
         }
     }
 
-    // 2. Foschia e cenere di pece obliqua quando l'inquinamento e' attivo (scalata da fog_haze_intensity)
-    const float smog_ratio = world.ecosystem.SmogAlpha();
+    // 1b. Riverbero Termico / Sovraccarico Critico (RiskyEfficient o Impulso di Prova attivo)
+    const float trial_heat = std::clamp(world.trial_pulse_timer / 1.25f, 0.0f, 1.0f);
+    if (approach == eco::CalibrationApproach::RiskyEfficient || trial_heat > 0.05f) {
+        const float pulse = 0.55f + 0.45f * std::sin(sim_time * 8.2f);
+        const float intensity = std::max(
+            (approach == eco::CalibrationApproach::RiskyEfficient) ? (0.65f + 0.35f * pulse) : 0.0f,
+            trial_heat * 0.85f);
+        const auto rim_a = static_cast<unsigned char>(34.0f * intensity * std::max(0.4f, fog_k));
+        const Color heat_col = (trial_heat > 0.35f) ? pal::kAccentTrial : pal::kAccentRisky;
+        DrawRectangleGradientV(0, 52, sw, 68, pal::WithAlpha(heat_col, rim_a), pal::WithAlpha(heat_col, 0));
+        DrawRectangleGradientV(0, sh - 74, sw, 74, pal::WithAlpha(heat_col, 0), pal::WithAlpha(heat_col, rim_a));
+    }
+
+    // 2. Foschia acida e cenere di pece obliqua quando l'inquinamento o il bypass sporco sono attivi
+    const float dirty_boost = (approach == eco::CalibrationApproach::DirtyImmediate) ? 0.32f : 0.0f;
+    const float smog_ratio = std::max(world.ecosystem.SmogAlpha(), poll * 0.35f + dirty_boost);
     if (smog_ratio > 0.01f && fog_k > 0.01f) {
-        const auto smog_a = static_cast<unsigned char>(smog_ratio * 185.0f * fog_k);
-        const Color smog_col = pal::LerpColor(Color{54, 58, 52, smog_a}, Color{72, 56, 44, smog_a}, poll);
+        const auto smog_a = static_cast<unsigned char>(std::clamp(smog_ratio * 185.0f * fog_k, 0.0f, 155.0f));
+        const Color smog_col = (approach == eco::CalibrationApproach::DirtyImmediate)
+                                   ? Color{46, 38, 32, smog_a}
+                                   : pal::LerpColor(Color{54, 58, 52, smog_a}, Color{72, 56, 44, smog_a}, poll);
         DrawRectangle(0, 52, sw, sh - 52, smog_col);
 
-        const int ash_count = static_cast<int>(poll * 52.0f * g_env_effects.particle_density * fog_k);
+        const float ash_factor = (approach == eco::CalibrationApproach::DirtyImmediate)
+                                     ? std::max(0.65f, poll)
+                                     : poll;
+        const int ash_count = static_cast<int>(ash_factor * 56.0f * g_env_effects.particle_density * fog_k);
         for (int i = 0; i < ash_count; ++i) {
             const float sx = HashFloat01(i, 909) * static_cast<float>(sw);
             const float sy = 52.0f + HashFloat01(i, 1010) * static_cast<float>(sh - 52);
@@ -1029,7 +1240,10 @@ void DrawScreenSpaceAtmosphere(const eco::WorldContext& world) {
             const float py = 52.0f + std::fmod((sy - 52.0f) + sim_time * vy + std::sin(sim_time * 1.7f + static_cast<float>(i)) * 10.0f + static_cast<float>(sh),
                                                static_cast<float>(sh - 52));
             const auto a = static_cast<unsigned char>(80 + (i % 4) * 26);
-            DrawCircleV({px, py}, 1.7f + static_cast<float>(i % 2) * 0.9f, Color{166, 150, 132, a});
+            const Color ash_col = (approach == eco::CalibrationApproach::DirtyImmediate && (i % 2 == 0))
+                                      ? Color{92, 78, 66, a}
+                                      : Color{166, 150, 132, a};
+            DrawCircleV({px, py}, 1.7f + static_cast<float>(i % 2) * 0.9f, ash_col);
         }
     }
 

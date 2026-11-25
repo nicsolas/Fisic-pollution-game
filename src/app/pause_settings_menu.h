@@ -28,6 +28,7 @@ struct GraphicsSettings {
     std::string active_gpu_renderer{};
 
     // Gioco & Interfaccia
+    int guidance_mode_index = 0;   // 0: Empirica, 1: Sempre Attiva, 2: Spenta
     bool show_fps = false;
     bool compact_tutorial = false; // true = avanzamento dialoghi piu' rapido
     int dialogue_speed_index = 1;  // 0: Lento, 1: Normale, 2: Rapido

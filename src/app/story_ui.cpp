@@ -160,10 +160,16 @@ namespace {
     }
     const auto& solar = world.GetMachine(eco::MachineType::SolarArray);
     if (!world.last_scan.active && solar.state == eco::MachineState::Broken) {
-        return {"Misura l'Eliostato Solare", "Premi [F] vicino al monumento nelle Terrazze dell'Alba"};
+        return {
+            "Leggi le Terrazze dell'Alba",
+            "Osserva le ombre sulle meridiane, segui i condotti d'ottone o usa [Q] Lente"
+        };
     }
     if (solar.state == eco::MachineState::Broken) {
-        return {"Calibra l'Eliostato Solare", "Premi [E] sul monumento e allinea l'angolo con [A]/[D]"};
+        return {
+            "Indaga sull'Eliostato Solare",
+            "Premi [E] sul monumento: formula un'ipotesi, sperimenta con [T] e scegli una soluzione"
+        };
     }
     if (!world.GetNpc(eco::NpcId::ClaraSereni).recruited) {
         return {"Parla con Clara Sereni", "Raggiungi il Quartiere dei Canali e premi [E] vicino a Clara"};
@@ -261,13 +267,242 @@ namespace {
     return items;
 }
 
+[[nodiscard]] std::string FitTextToWidth(
+    std::string_view text,
+    int max_width_px,
+    int font_size) {
+    if (text.empty()) {
+        return {};
+    }
+    std::string out(text);
+    if (MeasureUiText(out.c_str(), font_size) <= max_width_px) {
+        return out;
+    }
+    while (out.size() > 3 && MeasureUiText((out + "..").c_str(), font_size) > max_width_px) {
+        out.pop_back();
+    }
+    return out + "..";
+}
+
+[[nodiscard]] Color EcoBandUiColor(eco::EcoHealthBand band) noexcept {
+    switch (band) {
+        case eco::EcoHealthBand::Flourishing:
+            return pal::kJadeGlow;
+        case eco::EcoHealthBand::Recovering:
+            return pal::kAccentClean;
+        case eco::EcoHealthBand::Polluted:
+            return pal::kAmberGlow;
+        case eco::EcoHealthBand::Critical:
+            return pal::kAccentDirty;
+    }
+    return pal::kAmberGlow;
+}
+
+bool g_prev_slice_complete = false;
+float g_slice_showcase_timer = 0.0f;
+bool g_slice_card_expanded = false;
+
+void DrawRelicPickupToolToast(
+    const eco::CollectibleMeta& meta,
+    const eco::RelicGameplaySpec& spec,
+    int collected_count,
+    int total_count,
+    float alpha) {
+    const float a = std::clamp(alpha, 0.0f, 1.0f);
+    if (a <= 0.01f) {
+        return;
+    }
+    const auto sc = [a](unsigned char base) noexcept -> unsigned char {
+        return static_cast<unsigned char>(std::clamp(static_cast<float>(base) * a, 0.0f, 255.0f));
+    };
+
+    const Color era_col = EraAccentColor(meta.era);
+    const Rectangle r{438.0f, 58.0f, 402.0f, 106.0f};
+    DrawRectangleRec(Rectangle{r.x + 3.0f, r.y + 4.0f, r.width, r.height}, Color{0, 0, 0, sc(125)});
+    DrawRectangleRec(r, Color{12, 20, 30, sc(242)});
+    DrawRectangleLinesEx(r, 1.8f, pal::WithAlpha(era_col, sc(235)));
+
+    DrawRelicGlyph(
+        static_cast<int>(meta.kind),
+        Vector2{r.x + 22.0f, r.y + 28.0f},
+        12.5f,
+        pal::WithAlpha(era_col, sc(255)),
+        true,
+        static_cast<float>(GetTime()));
+
+    const std::string code_str = meta.code.empty() ? std::string("ARCHIVIO") : meta.code;
+    const std::string eyebrow = FitTextToWidth(
+        "RELIQUIA RITROVATA | " + code_str + " (" + std::to_string(collected_count) + "/" +
+            std::to_string(total_count) + ") | [J] Codex",
+        346,
+        11);
+    DrawTextShadow(eyebrow.c_str(), static_cast<int>(r.x) + 42, static_cast<int>(r.y) + 8, 11, pal::WithAlpha(era_col, sc(245)));
+
+    const std::string title = FitTextToWidth(
+        meta.title.empty() ? std::string("Frammento dei Meridiani") : meta.title,
+        346,
+        15);
+    DrawTextShadow(title.c_str(), static_cast<int>(r.x) + 42, static_cast<int>(r.y) + 24, 15, pal::WithAlpha(pal::kParchmentText, sc(255)));
+
+    const Rectangle tool_box{r.x + 10.0f, r.y + 48.0f, r.width - 20.0f, 50.0f};
+    DrawRectangleRec(tool_box, Color{16, 32, 42, sc(232)});
+    DrawRectangleLinesEx(tool_box, 1.2f, pal::WithAlpha(pal::kJadeGlow, sc(215)));
+
+    const std::string tool_hdr = FitTextToWidth(
+        std::string("STRUMENTO & EFFETTO LUDICO: ") +
+            ((spec.tool_name != nullptr && spec.tool_name[0] != '\0') ? spec.tool_name : "Strumento Antico"),
+        static_cast<int>(tool_box.width) - 16,
+        11);
+    DrawTextShadow(
+        tool_hdr.c_str(),
+        static_cast<int>(tool_box.x) + 8,
+        static_cast<int>(tool_box.y) + 6,
+        11,
+        pal::WithAlpha(pal::kJadeGlow, sc(250)));
+
+    const std::string eff_str =
+        (spec.effect_summary != nullptr && spec.effect_summary[0] != '\0')
+            ? std::string(spec.effect_summary)
+            : std::string("Apri [J] Codex per i dettagli d'impiego sul campo.");
+    const auto eff_lines = WrapTextToWidth(eff_str, static_cast<int>(tool_box.width) - 16, 11);
+    if (!eff_lines.empty()) {
+        DrawTextShadow(
+            eff_lines[0].c_str(),
+            static_cast<int>(tool_box.x) + 8,
+            static_cast<int>(tool_box.y) + 21,
+            11,
+            pal::WithAlpha(pal::kParchmentText, sc(245)));
+    }
+    if (eff_lines.size() > 1) {
+        const std::string line2 = FitTextToWidth(eff_lines[1], static_cast<int>(tool_box.width) - 16, 11);
+        DrawTextShadow(
+            line2.c_str(),
+            static_cast<int>(tool_box.x) + 8,
+            static_cast<int>(tool_box.y) + 34,
+            11,
+            pal::WithAlpha(Color{184, 218, 228, 255}, sc(235)));
+    }
+}
+
+void DrawVerticalSliceSummaryCard(const eco::WorldContext& world) {
+    const eco::VerticalSliceSummary vs = world.ComputeVerticalSliceSummary();
+    if (!vs.slice_complete) {
+        g_prev_slice_complete = false;
+        g_slice_showcase_timer = 0.0f;
+        g_slice_card_expanded = false;
+        return;
+    }
+    if (!g_prev_slice_complete) {
+        g_prev_slice_complete = true;
+        g_slice_showcase_timer = 16.0f;
+        g_slice_card_expanded = true;
+    }
+    if (!world.story.HasActiveDialogue() && g_slice_showcase_timer > 0.0f) {
+        g_slice_showcase_timer = std::max(0.0f, g_slice_showcase_timer - GetFrameTime());
+        if (g_slice_showcase_timer <= 0.0f) {
+            g_slice_card_expanded = false;
+        }
+    }
+
+    const Color eco_col = EcoBandUiColor(vs.eco_band);
+    const Vector2 mouse = GetMousePosition();
+    const bool clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+
+    if (!g_slice_card_expanded) {
+        const Rectangle pill{16.0f, 140.0f, 412.0f, 28.0f};
+        if (clicked && CheckCollisionPointRec(mouse, pill)) {
+            g_slice_card_expanded = true;
+        }
+        DrawPanel(pill, eco_col);
+        const std::string pill_txt = FitTextToWidth(
+            TextFormat(
+                "PRIMO CICLO COMPLETATO | %s (%.0f%%) [Click]",
+                eco::EcoHealthBandName(vs.eco_band),
+                vs.vitality_score * 100.0f),
+            388,
+            12);
+        DrawTextShadow(pill_txt.c_str(), 28, 148, 12, eco_col);
+        return;
+    }
+
+    const Rectangle card{16.0f, 140.0f, 412.0f, 144.0f};
+    if (clicked && CheckCollisionPointRec(mouse, card)) {
+        g_slice_card_expanded = false;
+        g_slice_showcase_timer = 0.0f;
+    }
+    DrawPanelWithHeader(card, 22, "BILANCIO PRIMO CICLO  |  VERTICAL SLICE", eco_col);
+
+    const char* raw_head =
+        (vs.synthesis_headline != nullptr && vs.synthesis_headline[0] != '\0')
+            ? vs.synthesis_headline
+            : "Terrazze, Canali e Cisterne riconnessi.";
+    const std::string head_line = FitTextToWidth(raw_head, 388, 12);
+    DrawTextShadow(head_line.c_str(), 28, 168, 12, pal::kParchmentText);
+
+    const std::string choices_line = FitTextToWidth(
+        TextFormat(
+            "Eliostato: %s  |  Turbina: %s",
+            eco::CalibrationApproachName(vs.solar_approach),
+            eco::CalibrationApproachName(vs.hydro_approach)),
+        388,
+        12);
+    DrawTextShadow(choices_line.c_str(), 28, 187, 12, pal::kBronzeBright);
+
+    const std::string eco_line = FitTextToWidth(
+        TextFormat(
+            "Ecosistema: %s  (Vitalita' %.0f%%)",
+            eco::EcoHealthBandName(vs.eco_band),
+            vs.vitality_score * 100.0f),
+        388,
+        12);
+    DrawTextShadow(eco_line.c_str(), 28, 206, 12, eco_col);
+
+    const std::string stats_line = FitTextToWidth(
+        TextFormat(
+            "Indagini: %d oss., %d prove  |  Reliquie Slice: %d/6",
+            vs.observations_count,
+            vs.trials_run_total,
+            vs.slice_relics_collected),
+        388,
+        11);
+    DrawTextShadow(stats_line.c_str(), 28, 226, 11, Color{180, 214, 228, 240});
+
+    std::string fx;
+    if (vs.planters_seeded > 0) {
+        fx += "Ulivi Bianchi fioriti";
+    }
+    if (vs.laminar_ford_unlocked) {
+        if (!fx.empty()) fx += " | ";
+        fx += "Guado Laminare";
+    }
+    if (vs.scorched_shortcut_open) {
+        if (!fx.empty()) fx += " | ";
+        fx += "Cresta Arsa";
+    }
+    if (vs.high_spillway_open) {
+        if (!fx.empty()) fx += " | ";
+        fx += "Sfioratore Alto";
+    }
+    if (fx.empty()) {
+        fx = (vs.eco_band == eco::EcoHealthBand::Flourishing || vs.eco_band == eco::EcoHealthBand::Recovering)
+                 ? "Sentieri verdi aperti e fauna tornata viva"
+                 : "Foschia attiva sui sentieri bassi (ricalibra con [E])";
+    }
+    const std::string fx_line = FitTextToWidth("Mondo: " + fx, 388, 11);
+    DrawTextShadow(fx_line.c_str(), 28, 244, 11, pal::kJadeGlow);
+    DrawTextShadow("[Click sul riquadro per ridurre]", 242, 265, 10, Color{150, 182, 198, 210});
+}
+
 } // namespace
 
 void DrawStoryLayer(eco::WorldContext& world) {
+    if (world.calibration_modal.is_open) {
+        return;
+    }
     const eco::StoryDirector& story = world.story;
     const eco::Chapter chapter = story.CurrentChapter();
 
-    // 1. Pannello Capitolo & Obiettivo in alto a sinistra (x=16, y=60, w=412, h=70)
+    // 1. Pannello Capitolo & Obiettivo in alto a sinistra (x=16, y=60, w=412, h=72)
     const char* raw_chap = eco::ChapterTitle(chapter);
     const char* chap_title =
         (raw_chap != nullptr && raw_chap[0] != '\0') ? raw_chap : FallbackChapterTitle(chapter);
@@ -277,41 +512,59 @@ void DrawStoryLayer(eco::WorldContext& world) {
         obj = FallbackObjective(world);
     }
 
-    const Rectangle obj_box{16.0f, 60.0f, 412.0f, 70.0f};
+    const Rectangle obj_box{16.0f, 60.0f, 412.0f, 72.0f};
     DrawPanel(obj_box, pal::kUiBorderBronze);
-    DrawTextShadow(chap_title, 28, 67, 12, pal::kJadeGlow);
-    DrawTextShadow(obj.title.c_str(), 28, 84, 16, pal::kParchmentText);
+
+    const bool in_slice_area =
+        (world.ActiveLocation() == eco::LocationId::HypogeanCisterns) ||
+        (world.ActiveLocation() == eco::LocationId::Overworld &&
+         (world.current_zone == eco::ZoneId::DawnTerraces ||
+          world.current_zone == eco::ZoneId::CanalQuarter));
+    if (in_slice_area) {
+        const char* stg = eco::InquiryStageName(world.CurrentAreaInquiryStage());
+        const int stg_w = MeasureUiText(stg, 11) + 12;
+        const int max_chap_w = std::max(120, 388 - stg_w - 8);
+        const std::string fitted_chap = FitTextToWidth(chap_title, max_chap_w, 12);
+        DrawTextShadow(fitted_chap.c_str(), 28, 67, 12, pal::kJadeGlow);
+        const int pill_x = static_cast<int>(obj_box.x + obj_box.width) - stg_w - 10;
+        DrawRectangle(pill_x, 65, stg_w, 16, Color{16, 32, 44, 235});
+        DrawRectangleLines(pill_x, 65, stg_w, 16, pal::WithAlpha(pal::kAmberGlow, 195));
+        DrawTextShadow(stg, pill_x + 6, 67, 11, pal::kAmberGlow);
+    } else {
+        const std::string fitted_chap = FitTextToWidth(chap_title, 388, 12);
+        DrawTextShadow(fitted_chap.c_str(), 28, 67, 12, pal::kJadeGlow);
+    }
+
+    const std::string fitted_obj_title = FitTextToWidth(obj.title, 388, 15);
+    DrawTextShadow(fitted_obj_title.c_str(), 28, 85, 15, pal::kParchmentText);
     if (!obj.hint.empty()) {
         const auto hint_lines = WrapTextToWidth(obj.hint, 386, 12);
         if (!hint_lines.empty()) {
-            DrawTextShadow(hint_lines[0].c_str(), 28, 106, 12, Color{186, 212, 224, 240});
+            DrawTextShadow(hint_lines[0].c_str(), 28, 107, 12, Color{186, 212, 224, 240});
         }
     }
 
-    // 2. Banner Toast Diegetico in alto al centro (x=440, y=60, w=400, h=66)
-    //    Priorita': raccolta reliquia -> ingresso nuova zona/struttura.
+    // 1b. Riepilogo non invasivo del Primo Ciclo (Vertical Slice) quando completata
+    if (!world.calibration_modal.is_open && !world.simulation_completed) {
+        DrawVerticalSliceSummaryCard(world);
+    }
+
+    // 2. Banner Toast Diegetico in alto al centro (x=438, y=58, w=402)
+    //    Priorita': raccolta reliquia (con scheda STRUMENTO & EFFETTO LUDICO) -> ingresso zona/struttura.
     if (!world.calibration_modal.is_open) {
         if (world.collectibles.HasRecentPickup()) {
             const float alpha = ComputeBannerAlpha(
                 world.collectibles.PickupBannerTimer(),
                 eco::kRelicBannerDuration);
             if (alpha > 0.01f) {
-                const auto& meta = eco::CollectibleMetadata(world.collectibles.LastCollectedId());
-                const std::string eyebrow =
-                    "RELIQUIA RITROVATA  |  " + (meta.code.empty() ? std::string("ARCHIVIO") : meta.code) +
-                    "  (" + std::to_string(world.collectibles.CollectedCount()) + "/" +
-                    std::to_string(world.collectibles.TotalCount()) + ")";
-                const std::string title =
-                    meta.title.empty() ? std::string("Frammento dei Meridiani") : meta.title;
-                const std::string sub =
-                    !meta.era_name.empty() ? (meta.era_name + "  |  [J] Apri Codex")
-                                           : std::string("Premi [J] per consultare il Codex");
-                DrawBannerToast(
-                    Rectangle{440.0f, 60.0f, 400.0f, 72.0f},
-                    eyebrow.c_str(),
-                    title.c_str(),
-                    sub.c_str(),
-                    EraAccentColor(meta.era),
+                const eco::CollectibleId last_id = world.collectibles.LastCollectedId();
+                const auto& meta = eco::CollectibleMetadata(last_id);
+                const eco::RelicGameplaySpec spec = eco::GetRelicGameplaySpec(last_id);
+                DrawRelicPickupToolToast(
+                    meta,
+                    spec,
+                    world.collectibles.CollectedCount(),
+                    world.collectibles.TotalCount(),
                     alpha);
             }
         } else if (world.zone_banner_timer > 0.0f) {
@@ -425,7 +678,7 @@ void DrawStoryLayer(eco::WorldContext& world) {
         return;
     }
 
-    // 4. Dialogue Box in basso (x=140, y=596, w=1000, h=108) — nascosto se il modal e' aperto
+    // 4. Dialogue Box in basso (x=140, y=596, w=1000, h=108) - nascosto se il modal e' aperto
     if (world.calibration_modal.is_open || !story.HasActiveDialogue()) {
         return;
     }
@@ -1128,11 +1381,14 @@ void JournalOverlay::DrawOverlay(const AppContext& ctx) const {
                 item->collected,
                 ctx.world.sim_time);
 
+            const eco::RelicGameplaySpec row_spec = eco::GetRelicGameplaySpec(item->id);
             const std::string code_prefix = meta.code.empty() ? std::string("?") : meta.code;
-            const std::string display_title =
+            const std::string raw_display_title =
                 item->collected
                     ? (code_prefix + " - " + (meta.title.empty() ? std::string("Reliquia") : meta.title))
                     : (code_prefix + " - Reliquia inesplorata");
+            const std::string display_title =
+                FitTextToWidth(raw_display_title, static_cast<int>(row_rect.width) - 62, 14);
 
             DrawTextShadow(
                 display_title.c_str(),
@@ -1145,15 +1401,23 @@ void JournalOverlay::DrawOverlay(const AppContext& ctx) const {
                 !meta.zone_name.empty()
                     ? meta.zone_name
                     : std::string(eco::LocationName(item->location, item->zone));
-            const char* sub_lbl = item->collected
-                                      ? TextFormat("%s  |  %s", eco::CollectibleKindName(item->kind), zone_lbl.c_str())
-                                      : TextFormat("Indizio luogo: %s", zone_lbl.c_str());
+            const std::string raw_sub_lbl =
+                item->collected
+                    ? std::string(TextFormat(
+                          "%s  |  %s",
+                          (row_spec.tool_name != nullptr && row_spec.tool_name[0] != '\0')
+                              ? row_spec.tool_name
+                              : eco::CollectibleKindName(item->kind),
+                          zone_lbl.c_str()))
+                    : std::string(TextFormat("Indizio luogo: %s", zone_lbl.c_str()));
+            const std::string sub_lbl =
+                FitTextToWidth(raw_sub_lbl, static_cast<int>(row_rect.width) - 62, 11);
             DrawTextShadow(
-                sub_lbl,
+                sub_lbl.c_str(),
                 static_cast<int>(row_rect.x) + 54,
                 static_cast<int>(row_rect.y) + 34,
                 11,
-                item->collected ? era_col : Color{122, 146, 162, 195});
+                item->collected ? pal::kJadeGlow : Color{122, 146, 162, 195});
         }
 
         EndScissorMode();
@@ -1174,6 +1438,7 @@ void JournalOverlay::DrawOverlay(const AppContext& ctx) const {
             const int safe_sel = std::clamp(codex_selected_row_, 0, static_cast<int>(filtered.size()) - 1);
             const eco::CollectibleItem* sel = filtered[static_cast<std::size_t>(safe_sel)];
             const auto& meta = eco::CollectibleMetadata(sel->id);
+            const eco::RelicGameplaySpec spec = eco::GetRelicGameplaySpec(sel->id);
             const Color era_col = EraAccentColor(sel->era);
 
             // Intestazione scheda (fissa in alto)
@@ -1202,10 +1467,12 @@ void JournalOverlay::DrawOverlay(const AppContext& ctx) const {
                 12,
                 era_col);
 
-            const std::string big_title =
+            const std::string raw_big_title =
                 sel->collected
                     ? ((meta.code.empty() ? std::string() : (meta.code + "  ")) + meta.title)
                     : ((meta.code.empty() ? std::string() : (meta.code + "  ")) + "Frammento non ancora ritrovato");
+            const std::string big_title =
+                FitTextToWidth(raw_big_title, static_cast<int>(detail_area.width) - 108, 20);
             DrawTextShadow(
                 big_title.c_str(),
                 static_cast<int>(detail_area.x) + 94,
@@ -1217,12 +1484,15 @@ void JournalOverlay::DrawOverlay(const AppContext& ctx) const {
                 !meta.zone_name.empty()
                     ? meta.zone_name
                     : std::string(eco::LocationName(sel->location, sel->zone));
-            const char* kind_zone = TextFormat(
-                "Tipologia: %s   |   Luogo: %s",
-                eco::CollectibleKindName(sel->kind),
-                zone_lbl.c_str());
+            const std::string kind_zone = FitTextToWidth(
+                TextFormat(
+                    "Tipologia: %s   |   Luogo: %s",
+                    eco::CollectibleKindName(sel->kind),
+                    zone_lbl.c_str()),
+                static_cast<int>(detail_area.width) - 108,
+                13);
             DrawTextShadow(
-                kind_zone,
+                kind_zone.c_str(),
                 static_cast<int>(detail_area.x) + 94,
                 static_cast<int>(detail_area.y) + 68,
                 13,
@@ -1245,19 +1515,70 @@ void JournalOverlay::DrawOverlay(const AppContext& ctx) const {
             if (!sel->collected) {
                 codex_detail_max_scroll_px_ = 0.0f;
                 codex_detail_scroll_px_ = 0.0f;
+
+                const Rectangle teaser_box{
+                    body_rect.x + 4.0f,
+                    body_rect.y + 8.0f,
+                    body_rect.width - 8.0f,
+                    66.0f
+                };
+                DrawSectionCard(teaser_box, Color{94, 142, 162, 200}, false);
+                const char* cat_lbl = eco::RelicToolCategoryName(spec.category);
+                DrawTextShadow(
+                    TextFormat(
+                        "STRUMENTO & EFFETTO LUDICO  |  %s%s",
+                        cat_lbl,
+                        spec.is_vertical_slice_core ? "  [PRIMO CICLO]" : ""),
+                    static_cast<int>(teaser_box.x) + 12,
+                    static_cast<int>(teaser_box.y) + 10,
+                    12,
+                    pal::kAmberGlow);
+                DrawTextShadow(
+                    "Recupera questa reliquia sul campo per sbloccare lo strumento e la sua scheda tecnica.",
+                    static_cast<int>(teaser_box.x) + 12,
+                    static_cast<int>(teaser_box.y) + 34,
+                    13,
+                    Color{172, 198, 212, 225});
+
                 const auto locked_lines = WrapTextToWidth(
                     "Questa testimonianza dei Meridiani attende ancora di essere recuperata. "
                     "Esplora " + zone_lbl + " cercando il bagliore delle reliquie antiche e raccoglila "
                     "avvicinandoti o premendo [E] per trascriverla nel Codex.",
                     static_cast<int>(body_rect.width) - 16,
-                    16);
-                int ly = static_cast<int>(body_rect.y) + 26;
+                    15);
+                int ly = static_cast<int>(body_rect.y) + 92;
                 for (const auto& l : locked_lines) {
-                    DrawTextShadow(l.c_str(), static_cast<int>(body_rect.x) + 8, ly, 16, Color{162, 188, 202, 225});
-                    ly += 24;
+                    DrawTextShadow(l.c_str(), static_cast<int>(body_rect.x) + 8, ly, 15, Color{162, 188, 202, 225});
+                    ly += 23;
                 }
             } else {
-                // Costruisci tutte le righe wrappate (citazione + paragrafi)
+                // Costruisci il riquadro evidenziato "STRUMENTO & EFFETTO LUDICO" in cima alla scheda
+                const int tool_wrap_w = static_cast<int>(body_rect.width) - 34;
+                const std::string tool_title_raw =
+                    std::string((spec.tool_name != nullptr && spec.tool_name[0] != '\0')
+                                    ? spec.tool_name
+                                    : "Strumento dei Meridiani") +
+                    ((spec.active_or_passive_label != nullptr && spec.active_or_passive_label[0] != '\0')
+                         ? (std::string("  (") + spec.active_or_passive_label + ")")
+                         : std::string());
+                const std::string tool_title_line = FitTextToWidth(tool_title_raw, tool_wrap_w, 15);
+                const auto eff_lines = WrapTextToWidth(
+                    (spec.effect_summary != nullptr) ? spec.effect_summary : "",
+                    tool_wrap_w,
+                    14);
+                const std::string usage_raw =
+                    (spec.field_usage_hint != nullptr && spec.field_usage_hint[0] != '\0')
+                        ? (std::string("Impiego sul campo: ") + spec.field_usage_hint)
+                        : std::string();
+                const auto usage_lines = WrapTextToWidth(usage_raw, tool_wrap_w, 13);
+
+                const float tool_card_h =
+                    54.0f +
+                    static_cast<float>(eff_lines.size()) * 19.0f +
+                    (usage_lines.empty() ? 0.0f : (6.0f + static_cast<float>(usage_lines.size()) * 18.0f)) +
+                    10.0f;
+
+                // Costruisci tutte le righe wrappate sottostanti (citazione + paragrafi di lore)
                 std::vector<std::pair<std::string, Color>> render_rows;
                 if (!meta.pickup_line.empty()) {
                     const std::string quote_speaker =
@@ -1284,9 +1605,14 @@ void JournalOverlay::DrawOverlay(const AppContext& ctx) const {
                 }
 
                 const float line_h = 22.0f;
+                float lore_h = 0.0f;
+                for (const auto& [txt, col] : render_rows) {
+                    (void)col;
+                    lore_h += txt.empty() ? 12.0f : line_h;
+                }
                 const float total_body_h = std::max(
                     body_rect.height,
-                    12.0f + static_cast<float>(render_rows.size()) * line_h);
+                    8.0f + tool_card_h + 16.0f + lore_h + 8.0f);
                 codex_detail_max_scroll_px_ = std::max(0.0f, total_body_h - body_rect.height);
                 codex_detail_scroll_px_ = std::clamp(codex_detail_scroll_px_, 0.0f, codex_detail_max_scroll_px_);
 
@@ -1297,6 +1623,61 @@ void JournalOverlay::DrawOverlay(const AppContext& ctx) const {
                     static_cast<int>(body_rect.height));
 
                 float y = body_rect.y + 4.0f - codex_detail_scroll_px_;
+
+                // Disegna il riquadro "STRUMENTO & EFFETTO LUDICO"
+                const Rectangle tool_rect{
+                    body_rect.x + 2.0f,
+                    y,
+                    body_rect.width - 6.0f,
+                    tool_card_h
+                };
+                if (tool_rect.y + tool_rect.height >= body_rect.y - 4.0f &&
+                    tool_rect.y <= body_rect.y + body_rect.height + 4.0f) {
+                    DrawSectionCard(tool_rect, pal::kJadeGlow, true);
+                    DrawRectangle(
+                        static_cast<int>(tool_rect.x) + 2,
+                        static_cast<int>(tool_rect.y) + 4,
+                        4,
+                        static_cast<int>(tool_rect.height) - 8,
+                        pal::kJadeGlow);
+
+                    const char* cat_name = eco::RelicToolCategoryName(spec.category);
+                    const std::string badge_hdr = FitTextToWidth(
+                        TextFormat(
+                            "STRUMENTO & EFFETTO LUDICO  |  %s%s",
+                            cat_name,
+                            spec.is_vertical_slice_core ? "  [PRIMO CICLO]" : ""),
+                        tool_wrap_w,
+                        12);
+                    DrawTextShadow(
+                        badge_hdr.c_str(),
+                        static_cast<int>(tool_rect.x) + 14,
+                        static_cast<int>(tool_rect.y) + 9,
+                        12,
+                        pal::kAmberGlow);
+                    DrawTextShadow(
+                        tool_title_line.c_str(),
+                        static_cast<int>(tool_rect.x) + 14,
+                        static_cast<int>(tool_rect.y) + 28,
+                        15,
+                        pal::kJadeGlow);
+
+                    float ty = tool_rect.y + 50.0f;
+                    for (const auto& el : eff_lines) {
+                        DrawTextShadow(el.c_str(), static_cast<int>(tool_rect.x) + 14, static_cast<int>(ty), 14, pal::kParchmentText);
+                        ty += 19.0f;
+                    }
+                    if (!usage_lines.empty()) {
+                        ty += 5.0f;
+                        for (const auto& ul : usage_lines) {
+                            DrawTextShadow(ul.c_str(), static_cast<int>(tool_rect.x) + 14, static_cast<int>(ty), 13, Color{168, 224, 236, 245});
+                            ty += 18.0f;
+                        }
+                    }
+                }
+
+                y += tool_card_h + 16.0f;
+
                 for (const auto& [txt, col] : render_rows) {
                     if (!txt.empty() && y + line_h >= body_rect.y - 6.0f && y <= body_rect.y + body_rect.height + 6.0f) {
                         DrawTextShadow(txt.c_str(), static_cast<int>(body_rect.x) + 6, static_cast<int>(y), 15, col);

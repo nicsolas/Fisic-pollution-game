@@ -85,8 +85,10 @@ inline constexpr Color kUiHeaderBg{22, 36, 50, 246};
 inline constexpr Color kUiBorderCyan{88, 188, 212, 228};
 inline constexpr Color kUiBorderBronze{194, 152, 86, 225};
 inline constexpr Color kAccentClean{64, 232, 184, 255};
+inline constexpr Color kAccentRisky{252, 168, 56, 255};
 inline constexpr Color kAccentDirty{232, 124, 52, 255};
 inline constexpr Color kAccentWarn{248, 194, 76, 255};
+inline constexpr Color kAccentTrial{136, 226, 255, 255};
 
 // =============================================================================
 // Palette per Distretto dell'Overworld (La Conca di Meridia — 6 Distretti)
@@ -561,5 +563,44 @@ inline constexpr Color kValveCopper{204, 134, 74, 255};
 [[nodiscard]] inline Color ZoneAccentColor(eco::ZoneId zone) noexcept {
     return GetDistrictPalette(zone).ambient_accent;
 }
+
+// =============================================================================
+// Token Ecosistema Sistemico, Segnali Diegetici, Flora a 3 Stati e Fauna Viva
+// =============================================================================
+// Condotti d'ottone a terra (Terrazze dell'Alba & Canali)
+inline constexpr Color kConduitOxidized{82, 114, 102, 235};
+inline constexpr Color kConduitCleanGold{246, 204, 104, 250};
+inline constexpr Color kConduitRiskyAmber{255, 148, 44, 255};
+inline constexpr Color kConduitDirtySoot{48, 40, 38, 245};
+
+// Flora sistemica (1. Critico/Inquinato -> 2. In ripresa -> 3. Rigoglioso / Ulivo Bianco)
+inline constexpr Color kFloraDeadWood{68, 56, 48, 255};
+inline constexpr Color kFloraDryLeaf{124, 94, 56, 225};
+inline constexpr Color kFloraPitchStain{36, 28, 26, 215};
+inline constexpr Color kFloraRecoveringSage{106, 148, 108, 255};
+inline constexpr Color kFloraWhiteOliveSilver{184, 216, 196, 255};
+inline constexpr Color kFloraWhiteOliveHi{232, 246, 236, 255};
+inline constexpr Color kFloraPollenGold{255, 234, 142, 235};
+
+// Passaggi dinamici (Rovi di Pece, Cresta Arsa, Guado Laminare, Cisterne di Stevino)
+inline constexpr Color kBrambleThorns{52, 38, 34, 255};
+inline constexpr Color kBramblePitch{28, 22, 22, 240};
+inline constexpr Color kBrambleAmberGlow{198, 96, 38, 210};
+inline constexpr Color kScorchedVitrified{58, 50, 58, 255};
+inline constexpr Color kScorchedEmber{255, 128, 46, 235};
+inline constexpr Color kLaminarSapphire{32, 168, 224, 235};
+inline constexpr Color kFordStoneWet{84, 96, 102, 220};
+inline constexpr Color kFordStoneDry{192, 188, 174, 255};
+inline constexpr Color kStevinoChalk{226, 232, 224, 225};
+inline constexpr Color kBioMossJade{72, 238, 192, 235};
+inline constexpr Color kBioMossCyan{96, 232, 252, 230};
+
+// Fauna sistemica reattiva
+inline constexpr Color kSwallowWing{238, 234, 222, 250};
+inline constexpr Color kSwallowBack{68, 82, 98, 250};
+inline constexpr Color kCarpSilver{212, 236, 246, 235};
+inline constexpr Color kCarpGold{248, 196, 102, 235};
+inline constexpr Color kDragonflyCyan{102, 244, 252, 245};
+inline constexpr Color kNewtBioGlow{92, 252, 214, 245};
 
 } // namespace eco::app::pal

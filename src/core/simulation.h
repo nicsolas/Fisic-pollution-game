@@ -163,6 +163,114 @@ struct SanctuarySeal {
     float glow = 0.0f; // 0..1
 };
 
+// ============================================================================
+// Vertical Slice: Ecologia Sistemica, Percorsi Dinamici, Vasche & Fauna Viva
+// ============================================================================
+
+enum class PassageKind : int {
+    PitchBramble = 0,     // Bloccato se inquinato/Dirty; lastricato fiorito se guarito/BioPlanter
+    ScorchedCrest = 1,    // Scorciatoia della Cresta Arsa (SolarArray RiskyEfficient)
+    LaminarFord = 2,      // Guado degli Idraulici (Waters_HydraulicDiary + chiuse laminari)
+    ArtisanArchway = 3,   // Passaggio degli Artigiani (Clara FlourishingTrust)
+    HighSpillway = 4,     // Sfioratore del Prisma (HydroTurbine RiskyEfficient / colpo d'ariete)
+    ArchivistNiche = 5    // Nicchia Sigillata d'Archivio (Lorenzo FlourishingTrust)
+};
+
+struct DynamicPassage {
+    int id = 0;
+    PassageKind kind = PassageKind::PitchBramble;
+    LocationId location = LocationId::Overworld;
+    ZoneId zone = ZoneId::DawnTerraces;
+    Rect bounds{};
+    std::vector<TileCoord> tiles{};
+    bool open = false;
+    const char* label = "";
+    const char* state_hint = "";
+};
+
+struct BioPlanter {
+    int id = 0;
+    ZoneId zone = ZoneId::DawnTerraces;
+    TileCoord tile{0, 0};
+    Vec2 pos{0.0f, 0.0f};
+    float interact_radius = 68.0f;
+    float aura_radius = 220.0f;
+    bool planted = false;
+    bool prompt_visible = false;
+    int clears_passage_id = -1;
+    const char* label = "";
+};
+
+enum class CritterKind : int {
+    Swallow = 0,      // Rondini radenti (Terrazze dell'Alba)
+    SilverCarp = 1,   // Carpe argentate (Quartiere dei Canali)
+    Dragonfly = 2,    // Libellule turchesi (Quartiere dei Canali)
+    GlowNewt = 3,     // Tritoni bioluminescenti (Cisterne Ipogee)
+    CaveFirefly = 4   // Lucciole di grotta (Cisterne Ipogee)
+};
+
+inline constexpr std::size_t kMaxAmbientCritters = 12;
+
+struct AmbientCritter {
+    bool active = false;
+    CritterKind kind = CritterKind::Swallow;
+    Vec2 pos{0.0f, 0.0f};
+    Vec2 anchor{0.0f, 0.0f};
+    Vec2 velocity{0.0f, 0.0f};
+    float orbit_radius = 36.0f;
+    float phase = 0.0f;
+    float speed = 1.4f;
+};
+
+enum class RemoteTargetKind : int {
+    None = 0,
+    SolarMirror = 1,
+    SluiceLever = 2,
+    StructureSwitch = 3
+};
+
+inline constexpr float kFarewellPrismRemoteRange = 220.0f;
+
+struct RemotePrismTarget {
+    bool valid = false;
+    RemoteTargetKind kind = RemoteTargetKind::None;
+    int target_id = -1;
+    Vec2 world_pos{0.0f, 0.0f};
+    float distance = 0.0f;
+    const char* label = "";
+};
+
+struct GuidanceDisplayState {
+    bool show_compass = false;
+    bool show_distance_meters = false;
+    bool show_edge_arrow = false;
+    bool show_world_beacon = false;
+    bool is_scan_pulse_reveal = false;
+    const char* field_note = "";
+};
+
+struct VerticalSliceSummary {
+    bool terraces_resolved = false;
+    bool canals_explored = false;
+    bool cisterns_resolved = false;
+    bool clara_confronted = false;
+    bool lorenzo_confronted = false;
+    bool slice_complete = false;
+    CalibrationApproach solar_approach = CalibrationApproach::None;
+    CalibrationApproach hydro_approach = CalibrationApproach::None;
+    InquiryStage highest_inquiry_stage = InquiryStage::Observe;
+    int observations_count = 0;
+    int trials_run_total = 0;
+    int slice_relics_collected = 0;
+    int planters_seeded = 0;
+    bool laminar_ford_unlocked = false;
+    bool scorched_shortcut_open = false;
+    bool high_spillway_open = false;
+    EcoHealthBand eco_band = EcoHealthBand::Polluted;
+    float vitality_score = 0.5f;
+    const char* synthesis_headline = "";
+};
+
 struct MechanicEventFlags {
     bool mirror_rotated = false;
     bool solar_gate_unlocked = false;
@@ -176,6 +284,14 @@ struct MechanicEventFlags {
     bool geyser_pushed_player = false;
     bool valve_opened = false;
     bool sanctuary_seal_attuned = false;
+    bool observation_inspected = false;
+    int observation_id = -1;
+    bool planter_seeded = false;
+    bool laminar_ford_opened = false;
+    bool remote_prism_triggered = false;
+    bool trial_pulse_triggered = false;
+    bool calibration_confirmed = false;
+    CalibrationApproach confirmed_approach = CalibrationApproach::None;
 };
 
 struct ZoneMechanicState {
@@ -186,10 +302,15 @@ struct ZoneMechanicState {
     std::vector<SolarBeamSegment> solar_beams{};
     std::vector<SolarPlate> solar_plates{};
     bool solar_gate_open = false;
+    bool scorched_crest_open = false;
+    bool hidden_sundial_glyphs_revealed = false;
+    float solar_trial_flash_timer = 0.0f;
 
     // 2. Quartiere dei Canali
     std::vector<WaterCurrentZone> water_currents{};
     std::vector<SluiceLever> sluice_levers{};
+    bool laminar_flow_active = false;
+    bool laminar_ford_open = false;
 
     // 3. Altopiano dei Venti
     WindState wind{};
@@ -207,6 +328,13 @@ struct ZoneMechanicState {
 
     // 6. Santuario dell'Armonia
     std::vector<SanctuarySeal> sanctuary_seals{};
+
+    // 7. Vertical Slice Systemic Layer (zero-heap critter pool + stations/passages)
+    std::vector<ObservationNode> observation_nodes{};
+    std::vector<BioPlanter> bio_planters{};
+    std::vector<DynamicPassage> dynamic_passages{};
+    std::array<AmbientCritter, kMaxAmbientCritters> ambient_critters{};
+    int active_critter_count = 0;
 
     void ResetDefaults();
     void RecomputeSolarBeams(const Tilemap& dawn_map) noexcept;
@@ -375,6 +503,31 @@ struct WorldContext {
     float sim_time = 0.0f;
     float scan_pulse_timer = 0.0f;
     Vec2 scan_pulse_origin{0.0f, 0.0f};
+    GuidanceAssistMode guidance_mode = GuidanceAssistMode::Empirical;
+    float empirical_compass_timer = 0.0f;
+
+    // Ciclo d'indagine Vertical Slice (0=DawnTerraces, 1=CanalQuarter, 2=HypogeanCisterns)
+    std::array<InquiryStage, 3> slice_inquiry_stage{{
+        InquiryStage::Observe,
+        InquiryStage::Observe,
+        InquiryStage::Observe
+    }};
+    int total_trials_run = 0;
+    int observations_inspected_count = 0;
+    int planters_seeded_count = 0;
+    int prism_remote_toggles = 0;
+    bool vertical_slice_synthesis_done = false;
+
+    // Timer e coordinate live per VFX/SFX procedurali (zero allocazioni)
+    float trial_pulse_timer = 0.0f;
+    Vec2 trial_pulse_origin{0.0f, 0.0f};
+    MachineType last_trial_machine = MachineType::SolarArray;
+    float prism_pulse_timer = 0.0f;
+    Vec2 prism_pulse_from{0.0f, 0.0f};
+    Vec2 prism_pulse_to{0.0f, 0.0f};
+    float planter_bloom_timer = 0.0f;
+    Vec2 planter_bloom_pos{0.0f, 0.0f};
+
     bool simulation_completed = false;
     GameMode current_mode = GameMode::Overworld;
     StructureId active_structure = StructureId::HypogeanCisterns;
@@ -432,6 +585,30 @@ struct WorldContext {
     [[nodiscard]] std::vector<const CollectibleItem*> CollectiblesInCurrentScene() const;
 
     [[nodiscard]] ObjectiveTarget CurrentObjectiveTarget() const noexcept;
+    [[nodiscard]] GuidanceDisplayState ComputeGuidanceDisplay() const noexcept;
+    [[nodiscard]] InquiryStage CurrentAreaInquiryStage() const noexcept;
+    void AdvanceInquiryStageForArea(LocationId loc, ZoneId zone, InquiryStage min_stage) noexcept;
+
+    [[nodiscard]] ZoneEcoStatus ComputeZoneEcoStatus(ZoneId zone) const noexcept;
+    [[nodiscard]] ZoneEcoStatus GetZoneEcoStatus(ZoneId zone) const noexcept {
+        return ComputeZoneEcoStatus(zone);
+    }
+    [[nodiscard]] ZoneEcoStatus ActiveSceneEcoStatus() const noexcept;
+    [[nodiscard]] VerticalSliceSummary ComputeVerticalSliceSummary() const noexcept;
+
+    [[nodiscard]] RemotePrismTarget FindRemotePrismTarget(
+        Vec2 origin,
+        float max_range = kFarewellPrismRemoteRange) const noexcept;
+    [[nodiscard]] std::vector<SolarBeamSegment> PredictGnomonBeams() const;
+
+    // Helpers richiamabili sia da StepWorld (tastiera/gamepad) sia da calibration_ui.cpp (click mouse)
+    void OpenCalibrationModalFor(MachineType type) noexcept;
+    TrialExperimentReport ExecuteModalTrial() noexcept;
+    bool ExecuteModalConfirmClean() noexcept;
+    bool ExecuteModalConfirmRisky() noexcept;
+    bool ExecuteModalBypass() noexcept;
+    void RefreshSystemicWorldState() noexcept;
+    void TickAmbientCritters(float dt) noexcept;
 
     [[nodiscard]] bool AllFiveMonumentsActivated() const noexcept;
     [[nodiscard]] int ActivatedMonumentsCount() const noexcept;

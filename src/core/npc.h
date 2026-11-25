@@ -62,6 +62,27 @@ struct OverlayVisibility {
 [[nodiscard]] OverlayVisibility ComputeOverlayVisibility(const EcoSystem& ecosystem) noexcept;
 bool TryRequestOverlayPhase(EcoSystem& ecosystem, UiPhase requested) noexcept;
 
+enum class NpcMood : int {
+    NeutralObserving = 0,
+    FlourishingTrust = 1,
+    TenseOverdrive = 2,
+    ShelteredPolluted = 3
+};
+
+[[nodiscard]] constexpr const char* NpcMoodName(NpcMood mood) noexcept {
+    switch (mood) {
+        case NpcMood::NeutralObserving:
+            return "In Osservazione";
+        case NpcMood::FlourishingTrust:
+            return "Fiducia Armonica";
+        case NpcMood::TenseOverdrive:
+            return "Allerta Supercritica";
+        case NpcMood::ShelteredPolluted:
+            return "Riparato dai Fumi";
+    }
+    return "In Osservazione";
+}
+
 struct WorldNpc {
     NpcId id = NpcId::ClaraSereni;
     std::string name{};
@@ -69,11 +90,15 @@ struct WorldNpc {
     LocationId location = LocationId::Overworld;
     ZoneId zone = ZoneId::CanalQuarter;
     Vec2 pos{0.0f, 0.0f};
+    Vec2 home_pos{0.0f, 0.0f};
     float trigger_radius = kDefaultNpcTriggerRadius;
+    NpcMood mood = NpcMood::NeutralObserving;
     bool met = false;
     bool recruited = false;
     bool hidden_bridge_revealed = false;
+    bool shortcut_unlocked = false;
     bool prompt_visible = false;
+    const char* status_note = "";
     std::string last_dialogue{};
 
     [[nodiscard]] static WorldNpc CreateDefault(NpcId id);

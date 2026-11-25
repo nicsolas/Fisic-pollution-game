@@ -5,6 +5,15 @@ Videogioco 2D in **C++20 e Raylib 5.5** basato sulla fisica empirica, sulla mate
 Ambientato sull'altopiano monumentale de **La Conca di Meridia**, segue la naturalista e cartografa **Elena Valli** mentre esplora **6 distretti separati in superficie** e **3 strutture interne**, raccoglie **16 reliquie** distribuite in **4 Ere storiche** e riattiva **5 monumenti fisici + l'Astrolabio Centrale** (Ottica di Lambert, Idrostatica di Stevino, Pendolo Isocrono di Galileo, Risonanza Armonica Lorentziana, Termodinamica di Carnot e Interferenza di Fase), scegliendo se guarire la Conca con il calcolo o cedere alle fornaci a pece di Matteo Verrini.
 
 Include:
+- **Vertical Slice (20-30 min)** su *Terrazze dell'Alba*, *Quartiere dei Canali* e *Cisterne Ipogee*, imperniata sul ciclo empirico **`Osserva -> Formula un'Ipotesi -> Sperimenta -> Affronta una Conseguenza -> Scegli una Soluzione`**.
+- **Calibrazioni Fisiche a Più Soluzioni Reali con Conseguenze Sistemiche**:
+  - *Soluzione Pulita Lenta (`CleanSlow`)*: richiede calibrazione accurata e stabilizzatore armonico; apre sentieri verdi fioriti, purifica i rovi di pece, placa le correnti, riporta la fauna al massimo e conquista la fiducia degli NPC.
+  - *Soluzione Rischiosa ma Efficiente (`RiskyEfficient`)*: sovralimenta i sistemi con rendimento altissimo (`+32 MW`) e stress controllato; sblocca scorciatoie arse o ad alta pressione (Cresta Arsa, Sfioratore Supercritico) e accelera le correnti, mettendo i custodi in allerta tecnica.
+  - *Soluzione Sporca Immediata (`DirtyImmediate`)*: bypass immediato a combustione di pece; fumi acidi, sentieri bassi bloccati dai rovi tossici, correnti viscose, azzeramento della fauna e allontanamento degli NPC.
+  - *Ricalibrazione Reversibile*: ogni monumento può essere riaperto con `[E]` per sperimentare approcci alternativi o risanare il distretto.
+- **Reliquie come Strumenti Ludici Concreti**: ciascuna delle 16 reliquie (con focus speciale sulle 6 della Vertical Slice) offre un effetto attivo/passivo concreto e tangibile nel mondo e nell'interfaccia (mirino gnomonico della Lente, nonio fine di tolleranza, innesto botanico dell'Ulivo Bianco per sradicare rovi e curare l'ambiente, codice delle chiuse laminari e guado asciutto, lettura piezometrica e valvola di Stevino, prisma di commutazione remota).
+- **Inquinamento Sistemico & Guarigione Giocabile**: flora reattiva a 3 stadi biologici, 7 passaggi dinamici sbloccabili, fauna deterministica viva (rondini, carpe argentate, libellule, tritoni, lucciole) assente con inquinamento alto e rigogliosa con la cura del territorio, e NPC dinamici con postura, umore e percorsi adattivi.
+- **Guida Automatica Progressiva & Bussola Empirica**: nelle fasi iniziali la guida GPS è disattivata per lasciare spazio all'osservazione naturale del mondo (ombre delle meridiane, condotti di bronzo/ottone, idrometri e tacche di livello); sbloccabile e attivabile temporaneamente tramite scansione della Lente con lo Gnomone o configurabile dal menu Impostazioni.
 - **6 Zone Sequenziali a Mappa Dedicata (`26x36` tile)** caricate on-demand in memoria (`Terrazze dell'Alba -> Quartiere dei Canali -> Altopiano dei Venti -> Giardini Sospesi -> Caldera delle Fumarole -> Santuario dell'Armonia`), con **varchi di avanzamento vincolati al completamento della task principale** della zona corrente e ritorno sempre aperto.
 - **3 Livelli dei Portali Ridisegnati come Test di Logica Side-Scrolling**: *Cisterne Ipogee* (`20x40`, **Equilibrio delle Paratoie** a logica booleana), *Torre del Pendolo* (`22x38`, **Sequenza Isocrona** a 4 campane ordinate) e *Camera Geotermica* (`20x42`, **Ciclo di Carnot** a 4 valvole accoppiate), tutti verificati da test automatici di fisica reale a 60 Hz.
 - **6 Meccaniche Top-Down Uniche**: specchi e fasci solari con piastre fotosensibili e muro `SolarGate` completamente sigillato, correnti d'acqua fisiche con chiuse a leva, raffiche di vento periodiche con monoliti frangivento, piastre acustiche di risonanza armonica con sblocco del Ponte di Giada, geyser termici ciclici con valvole di sfogo, e accordatura dei sigilli elementali dell'Astrolabio.
@@ -19,7 +28,17 @@ Include:
 
 ## Galleria Visiva — La Conca di Meridia
 
-### Nuovi Livelli dei Portali a Logica & Zone Sequenziali
+### Nuova Vertical Slice: Ciclo d'Indagine, 3 Soluzioni & Ecosistema Sistemico
+
+| Banco d'Indagine & 3 Soluzioni (`31_banco_indagine_calibrazione.png`) | Terrazze dell'Alba Guarite & Fauna (`33_terrazze_alba_guarita_fauna.png`) | Canali — Regime Laminare Zaffiro (`34_canali_regime_laminare.png`) |
+|---|---|---|
+| ![Banco Indagine Calibrazione](docs/screenshots/31_banco_indagine_calibrazione.png) | ![Terrazze Guarite Fauna](docs/screenshots/33_terrazze_alba_guarita_fauna.png) | ![Canali Regime Laminare](docs/screenshots/34_canali_regime_laminare.png) |
+
+| Codex Reliquie — Strumenti Ludici (`32_codex_strumenti_ludici.png`) | Cisterne — Sfioratore Alto Rischioso (`35_cisterne_sfioratore_alto.png`) | Sintesi Vertical Slice al Ponte (`36_vertical_slice_epilogo.png`) |
+|---|---|---|
+| ![Codex Strumenti Ludici](docs/screenshots/32_codex_strumenti_ludici.png) | ![Cisterne Sfioratore Alto](docs/screenshots/35_cisterne_sfioratore_alto.png) | ![Sintesi Vertical Slice](docs/screenshots/36_vertical_slice_epilogo.png) |
+
+### Livelli dei Portali a Logica & Zone Sequenziali
 
 | Cisterne Ipogee — Equilibrio delle Paratoie (`27_cisterne_enigma_paratoie.png`) | Torre del Pendolo — Sequenza Isocrona (`28_torre_pendolo_sequenza.png`) | Camera Geotermica — Ciclo di Carnot (`29_camera_geotermica_carnot.png`) |
 |---|---|---|
@@ -82,14 +101,18 @@ ctest --test-dir build --output-on-failure
 |---|---|
 | `WASD` / `Frecce` / Stick Sinistro | Movimento (Top-Down nelle 6 zone, Side-Scrolling nelle 3 Strutture) |
 | `SPAZIO` / `W` / `SU` | Salto nelle Strutture interne / **Salta Intramezzo** durante la transizione tra zone |
-| `F` / `Q` / `.` | **Lente Empirica** (misura il parametro fisico del monumento o dell'elemento piu' vicino) |
-| `E` / `INVIO` | **Interagisci** con monumenti, personaggi (Clara, Lorenzo, Miriam, Matteo), leve, specchi, valvole, reliquie o conferma menu |
-| `A`/`D` / `Frecce` / Mouse (nel modal) | Regola il parametro fisico del monumento |
-| `C` / `INVIO` (nel modal) | **Conferma Calibrazione Pulita** |
-| `B` (nel modal) | **Fornace a Pece di Emergenza** (energia immediata ma +Foschia; disabilitata sull'Astrolabio) |
+| `F` / `Q` / `.` | **Lente Empirica** (misura parametri fisici, proietta rimbalzi ottici con lo Gnomone, commuta interruttori a distanza col Prisma) |
+| `E` / `INVIO` | **Interagisci** con monumenti, personaggi (Clara, Lorenzo, Miriam, Matteo), leve, specchi, valvole, reliquie, stazioni d'osservazione, vasche botaniche |
+| `A`/`D` / `Frecce` / Mouse (nel modal) | Regola il parametro fisico principale del monumento |
+| `W`/`S` / Frecce SU/GIU (nel modal) | Regola lo stabilizzatore armonico o valvola secondaria |
+| `1` / `2` / `3` / Click (nel modal) | Seleziona l'ipotesi fisica (Armonica, Sovraccarico, Combustione a Pece) |
+| `T` / `SPAZIO` (nel modal) | **Sperimenta (Impulso di Prova)** con report delle misure empiriche e conseguenza nel mondo |
+| `INVIO` / `C` (nel modal) | **Conferma Soluzione Pulita Lenta** (Armonia Stabile) |
+| `R` (nel modal) | **Attiva Regime Critico** (Soluzione Rischiosa ma Efficiente) |
+| `B` (nel modal) | **Bypass Fornace a Pece** (Soluzione Sporca Immediata) |
 | `X` / `BACKSPACE` | Chiude modal / Salta il diario introduttivo |
 | `H` | **Diario di Campo — Cronologia Dialoghi** (scorribile con `W/S`, Frecce, rotellina; filtra capitoli con `A/D`) |
-| `J` | **Diario di Campo — Codex Reliquie** (16 reliquie divise per 4 Ere storiche dei Meridiani) |
+| `J` | **Diario di Campo — Codex Reliquie** (16 reliquie divise per 4 Ere con schede strumenti ed effetti ludici) |
 | `V` | Cambia **Fase Percettiva** (Fase 1 Sguardo Empirico -> Fase 2 Rilievo Metrico -> Fase 3 Trama Geodetica) |
 | `N` | **Avanza Dialogo** / Completa battuta |
 | `TAB` | Cambio rapido Overworld <-> Struttura attiva (o cambia tab dentro il Diario e nelle Impostazioni) |
@@ -190,3 +213,7 @@ Ogni livello 2D possiede ora un gameplay e una fisica propria:
   - [`09_monitor_gpu_e_salvataggio.md`](docs/modifiche/09_monitor_gpu_e_salvataggio.md)
   - [`10_divisione_zone_memoria_e_guida.md`](docs/modifiche/10_divisione_zone_memoria_e_guida.md)
   - [`11_stacchi_visivi_portali_e_bussola.md`](docs/modifiche/11_stacchi_visivi_portali_e_bussola.md)
+  - [`12_core_vertical_slice_e_sistemi.md`](docs/modifiche/12_core_vertical_slice_e_sistemi.md)
+  - [`13_narrativa_vertical_slice_ipotesi.md`](docs/modifiche/13_narrativa_vertical_slice_ipotesi.md)
+  - [`14_ui_calibrazione_guida_e_test.md`](docs/modifiche/14_ui_calibrazione_guida_e_test.md)
+  - [`15_arte_ecosistema_fauna_e_lettura_mondo.md`](docs/modifiche/15_arte_ecosistema_fauna_e_lettura_mondo.md)

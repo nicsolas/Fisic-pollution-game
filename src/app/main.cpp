@@ -17,6 +17,7 @@
 #include "app/overworld_state.h"
 #include "app/pause_settings_menu.h"
 #include "app/raylib_input.h"
+#include "app/render/app_icon_data.h"
 #include "app/render/ui_style.h"
 #include "app/story_ui.h"
 #include "app/structure_state.h"
@@ -248,6 +249,25 @@ int RunHeadlessE2E() {
         return 1;
     }
 
+    // Verify initial Empirical guidance is hidden at start (before Gnomon pickup or SolarArray activation)
+    const eco::GuidanceDisplayState init_gd = world.ComputeGuidanceDisplay();
+    if (init_gd.show_compass || init_gd.show_edge_arrow || init_gd.show_world_beacon) {
+        std::cerr << "[headless-e2e] Initial Empirical guidance should be hidden at game start\n";
+        return 1;
+    }
+
+    // Exercise ObservationNode inspection in DawnTerraces
+    if (!world.zone_mechanics.observation_nodes.empty()) {
+        mutable_p0->pos = world.zone_mechanics.observation_nodes[0].pos;
+        input = {};
+        input.players[0].interact_pressed = true;
+        state_manager.Update(eco::kFixedDt);
+        if (world.observations_inspected_count < 1) {
+            std::cerr << "[headless-e2e] ObservationNode inspection in DawnTerraces failed\n";
+            return 1;
+        }
+    }
+
     // Exercise Collectible pickup + ad-hoc history entry
     const eco::CollectibleItem* first_relic = world.collectibles.Find(eco::CollectibleId::Dawn_BrassGnomon);
     if (first_relic == nullptr) {
@@ -271,7 +291,7 @@ int RunHeadlessE2E() {
         return 1;
     }
 
-    // Exercise Empirical Scanner + SolarArray clean calibration + Clara Sereni recruitment (Phase 3 & Bridge)
+    // Exercise Empirical Scanner [Q] + temporary Empirical Compass reveal + Multi-Solution Calibration
     auto& solar = world.GetMachine(eco::MachineType::SolarArray);
     const eco::ColorRgba base_col{80, 180, 120, 255};
     const eco::ColorRgba polluted_tint = world.ecosystem.TintColor(base_col);
@@ -284,7 +304,12 @@ int RunHeadlessE2E() {
         std::cerr << "[headless-e2e] Empirical measurement scan on SolarArray failed\n";
         return 1;
     }
+    if (!world.ComputeGuidanceDisplay().show_compass) {
+        std::cerr << "[headless-e2e] Empirical compass did not reveal on [Q] scan after Gnomon pickup\n";
+        return 1;
+    }
 
+    // Open SolarArray modal -> RunTrial [T] -> RiskyEfficient [R] -> Recalibrate CleanSlow [INVIO]
     input = {};
     input.players[0].interact_pressed = true;
     state_manager.Update(eco::kFixedDt);
@@ -292,15 +317,44 @@ int RunHeadlessE2E() {
         std::cerr << "[headless-e2e] Failed to open SolarArray calibration modal\n";
         return 1;
     }
+    input = {};
+    input.players[0].trial_pressed = true;
+    state_manager.Update(eco::kFixedDt);
+    if (world.calibration_modal.trials_run < 1 || !world.calibration_modal.last_trial.executed) {
+        std::cerr << "[headless-e2e] SolarArray trial pulse [T] failed\n";
+        return 1;
+    }
+    world.calibration_modal.SetParameter((solar.risky_param_min + solar.risky_param_max) * 0.5f, solar);
+    world.calibration_modal.SetStabilizer(0.22f, solar);
+    input = {};
+    input.players[0].risky_pressed = true;
+    state_manager.Update(eco::kFixedDt);
+    if (world.calibration_modal.is_open ||
+        solar.approach != eco::CalibrationApproach::RiskyEfficient ||
+        !world.zone_mechanics.scorched_crest_open) {
+        std::cerr << "[headless-e2e] SolarArray RiskyEfficient solution failed\n";
+        return 1;
+    }
+
+    // Re-open SolarArray and recalibrate to CleanSlow (Armonia)
+    input = {};
+    input.players[0].interact_pressed = true;
+    state_manager.Update(eco::kFixedDt);
+    if (!world.calibration_modal.is_open) {
+        std::cerr << "[headless-e2e] Failed to reopen SolarArray for recalibration\n";
+        return 1;
+    }
     world.calibration_modal.SetParameter(world.last_scan.measured_target_value, solar);
+    world.calibration_modal.SetStabilizer(solar.clean_stabilizer_target, solar);
     input = {};
     input.players[0].confirm_pressed = true;
     state_manager.Update(eco::kFixedDt);
     if (world.calibration_modal.is_open ||
         solar.state != eco::MachineState::CleanActive ||
+        solar.approach != eco::CalibrationApproach::CleanSlow ||
         world.ecosystem.clean_energy <= 0.0f ||
         world.ecosystem.ui_phase != eco::UiPhase::Phase2_Telemetry) {
-        std::cerr << "[headless-e2e] SolarArray clean calibration failed\n";
+        std::cerr << "[headless-e2e] SolarArray clean recalibration failed\n";
         return 1;
     }
 
@@ -508,8 +562,11 @@ struct WindowedOptions {
     bool open_settings = false;
     bool open_history = false;
     bool open_codex = false;
+    bool open_modal = false;
     bool collect_all = false;
     bool clean_all = false;
+    bool risky_all = false;
+    bool dirty_all = false;
     bool epilogue = false;
     bool has_zone = false;
     eco::ZoneId target_zone = eco::ZoneId::DawnTerraces;
@@ -542,6 +599,16 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
 
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(eco::kWindowWidth, eco::kWindowHeight, "EQUILIBRIO - La Conca di Meridia");
+    {
+        Image icon = LoadImageFromMemory(
+            ".png",
+            eco::app::kAppIconPngData,
+            static_cast<int>(eco::app::kAppIconPngSize));
+        if (icon.data != nullptr) {
+            SetWindowIcon(icon);
+            UnloadImage(icon);
+        }
+    }
     SetWindowMinSize(640, 360);
     // Disabilita l'uscita automatica con ESC: ESC gestisce Calibrazione -> Diario -> Menu di Pausa
     SetExitKey(KEY_NULL);
@@ -588,25 +655,52 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
         eco::app::JournalOverlay journal{};
 
         world.EnsureInitialized();
+        world.guidance_mode = static_cast<eco::GuidanceAssistMode>(
+            std::clamp(graphics_settings.guidance_mode_index, 0, 2));
 
         if (opt.collect_all) {
             world.collectibles.CollectAll();
         }
         if (opt.clean_all || opt.epilogue) {
-            world.GetMachine(eco::MachineType::SolarArray).state = eco::MachineState::CleanActive;
-            world.GetMachine(eco::MachineType::HydroTurbine).state = eco::MachineState::CleanActive;
-            world.GetMachine(eco::MachineType::PendulumRegulator).state = eco::MachineState::CleanActive;
-            world.GetMachine(eco::MachineType::HarmonicResonator).state = eco::MachineState::CleanActive;
-            world.GetMachine(eco::MachineType::ThermalExchanger).state = eco::MachineState::CleanActive;
+            for (int mi = 0; mi < 5; ++mi) {
+                auto& m = world.GetMachine(static_cast<eco::MachineType>(mi));
+                m.state = eco::MachineState::CleanActive;
+                m.approach = eco::CalibrationApproach::CleanSlow;
+                m.current_param = m.target_param;
+                m.stabilizer_value = m.clean_stabilizer_target;
+            }
             world.GetMachine(eco::MachineType::CentralAstrolabe).unlocked = true;
             world.GetNpc(eco::NpcId::ClaraSereni).recruited = true;
             world.GetNpc(eco::NpcId::ClaraSereni).met = true;
+            world.GetNpc(eco::NpcId::LorenzoAltieri).recruited = true;
+            world.GetNpc(eco::NpcId::LorenzoAltieri).met = true;
             world.ecosystem.ApplyCleanActivation(100.0f, 100.0f);
             world.ecosystem.SetArchitectRecruited(true);
             if (opt.epilogue) {
-                world.GetMachine(eco::MachineType::CentralAstrolabe).state = eco::MachineState::CleanActive;
+                auto& astro = world.GetMachine(eco::MachineType::CentralAstrolabe);
+                astro.state = eco::MachineState::CleanActive;
+                astro.approach = eco::CalibrationApproach::CleanSlow;
                 world.simulation_completed = true;
             }
+            world.RefreshSystemicWorldState();
+        } else if (opt.risky_all) {
+            for (int mi = 0; mi < 5; ++mi) {
+                auto& m = world.GetMachine(static_cast<eco::MachineType>(mi));
+                m.state = eco::MachineState::CleanActive;
+                m.approach = eco::CalibrationApproach::RiskyEfficient;
+                m.current_param = (m.risky_param_min + m.risky_param_max) * 0.5f;
+                m.stabilizer_value = 0.22f;
+            }
+            world.ecosystem.ApplyRiskyActivation(64.0f, 8.0f);
+            world.RefreshSystemicWorldState();
+        } else if (opt.dirty_all) {
+            for (int mi = 0; mi < 5; ++mi) {
+                auto& m = world.GetMachine(static_cast<eco::MachineType>(mi));
+                m.state = eco::MachineState::BypassedDirty;
+                m.approach = eco::CalibrationApproach::DirtyImmediate;
+            }
+            world.ecosystem.ApplyDirtyBypass(44.0f, 44.0f);
+            world.RefreshSystemicWorldState();
         }
         if (opt.pollution >= 0.0f) {
             world.ecosystem.pollution_level =
@@ -630,6 +724,11 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
 
         if (opt.has_zone && !opt.has_structure && opt.scene == "overworld") {
             world.TeleportToZone(opt.target_zone);
+        }
+
+        if (opt.open_modal) {
+            world.OpenCalibrationModalFor(world.ActiveMachine().type);
+            (void)world.ExecuteModalTrial();
         }
 
         // Assicura che la storia abbia osservato lo stato iniziale (utile per --open-history)
@@ -930,10 +1029,20 @@ int main(int argc, char** argv) {
                 opt.scene = "overworld";
                 scene_given = true;
             }
+        } else if (arg == "--open-modal") {
+            opt.open_modal = true;
+            if (!scene_given) {
+                opt.scene = "overworld";
+                scene_given = true;
+            }
         } else if (arg == "--collect-all") {
             opt.collect_all = true;
         } else if (arg == "--clean-all") {
             opt.clean_all = true;
+        } else if (arg == "--risky-all") {
+            opt.risky_all = true;
+        } else if (arg == "--dirty-all") {
+            opt.dirty_all = true;
         } else if (arg == "--epilogue") {
             opt.epilogue = true;
             if (!scene_given) {

@@ -1,191 +1,103 @@
-# DIALOGHI E RELIQUIE -- EQUILIBRIO: Le Cronache di Meridia
+# DIALOGHI, LANDMARK E RELIQUIE -- EQUILIBRIO: Le Cronache di Meridia
 
-> **Copione Completo In-Game (`src/core/story_content.cpp`) e Catalogo Codex (`src/core/collectible_content.cpp`)**
-> Tutti i testi destinati al rendering usano **esclusivamente caratteri ASCII stampabili (codici 32..126)** con apostrofi (`e'`, `piu'`, `civilta'`, `perche'`, `cosi'`) per garantire compatibilita' universale con font TTF e bitmap.
-> Ogni battuta viene registrata automaticamente nella **Cronologia Dialoghi (`[H]`)** e ogni reliquia viene trascritta nel **Codex dell'Archivio (`[J]`)**.
+> **Copione Reattivo In-Game (`src/core/story_content.cpp`) e Catalogo Strumenti Codex (`src/core/collectible_content.cpp`)**
+> Tutti i testi destinati al rendering usano **esclusivamente caratteri ASCII stampabili (codici 32..126)** con apostrofi (`e'`, `piu'`, `civilta'`, `perche'`, `cosi'`) e doppi trattini (`--`).
+> Ogni battuta viene trascritta nella **Cronologia Dialoghi (`[H]`)** e ogni manufatto sblocca storia + istruzioni d'uso sul campo nel **Codex (`[J]`)**.
 
 ---
 
-## 1. Cast e Voci Narranti
+## 1. Cast e Voci Reattive
 
-| Parlante | Ruolo | Registro e Carattere |
+| Parlante | Ruolo | Registro e Reattivita' alle Scelte |
 |---|---|---|
-| **Elena Valli** | Naturalista e Cartografa (Protagonista) | Prosa lucida da taccuino di campo; unisce rigore empirico e meraviglia davanti alla pietra antica. |
-| **Clara Sereni** | Ingegnera dei Canali | Asciutta, concreta, priva di retorica; si fida solo dell'energia pulita e apre il Ponte degli Archi. |
-| **Lorenzo Altieri** | Archivista delle Cisterne Ipogee | Cadenza misurata da cronista antico; custodisce la memoria delle quattro ere e la chiave geotermica. |
-| **Miriam Ferro** | Botanica dei Giardini Sospesi | Sensoriale, attenta a profumi, radici, semi dormienti e risonanze di vetro-giada. |
-| **Matteo Verrini** | Sovrintendente della Compagnia della Pece | Pragmatico e stanco, mai caricaturale; difende le fornaci rapide per proteggere i villaggi dal freddo. |
-| **Eco di Meridia** | Cristalli Armonici dei Monumenti | Prosa breve, epigrafica e poetica incisa dagli ultimi Custodi dell'Era IV; zero gergo tecnico. |
+| **Elena Valli** | Naturalista e Cartografa | Taccuino empirico: non anticipa numeri a memoria, ma deduce le leggi da ombre, condotti, schiuma e prove `[T]`. |
+| **Clara Sereni** | Ingegnera dei Canali | Calorosa e fiduciosa in `CleanSlow` (apre Ponte + Passaggio Artigiani); vigile sui manometri in `RiskyEfficient`; amara dietro un panno filtrante in `DirtyImmediate`. |
+| **Lorenzo Altieri** | Archivista delle Cisterne | Scende commosso al bacino aprendo la Nicchia in `CleanSlow`; ammira con cautela lo Sfioratore Alto in `RiskyEfficient`; ripara tossendo sulle volte alte in `DirtyImmediate`. |
+| **Miriam Ferro** | Botanica dei Giardini Sospesi | Sensoriale, attenta a germogli, polveri sottili, semi fossili e risonanze di vetro-giada. |
+| **Matteo Verrini** | Sovrintendente della Pece | Pragmatico e umano: rivendica la rapidita' delle fornaci, resta colpito dalla potenza del Regime Critico e depone le chiavi davanti al percorso pulito completo. |
+| **Eco di Meridia** | Cristalli Armonici dell'Era IV | Voce epigrafica incisa nella pietra: celebra l'equilibrio paziente e ammonisce sulla tensione o sulle sorgenti ferite. |
 
 ---
 
-## 2. Titoli dei Capitoli (`ChapterTitle`)
+## 2. Guida Ridotta e Appunti Empirici (`ObjectiveFor`)
 
-| Enum `Chapter` | Titolo In-Game |
-|---|---|
-| `Chapter::Prologo` | `"PROLOGO - La Nebbia sull'Altopiano"` |
-| `Chapter::Atto1_Luce` | `"ATTO I - La Misura della Luce"` |
-| `Chapter::Atto2_Acqua` | `"ATTO II - Il Peso dell'Acqua"` |
-| `Chapter::Atto3_Pendolo` | `"ATTO III - Il Tempo del Pendolo"` |
-| `Chapter::Atto4_Giardini` | `"ATTO IV - L'Accordo dei Giardini"` |
-| `Chapter::Atto5_Fumarole` | `"ATTO V - Le Ceneri della Frattura"` |
-| `Chapter::Epilogo` | `"EPILOGO - Il Cuore di Meridia"` |
+Nelle fasi della Vertical Slice (`Prologo`, `Atto1_Luce`, `Atto2_Acqua` e sintesi d'apertura di `Atto3_Pendolo`), gli obiettivi non forniscono coordinate GPS ne' valori numerici precompilati, ma **note di lettura diegetica**:
 
----
-
-## 3. Testo Introduttivo (`IntroCrawl`)
-
-1. `"LA CONCA DI MERIDIA - CRONACHE DELL'ALTOPIANO"`
-2. `"Secoli fa, una civilta' di astronomi, idraulici e botanici scolpi' questo altopiano nella pietra calcarea e nel basalto."`
-3. `"I Meridiani non bruciavano carbone ne' pece: alimentavano la loro citta' con la luce del sole, il peso dell'acqua, il pendolo, il suono e il calore profondo."`
-4. `"Poi venne la Grande Siccita' e con essa l'Inverno di Pece: le fornaci d'emergenza oscurarono gli specchi e dispersero gli archivi."`
-5. `"Oggi i villaggi a valle respirano cenere e dipendono dai fumi della Compagnia della Pece."`
-6. `"La naturalista Elena Valli sale sull'altopiano con una Lente Empirica e un Diario di Campo ancora bianco."`
-7. `"I cinque grandi monumenti della Conca sono muti, ma le leggi della fisica attendono mani pazienti che sappiano misurarle."`
-8. `"Ogni impianto ti porra' una scelta reale: la pazienza del calcolo pulito o la scorciatoia immediata della fornace."`
-9. `"Esplora i sei distretti e le tre camere ipogee, raccogli le sedici reliquie delle quattro ere nel Codex [J] e rileggi il viaggio nel Diario [H]."`
-10. `"Misura con [F], calibra con [E], e scopri cosa sigillarono gli ultimi custodi al cuore di Meridia..."`
+- **`Prologo`**:
+  - Prima delle osservazioni: *"Taccuino: Leggi le Ombre dell'Alba"* -- `"Osserva meridiane e condotti spenti nel travertino [E], poi usa [Q]."`
+  - Dopo il primo rilievo: *"Taccuino: Segui i Condotti d'Ottone"* -- `"Segui le tracce metalliche fino al riflettore e sonda la luce [Q]."`
+- **`Atto1_Luce`**:
+  - Prima dell'esperimento: *"Ipotesi sulle Terrazze dell'Alba"* -- `"Orienta gli specchi [E], formula un'ipotesi sul banco e prova [T]."`
+  - Dopo l'Impulso di Prova: *"Conseguenza e Scelta Solare"* -- `"Valuta l'esito sul banco [E]: Armonia, Regime Critico o Pece."`
+  - Post-attivazione differenziato per `CleanSlow` (condotti dorati), `RiskyEfficient` (Cresta Arsa / cavi tesi) e `DirtyImmediate` (veto di Clara per il fumo).
+- **`Atto2_Acqua`**:
+  - Nei Canali: invita a leggere schiuma, sponde e idrometri `[E]` (o ad applicare il *Diario dell'Idraulico* per aprire le chiuse laminari) seguendo la caduta d'acqua verso i pozzi occidentali.
+  - Nelle Cisterne: *"Indagine nei Pozzi di Calma"* (`"Osserva le tacche sommerse [E], formula un'ipotesi e prova con [T]."`) -> *"Il Peso dell'Acqua nella Cisterna"*.
+- **Sintesi Vertical Slice (`Atto3_Pendolo` iniziale)**:
+  - Invita a incontrare Lorenzo sotto le volte orientali e poi risalire al **Ponte degli Archi** per il bilancio complessivo con Clara Sereni (`VerticalSliceSynthesis`).
 
 ---
 
-## 4. Copione per Evento (`DialogueForEvent`)
+## 3. Copione Completo dei 40 Eventi (`DialogueForEvent`)
 
-### 4.1 Inizio, Luce e Canali (Prologo e Atto I)
+### 3.1 Ciclo Solare, Osservazione e Terrazze dell'Alba
 
-- **`GameStarted`**:
-  - **Elena Valli**: `"L'aria sulle Terrazze dell'Alba sa di cenere e pietra bagnata. Ecco finalmente la Conca di Meridia."`
-  - **Elena Valli**: `"Gli specchi dell'Eliostato sono spenti da anni, ma la mia Lente Empirica [F] puo' ancora misurare la luce."`
-  - **Matteo Verrini**: `"Dottoressa Valli, la vedo salire dalle terrazze. Se vuole corrente subito senza perdere la giornata, apra la fornace con [B]."`
-  - **Elena Valli**: `"Sono salita fin qui per fermare il fumo che scende sui villaggi, Matteo. Prima misuro l'Eliostato con [F]."`
+- **`GameStarted`**: Elena nota l'assenza di una bussola automatica e osserva i condotti d'ottone spenti e l'ombra sulla meridiana di travertino; Matteo Verrini offre il bypass immediato a pece `[B]` per scaldare i borghi a valle; Elena sceglie di osservare `[E]`, sondare `[Q]` e mettere alla prova la propria ipotesi.
+- **`FirstScan`**: attraverso la Lente `[Q]` Elena rileva che l'ombra dello gnomone eguaglia l'altezza dello stilo verticale, deducendo per la legge di Lambert che la normale dello specchio deve bisecare il quadrante solare prima di verificare con un Impulso di Prova `[T]`.
+- **`ObservationClueRead`** *(Nuovo)*: primo appunto dalle stazioni diegetiche (`ObservationNode`) che esplicita il metodo dei Meridiani: *osservare i limiti incisi nella pietra -> scegliere l'ipotesi -> verificare la conseguenza con `[T]`*.
+- **`SolarTrialRun`** *(Nuovo)*: l'Impulso di Prova `[T]` scuote la polvere dalle incisioni con un lampo nei condotti d'ottone e misura lo scarto ottico; Matteo commenta il tremito dei morsetti mentre Elena prepara la scelta fra `[INVIO]`, `[R]` e `[B]`.
+- **`SolarClean`** *(con guardia reattiva su `solar_approach`)*: in `CleanSlow` i condotti pulsano d'oro caldo, i rovi di pece si sgretolano, tornano le rondini sugli ulivi, si sblocca il Rilievo Metrico `[V]` e Clara chiama entusiasta dai Canali.
+- **`SolarRisky`** *(Nuovo -- `RiskyEfficient`)*: il raggio concentrato in sovraccarico fonde i rovi aprendo la **Scorciatoia della Cresta Arsa** tra rocce vetrificate; Matteo resta colpito dai 32 watt puliti ma tesi, mentre Clara chiama dai Canali avvertendo che i manometri vibrano al limite termico.
+- **`SolarBypassed`** (`DirtyImmediate`): fumo acre di catrame sulle Terrazze, rondini scomparse e rovi neri che serrano i passaggi bassi; Clara parla tossendo dietro un panno bagnato e tiene chiuso il Ponte finche' non si ricalibra l'impianto `[E]` o si bonificano le vasche.
 
-- **`FirstScan`**:
-  - **Elena Valli**: `"Lo gnomone di bronzo non mente: il raggio solare incide a 45 gradi esatti sulle lastre di travertino."`
-  - **Elena Valli**: `"E' la legge del coseno di Lambert: il rendimento dipende dall'angolo tra lo specchio e il fascio di luce."`
-  - **Elena Valli**: `"Mi avvicino al meccanismo [E], allineo l'Eliostato a 45 gradi e confermo la misura con [C]."`
+### 3.2 Quartiere dei Canali, Strumenti Vivi e Cisterne Ipogee
 
-- **`SolarClean`**:
-  - **Elena Valli**: `"Oltre l'ottanta per cento di rendimento! La pietra si scalda di luce pulita, senza un solo filo di fumo."`
-  - **Elena Valli**: `"La Lente Empirica si e' tarata sul campo: ora posso attivare il Rilievo Metrico di Fase 2 con [V]."`
-  - **Clara Sereni**: `"Ehi, laggiu' sulle terrazze! Ho visto accendersi gli specchi senza una sbuffata di pece. Raggiungimi al Quartiere dei Canali!"`
-  - **Elena Valli**: `"Quella dev'essere Clara Sereni, l'ingegnera delle chiuse. Saliamo verso nord al Quartiere dei Canali per parlarle [E]."`
+- **`EnteredCanalQuarter`** *(variante inquinato vs normale)*: lettura diegetica delle colonnine idrometriche, della schiuma bruna o chiara nei salti d'acqua e del Guado sommerso.
+- **`ClaraRecruited`** *(variante `CleanSlow` vs `RiskyEfficient`)*:
+  - In `CleanSlow`: Clara elogia l'assenza di fuliggine, apre il **Ponte degli Archi** e il **Passaggio degli Artigiani**, e condivide la **Trama Geodetica (`[V]`)** accompagnata dall'Eco di Meridia.
+  - In `RiskyEfficient`: Clara ha la chiave inglese sui bulloni vibranti del collettore; ammira il coraggio tecnico, apre il Ponte e dona la Trama Geodetica `[V]` raccomandando prudenza nelle Cisterne (*"La corda tesa porta lontano la freccia, ma chiede mano ferma per non spezzare l'arco"*).
+- **`BioPlanterSeeded`** *(Nuovo)*: il **Seme d'Ulivo Bianco** germoglia nella conca di pietra, spacca la crosta di catrame, dissolve i **Rovi di Pece** e rinfresca il sentiero sotto gli occhi stupiti di Clara.
+- **`LaminarFordOpened`** *(Nuovo)*: applicando il **Diario dell'Idraulico** sulle leve delle chiuse, la piena diventa un velo laminare silenzioso e fa affiorare asciutto il **Guado degli Idraulici**.
+- **`EnteredCisterns`**: Elena ascolta il rimbombo delle cascate e individua le tacche metriche in calce e bronzo sulle colonne sommerse di Stevino, preparando l'osservazione piezometrica prima di scendere alla Turbina.
+- **`HydroTrialRun`** *(Nuovo)*: colpo d'ariete controllato `[T]` lungo la condotta forzata; i canali di scolo sussultano indicando lo scarto piezometrico e Lorenzo riconosce dall'alto l'antico "colpo d'assaggio" dei fontanieri.
+- **`HydroClean`**: l'acqua schiarisce come vetro azzurro senza cavitazione, tornano i tritoni luminosi e Lorenzo scende al bacino aprendo la **Nicchia Sigillata dei Cilindri**.
+- **`HydroRisky`** *(Nuovo -- `RiskyEfficient`)*: regime supercritico ad altissima resa; le tubazioni gocciolano vapore freddo, la pressione **spalanca lo Sfioratore Alto** verso il Prisma e Clara avverte che nei Canali la corrente e' accelerata del `+45%`.
+- **`HydroBypassed`** (`DirtyImmediate`): patina oleosa sul bacino, lucciole di grotta spente e vapore corrosivo; Lorenzo si ritira tossendo sulle volte alte per coprire i cilindri d'archivio.
+- **`LorenzoRecruited`** *(4 varianti reattive: `DirtyImmediate`, `RiskyEfficient`, `CleanSlow` con `>= 4` reliquie, `CleanSlow` base)*: consegna la chiave di bronzo adattando tono, posizione e commento allo stato delle Cisterne e agli strumenti raccolti.
 
-- **`SolarBypassed`**:
-  - **Matteo Verrini**: `"Vede, dottoressa? Con la fornace di emergenza i condotti si scaldano in un istante, senza stare a inseguire le ombre."`
-  - **Elena Valli**: `"La corrente scorre, ma una coltre scura sta gia' calando sugli ulivi delle terrazze..."`
-  - **Clara Sereni**: `"Chi ha acceso di nuovo la pece sulle terrazze?! Finche' bruciate scorie, il Ponte degli Archi resta chiuso!"`
-  - **Elena Valli**: `"Clara non aprira' mai il passaggio con la fornace accesa. Posso tornare all'Eliostato [E] e calibrarlo con la luce."`
+### 3.3 Bilancio Reattivo della Vertical Slice (`VerticalSliceSynthesis`)
 
-- **`ClaraRecruited`**:
-  - **Clara Sereni**: `"Ho controllato il flusso sui morsetti di bronzo. Niente fuliggine, solo angolo e pazienza. Avevi ragione tu, Elena."`
-  - **Clara Sereni**: `"Tolgo il sigillo dal Ponte degli Archi: ora tutta la meta' orientale di Meridia, dai Giardini al Santuario, e' aperta."`
-  - **Clara Sereni**: `"Tieni la mia lente strutturale. Premi [V] per la Trama Geodetica: vedrai le linee di forza che i Meridiani incisero nella pietra."`
-  - **Eco di Meridia**: `"Quando due sguardi misurano senza fretta, il ponte torna a unire cio' che l'inverno aveva diviso."`
-  - **Elena Valli**: `"Hai sentito quel canto salire dai cristalli, Clara? Scendiamo nelle Cisterne Ipogee a nord-ovest, poi esploreremo oltre il ponte."`
+Quando il giocatore ha affrontato Terrazze, Canali e Cisterne e si confronta con Clara al **Ponte degli Archi**, il dialogo riflette tutte le **5 combinazioni di scelte** + il conteggio e l'uso degli strumenti (`white_olive_planted`, `laminar_ford_open`, `relics_collected`):
+1. **Doppia Armonia (`CleanSlow` + `CleanSlow`)**: rondini sulle Terrazze dorate, carpe d'argento nei Canali limpidi, respiro di quarant'anni fa nelle Cisterne e bussola geodetica consacrata.
+2. **Doppio Regime Critico (`RiskyEfficient` + `RiskyEfficient`)**: parapetto vibrante sul Ponte, Cresta Arsa fumante a sud e rapide supercritiche a ovest; Matteo ammette la luce pienissima a valle mentre Lorenzo avverte della pietra tesa come una corda di violino.
+3. **Equilibrio Misto senza Pece (`CleanSlow` + `RiskyEfficient` o viceversa)**: contrasto vivo tra il distretto guarito in quiete e quello spinto in sovraccarico calcolato, celebrando il rifiuto totale del catrame.
+4. **Conca Divisa a Meta' (una scelta Pulita/Rischiosa + una Fornace a Pece)**: specchio vivente dello Scisma dell'Era III, con meta' ecosistema rifiorito e meta' chiuso dai rovi neri, invitando a ricalibrare `[E]` l'impianto ferito.
+5. **Doppia Fornace a Pece (`DirtyImmediate` + `DirtyImmediate`)**: Matteo rivendica i kilowatt immediati, ma Clara mostra dal Ponte il silenzio senza rondini ne' carpe e i varchi serrati dai rovi, ricordando che i banchi `[E]` restano sempre aperti al riscatto.
 
-### 4.2 Ingressi Contestuali nei Distretti e nelle Strutture
-
-- **`EnteredCanalQuarter`**:
-  - **Elena Valli**: `"Il Quartiere dei Canali... Le vasche a gradini portano ancora i segni dell'acqua limpida che un tempo nutriva l'altopiano."`
-  - **Elena Valli**: `"A est vedo il grande Ponte degli Archi, e tra le volte a ovest l'imbocco delle Cisterne Ipogee."`
-
-- **`EnteredWindPlateau`**:
-  - **Elena Valli**: `"Sull'Altopiano dei Venti il basalto taglia la brezza e i cipressi si piegano tutti lungo la stessa rosa scolpita nella roccia."`
-  - **Elena Valli**: `"In fondo alla cresta si staglia la Torre del Pendolo: i suoi oculi di pietra sembrano ancora attendere il mezzogiorno."`
-
-- **`EnteredHangingGardens`**:
-  - **Elena Valli**: `"Oltre il Ponte degli Archi si aprono i Giardini Sospesi. Anche sotto la polvere si avverte il profumo dei semi dormienti."`
-  - **Elena Valli**: `"Tra le vasche di giada si intravedono gli anelli del Risonatore Armonico e qualcuno che si prende cura delle aiuole."`
-
-- **`EnteredFumaroleCaldera`**:
-  - **Elena Valli**: `"La Caldera delle Fumarole... Qui nacque l'Inverno di Pece. Le vecchie fornaci hanno segnato il basalto come cicatrici."`
-  - **Elena Valli**: `"Vicino all'ingresso della Camera Geotermica scorgo la figura di Matteo Verrini, immerso nel vapore."`
-
-- **`EnteredHarmonySanctuary`**:
-  - **Elena Valli**: `"Il Santuario dell'Armonia. Sotto i miei passi un intero mosaico astronomico di travertino, bronzo e giada."`
-  - **Elena Valli**: `"Al centro della piazza riposa l'Astrolabio di Meridia: i suoi quattro anelli attendono che l'intera Conca ritrovi l'equilibrio."`
-
-- **`EnteredCisterns`**:
-  - **Elena Valli**: `"Le Cisterne Ipogee. L'eco delle cascate riempie la volta, e lungo queste passerelle dovro' muovermi con attenzione [SPAZIO]."`
-  - **Elena Valli**: `"La legge di Stevino governa questo bacino: a dieci metri di colonna d'acqua la pressione tocca 98.100 Pascal."`
-  - **Elena Valli**: `"Sul fondo del bacino mi attende la Turbina Idrostatica; piu' in alto, verso est, intravedo il bagliore di una lanterna."`
-
-- **`EnteredPendulumTower`**:
-  - **Elena Valli**: `"Dentro la Torre del Pendolo la luce piove dagli oculi come polvere d'oro. Ogni ballatoio sale verso il grande braccio d'ottone."`
-  - **Elena Valli**: `"Galileo insegno' che il periodo del pendolo dipende solo dalla sua lunghezza: due metri esatti per 2,84 secondi di cadenza."`
-
-- **`EnteredGeothermalChamber`**:
-  - **Elena Valli**: `"Colonne esagonali di basalto e archi di rame ossidato: la Camera Geotermica custodisce il calore naturale della faglia."`
-  - **Elena Valli**: `"Con la sorgente fredda delle cisterne a 300 Kelvin, portare lo scambiatore di Carnot a 600 Kelvin garantisce il 50% di rendimento pulito."`
-
-### 4.3 Acqua, Pendolo, Giardini, Caldera e Astrolabio (Atti II-V ed Epilogo)
-
-- **`HydroClean` / `HydroBypassed`**:
-  - *Pulito*: Elena celebra i `98.100 Pascal` senza cavitazione; `Eco di Meridia` richiama la misura dell'acqua; `Lorenzo Altieri` la invita a salire sul ballatoio alto.
-  - *Bypass*: Matteo Verrini difende la pompa a pece; un velo scuro macchia le cisterne; `Eco di Meridia` lamenta la sorgente ferita.
-
-- **`LorenzoRecruited`** *(variante se `relics_collected >= 6`)*:
-  - Lorenzo Altieri accoglie Elena nell'ala alta delle Cisterne Ipogee, racconta lo Scisma dell'Era III e le consegna la chiave profonda per la Camera Geotermica, sottolineando il valore delle reliquie nel Codex `[J]`.
-
-- **`PendulumClean` / `PendulumBypassed`**:
-  - *Pulito*: `L = 2.00 m`, `T = 2.84 s`; Clara sente la sincronizzazione delle chiuse nei canali; `Eco di Meridia` ricorda che il tempo non si forza.
-  - *Bypass*: il volano a combustione fa vibrare le vetrate della torre.
-
-- **`MiriamMet`** *(variante in base a `pollution_level <= 25%`)*:
-  - Miriam Ferro accoglie Elena nei Giardini Sospesi, parlando di semi dormienti, profumo d'ulivi e del Risonatore Armonico a `120 Hz`.
-
-- **`HarmonicClean` / `HarmonicBypassed`**:
-  - *Pulito*: `120 Hz` esatti, la foschia si dissolve e le terrazze tornano a fiorire sotto lo sguardo commosso di Miriam Ferro.
-  - *Bypass*: i soffianti a pece costringono Miriam a richiudere i semi sotto vetro.
-
-- **`MatteoConfronted`** *(variante pulito vs con almeno un bypass)*:
-  - Confronto umano e diretto nella Caldera delle Fumarole: Matteo racconta i vent'anni d'inverno in cui la pece ha tenuto accese le case a valle; Elena gli riconosce l'assenza di malizia ma gli promette di dimostrare sul campo il rendimento pulito dello Scambiatore di Carnot (`600 K`).
-
-- **`ThermalClean` / `ThermalBypassed`**:
-  - *Pulito*: `600 K / 300 K` (`eta = 50%`), solo vapore bianco; Matteo stesso resta stupito dal calore pulito verso valle; Clara segnala il risveglio dell'Astrolabio nel Santuario dell'Armonia.
-  - *Bypass*: iniezione di pece e carbone nella faglia basaltica; Lorenzo piange la ferita alle falde profonde.
-
-- **`AstrolabeUnlocked` / `AstrolabeActivated`**:
-  - `AstrolabeUnlocked`: l'Eco di Meridia annuncia lo scioglimento del sigillo nel Santuario dell'Armonia.
-  - `AstrolabeActivated`: 3 diramazioni distinte in base a percorso pulito e reliquie (`>= 12`, `< 12`, oppure bypass).
-
-- **`SmogCritical`**:
-  - Oltre il 70% di cenere, Miriam e Clara avvertono Elena del collasso della flora; Elena decide di ricalibrare gli impianti forzati.
-
-- **Traguardi Collezionabili (`FirstRelic`, `FourRelics`, `HalfRelics`, `TwelveRelics`, `AllRelics`)**:
-  - Commenti progressivi di Elena, Lorenzo e dell'Eco di Meridia che accompagnano la ricostruzione delle quattro ere nel Codex `[J]`.
+### 3.4 Atti III-V, Epilogo e Traguardi Codex
+- Copertura integrale di `EnteredWindPlateau`, `EnteredPendulumTower`, `PendulumClean`/`PendulumBypassed`, `EnteredHangingGardens`, `MiriamMet`, `HarmonicClean`/`HarmonicBypassed`, `EnteredFumaroleCaldera`, `MatteoConfronted`, `EnteredGeothermalChamber`, `ThermalClean`/`ThermalBypassed`, `AstrolabeUnlocked`, `AstrolabeActivated` (3 rami), `SmogCritical` e dei 5 traguardi `FirstRelic`..`AllRelics`.
 
 ---
 
-## 5. Catalogo Completo delle 16 Reliquie (`src/core/collectible_content.cpp`)
+## 4. Landmark Diegetici della Vertical Slice (`ZoneLandmarks`)
 
-| Indice | Titolo | Era | Forma | Luogo | Parlante alla Raccolta |
-|---|---|---|---|---|---|
-| `I.1` | **Gnomone d'Ottone** | Era I - Alba delle Ombre | `Astrolabe` | Terrazze dell'Alba | Elena Valli |
-| `I.2` | **Stele della Prima Misura** | Era I - Alba delle Ombre | `Stele` | Terrazze dell'Alba | Elena Valli |
-| `I.3` | **Cilindro dei Solstizi** | Era I - Alba delle Ombre | `Cylinder` | Altopiano dei Venti | Elena Valli |
-| `I.4` | **Seme d'Ulivo Bianco** | Era I - Alba delle Ombre | `FossilSeed` | Quartiere dei Canali | Elena Valli |
-| `II.1` | **Diario dell'Idraulico** | Era II - Secolo delle Acque e del Suono | `Cylinder` | Quartiere dei Canali | Clara Sereni |
-| `II.2` | **Stele delle Chiusure** | Era II - Secolo delle Acque e del Suono | `Stele` | Cisterne Ipogee | Elena Valli |
-| `II.3` | **Diapason di Giada** | Era II - Secolo delle Acque e del Suono | `Prism` | Giardini Sospesi | Miriam Ferro |
-| `II.4` | **Cronometro a Filo** | Era II - Secolo delle Acque e del Suono | `Astrolabe` | Torre del Pendolo | Elena Valli |
-| `III.1` | **Verbale dello Scisma** | Era III - Inverno di Pece | `Cylinder` | Caldera delle Fumarole | Elena Valli |
-| `III.2` | **Stele delle Braci** | Era III - Inverno di Pece | `Stele` | Camera Geotermica | Lorenzo Altieri |
-| `III.3` | **Seme Annerito** | Era III - Inverno di Pece | `FossilSeed` | Giardini Sospesi | Miriam Ferro |
-| `III.4` | **Termometro di Basalto** | Era III - Inverno di Pece | `Astrolabe` | Camera Geotermica | Elena Valli |
-| `IV.1` | **Prisma del Congedo** | Era IV - Sigillo dell'Armonia | `Prism` | Cisterne Ipogee | Eco di Meridia |
-| `IV.2` | **Prisma delle Correnti** | Era IV - Sigillo dell'Armonia | `Prism` | Torre del Pendolo | Eco di Meridia |
-| `IV.3` | **Seme del Risveglio** | Era IV - Sigillo dell'Armonia | `FossilSeed` | Santuario dell'Armonia | Miriam Ferro |
-| `IV.4` | **Stele dell'Astrolabio** | Era IV - Sigillo dell'Armonia | `Stele` | Santuario dell'Armonia | Eco di Meridia |
+### Terrazze dell'Alba (`DawnTerraces` -- 4 Landmark)
+1. `dawn_sundial` -- **Meridiana Madre del Mezzogiorno**: uguaglianza tra ombra e altezza dello stilo verticale -> bisettrice del quadrante per il coseno di Lambert.
+2. `dawn_gnomon` -- **Obelisco del Coseno e dei Condotti**: codice visivo delle vene d'ottone (fredde, oro, ambra vibrante, nere di pece) e invito all'Impulso di Prova `[T]`.
+3. `dawn_olives` -- **Conca degli Ulivi Bianchi**: memoria botanica dell'Era I e indizio per innestare il *Seme d'Ulivo Bianco* nelle vasche aride `[E]` contro i rovi.
+4. `dawn_crest` -- **Cresta dei Rovi Vetrificati**: indizio fisico sul Regime Critico `[R]` con stabilizzatore aperto per fondere la barriera rocciosa al prezzo di stress termico.
 
-Ogni scheda nel Codex contiene 3 paragrafi letterari che ricostruiscono l'ascesa scientifica dei Meridiani, la siccita' e lo Scisma dell'Era III, fino al congedo e alla chiusura della Valle dei Semi.
+### Quartiere dei Canali (`CanalQuarter` -- 4 Landmark)
+1. `canal_plaque` -- **Idrometro di Valerio degli Archi**: relazione tra pendenza dolce (flusso laminare + guado), spinta supercritica e vortici di pece.
+2. `canal_amphora` -- **Pozzo di Calma di Stevino**: indizio ragionato sulle braccia metriche d'acqua quieta rispetto alla soglia supercritica che spalanca gli sfioratori alti nelle Cisterne.
+3. `canal_arch` -- **Pilone del Ponte degli Archi**: architettura a conci serrati senza malta e punto di ritrovo con Clara per il bilancio dell'anello idraulico.
+4. `canal_ford` -- **Soglia del Guado degli Idraulici**: lastroni sommersi tra Canali e Cisterne che emergono abbattendo l'inquinamento o attivando il *Codice delle Chiuse Laminari*.
 
 ---
 
-## 6. I Tre Finali (`EndingText(clean_path, relics_found, total_relics)`)
+## 5. Schede Codex delle 16 Reliquie-Strumento (`collectible_content.cpp`)
 
-1. **`L'ALBA DI MERIDIA - FINALE RIVELATO`** (`clean_path == true && relics_found >= 12`):
-   - Cielo limpido, quattro anelli dell'Astrolabio accesi, apertura del passo verso la Valle dei Semi, riconciliazione di Matteo Verrini che depone le chiavi delle fornaci.
-2. **`LA RINASCITA DELLA CONCA - FINALE ARMONICO`** (`clean_path == true && relics_found < 12`):
-   - I cinque monumenti guariscono l'altopiano senza fumo, ma alcuni anelli dell'Astrolabio restano in penombra in attesa di raggiungere almeno 12 reliquie nel Codex `[J]`.
-3. **`IL PREZZO DELLA FRETTA - FINALE GRIGIO`** (`clean_path == false`):
-   - Le fornaci forniscono energia ma lasciano una coltre plumbea sul Ponte degli Archi e silenziano l'Eco di Meridia; il giocatore puo' tornare a ricalibrare i monumenti forzati in modo pulito.
+Ogni reliquia combina nel `pickup_line` e nei 3 `codex_paragraphs`:
+1. **Origine storica** nell'arco delle Quattro Ere;
+2. **Principio fisico o biologico** scoperto dai Meridiani;
+3. **`USO SUL CAMPO (...)` esplicito**, spiegando al giocatore come impiegarla attivamente con `[Q]`, `[E]`, `[T]` o `[V]` (in piena sintonia con il riquadro *STRUMENTO & EFFETTO LUDICO* di `GetRelicGameplaySpec`).

@@ -36,12 +36,44 @@ void EcoSystem::ApplyCleanActivation(float energy_gain, float pollution_reductio
     }
 }
 
+void EcoSystem::ApplyRiskyActivation(float energy_gain, float pollution_increase) noexcept {
+    const float gain = SafeNonNegative(energy_gain);
+    const float increase = SafeNonNegative(pollution_increase);
+
+    clean_energy = Clamp(clean_energy + gain, kMinEcoValue, kMaxEcoValue);
+    pollution_level = Clamp(pollution_level + increase, kMinEcoValue, kMaxEcoValue);
+
+    if (clean_energy > 0.0f && ui_phase == UiPhase::Phase1_Minimal) {
+        ui_phase = UiPhase::Phase2_Telemetry;
+    }
+}
+
 void EcoSystem::ApplyDirtyBypass(float energy_gain, float pollution_increase) noexcept {
     const float gain = SafeNonNegative(energy_gain);
     const float increase = SafeNonNegative(pollution_increase);
 
     dirty_energy = Clamp(dirty_energy + gain, kMinEcoValue, kMaxEcoValue);
     pollution_level = Clamp(pollution_level + increase, kMinEcoValue, kMaxEcoValue);
+}
+
+void EcoSystem::ApplyPollutionDelta(float delta) noexcept {
+    if (!std::isfinite(delta)) {
+        return;
+    }
+    pollution_level = Clamp(pollution_level + delta, kMinEcoValue, kMaxEcoValue);
+}
+
+EcoHealthBand EcoSystem::GlobalHealthBand() const noexcept {
+    if (pollution_level >= 65.0f) {
+        return EcoHealthBand::Critical;
+    }
+    if (pollution_level >= 34.0f) {
+        return EcoHealthBand::Polluted;
+    }
+    if (pollution_level > 18.0f) {
+        return EcoHealthBand::Recovering;
+    }
+    return EcoHealthBand::Flourishing;
 }
 
 void EcoSystem::SetArchitectRecruited(bool recruited) noexcept {

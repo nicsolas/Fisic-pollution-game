@@ -3,6 +3,7 @@
 #include <raylib.h>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 #include "app/calibration_ui.h"
@@ -72,7 +73,12 @@ void OverworldState::Update(float dt) {
 }
 
 void OverworldState::Draw() {
-    const float poll = ctx_.ecosystem.PollutionRatio();
+    const eco::ZoneEcoStatus eco_status = ctx_.world.ActiveSceneEcoStatus();
+    const float local_poll = 1.0f - std::clamp(eco_status.local_vitality, 0.0f, 1.0f);
+    const float poll = std::clamp(
+        local_poll * 0.68f + ctx_.ecosystem.PollutionRatio() * 0.32f,
+        0.0f,
+        1.0f);
     ClearBackground(pal::WorldColor(pal::kSickSky, pal::kHealthySky, poll));
 
     const eco::Tilemap& tilemap = ctx_.world.overworld.tilemap;
@@ -88,8 +94,20 @@ void OverworldState::Draw() {
         half_h,
         std::max(half_h, tilemap.WorldHeight() - half_h));
 
+    // Micro-vibrazione diegetica per Impulso di Prova (RunTrial) o regime RiskyEfficient
+    float shake_amp = 0.0f;
+    if (ctx_.world.trial_pulse_timer > 0.01f) {
+        shake_amp = std::max(shake_amp, 1.55f * std::clamp(ctx_.world.trial_pulse_timer / 1.25f, 0.0f, 1.0f));
+    }
+    if (ctx_.world.ActiveMachine().approach == eco::CalibrationApproach::RiskyEfficient) {
+        shake_amp = std::max(shake_amp, 0.65f);
+    }
+    const float t = ctx_.world.sim_time;
+    const float shake_x = (shake_amp > 0.01f) ? (std::sin(t * 43.0f) * shake_amp) : 0.0f;
+    const float shake_y = (shake_amp > 0.01f) ? (std::cos(t * 57.0f) * shake_amp * 0.85f) : 0.0f;
+
     Camera2D camera{};
-    camera.target = Vector2{cam_x, cam_y};
+    camera.target = Vector2{cam_x + shake_x, cam_y + shake_y};
     camera.offset = Vector2{half_w, half_h};
     camera.rotation = 0.0f;
     camera.zoom = 1.0f;

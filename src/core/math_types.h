@@ -103,6 +103,109 @@ enum class MachineType : int {
 enum class MachineState { Broken, CleanActive, BypassedDirty };
 enum class UiPhase { Phase1_Minimal = 1, Phase2_Telemetry = 2, Phase3_EngineOverlay = 3 };
 
+// Scientific Inquiry Loop & Multi-Solution Vertical Slice Enums
+enum class InquiryStage : int {
+    Observe = 0,
+    Hypothesize = 1,
+    Experimented = 2,
+    ConsequenceSeen = 3,
+    Resolved = 4
+};
+
+enum class HypothesisKind : int {
+    HarmonicEquilibrium = 0,
+    CriticalOverdrive = 1,
+    EmergencyBypass = 2
+};
+
+enum class CalibrationApproach : int {
+    None = 0,
+    CleanSlow = 1,
+    RiskyEfficient = 2,
+    DirtyImmediate = 3
+};
+
+enum class EcoHealthBand : int {
+    Critical = 0,
+    Polluted = 1,
+    Recovering = 2,
+    Flourishing = 3
+};
+
+enum class GuidanceAssistMode : int {
+    Empirical = 0,
+    AlwaysOn = 1,
+    MinimalOff = 2
+};
+
+[[nodiscard]] constexpr const char* InquiryStageName(InquiryStage stage) noexcept {
+    switch (stage) {
+        case InquiryStage::Observe:
+            return "1. Osserva";
+        case InquiryStage::Hypothesize:
+            return "2. Ipotesi";
+        case InquiryStage::Experimented:
+            return "3. Sperimenta";
+        case InquiryStage::ConsequenceSeen:
+            return "4. Conseguenza";
+        case InquiryStage::Resolved:
+            return "5. Soluzione";
+    }
+    return "1. Osserva";
+}
+
+[[nodiscard]] constexpr const char* HypothesisKindName(HypothesisKind kind) noexcept {
+    switch (kind) {
+        case HypothesisKind::HarmonicEquilibrium:
+            return "Equilibrio Armonico (Pulita)";
+        case HypothesisKind::CriticalOverdrive:
+            return "Regime Supercritico (Rischiosa)";
+        case HypothesisKind::EmergencyBypass:
+            return "Combustione a Pece (Sporca)";
+    }
+    return "Equilibrio Armonico";
+}
+
+[[nodiscard]] constexpr const char* CalibrationApproachName(CalibrationApproach approach) noexcept {
+    switch (approach) {
+        case CalibrationApproach::None:
+            return "Inattivo";
+        case CalibrationApproach::CleanSlow:
+            return "Armonia Pulita";
+        case CalibrationApproach::RiskyEfficient:
+            return "Regime Critico";
+        case CalibrationApproach::DirtyImmediate:
+            return "Bypass a Pece";
+    }
+    return "Inattivo";
+}
+
+[[nodiscard]] constexpr const char* EcoHealthBandName(EcoHealthBand band) noexcept {
+    switch (band) {
+        case EcoHealthBand::Critical:
+            return "Collasso di Pece";
+        case EcoHealthBand::Polluted:
+            return "Aria Torbida";
+        case EcoHealthBand::Recovering:
+            return "In Ripresa";
+        case EcoHealthBand::Flourishing:
+            return "Rifioritura Viva";
+    }
+    return "In Ripresa";
+}
+
+[[nodiscard]] constexpr const char* GuidanceAssistModeName(GuidanceAssistMode mode) noexcept {
+    switch (mode) {
+        case GuidanceAssistMode::Empirical:
+            return "Empirica";
+        case GuidanceAssistMode::AlwaysOn:
+            return "Sempre Attiva";
+        case GuidanceAssistMode::MinimalOff:
+            return "Spenta";
+    }
+    return "Empirica";
+}
+
 [[nodiscard]] constexpr LocationId LocationFromStructure(StructureId id) noexcept {
     switch (id) {
         case StructureId::HypogeanCisterns:

@@ -213,14 +213,27 @@ bool SaveWorldToFile(
     out << "demo_mode=" << (world.demo_mode ? 1 : 0) << "\n";
     out << "sim_time=" << std::fixed << std::setprecision(3) << world.sim_time << "\n";
     out << "has_scanned=" << (world.last_scan.active ? 1 : 0) << "\n";
+    out << "guidance_mode=" << static_cast<int>(world.guidance_mode) << "\n";
+    out << "slice_inquiry="
+        << static_cast<int>(world.slice_inquiry_stage[0]) << "|"
+        << static_cast<int>(world.slice_inquiry_stage[1]) << "|"
+        << static_cast<int>(world.slice_inquiry_stage[2]) << "\n";
+    out << "total_trials=" << world.total_trials_run << "\n";
+    out << "slice_synthesis=" << (world.vertical_slice_synthesis_done ? 1 : 0) << "\n";
 
-    // Monumenti (6)
+    // Monumenti (6) — retrocompatibile: primi 3 campi invariati, campi 4..9 per Vertical Slice
     for (std::size_t i = 0; i < world.machines.size(); ++i) {
         const Machine& m = world.machines[i];
         out << "machine_" << i << "="
             << static_cast<int>(m.state) << "|"
             << std::fixed << std::setprecision(3) << m.current_param << "|"
-            << (m.unlocked ? 1 : 0) << "\n";
+            << (m.unlocked ? 1 : 0) << "|"
+            << static_cast<int>(m.approach) << "|"
+            << std::fixed << std::setprecision(3) << m.stabilizer_value << "|"
+            << m.trials_count << "|"
+            << std::fixed << std::setprecision(3) << m.applied_clean_energy << "|"
+            << std::fixed << std::setprecision(3) << m.applied_dirty_energy << "|"
+            << std::fixed << std::setprecision(3) << m.applied_pollution_delta << "\n";
     }
 
     // NPC (4)
@@ -288,6 +301,22 @@ bool SaveWorldToFile(
         }
         out << "mech_seals=" << seal_bits << "\n";
     }
+    {
+        std::string obs_bits;
+        for (const auto& n : world.zone_mechanics.observation_nodes) {
+            obs_bits.push_back(n.inspected ? '1' : '0');
+        }
+        out << "mech_obs=" << obs_bits << "\n";
+    }
+    {
+        std::string planter_bits;
+        for (const auto& bp : world.zone_mechanics.bio_planters) {
+            planter_bits.push_back(bp.planted ? '1' : '0');
+        }
+        out << "mech_planters=" << planter_bits << "\n";
+    }
+    out << "mech_laminar_ford=" << (world.zone_mechanics.laminar_ford_open ? 1 : 0) << "\n";
+    out << "mech_scorched_crest=" << (world.zone_mechanics.scorched_crest_open ? 1 : 0) << "\n";
 
     // Stato delle leve/interruttori e sequenze nei 3 livelli dei portali (strutture interne)
     for (int s = 0; s < static_cast<int>(StructureId::Count); ++s) {
@@ -314,6 +343,15 @@ bool SaveWorldToFile(
             out << pz.current_sequence[k];
         }
         out << "\n";
+
+        std::string st_obs;
+        for (const auto& n : pz.observation_nodes) {
+            st_obs.push_back(n.inspected ? '1' : '0');
+        }
+        out << "struct_obs_" << s << "=" << st_obs << "\n";
+        if (sid == StructureId::HypogeanCisterns) {
+            out << "struct_aux_valve=" << (pz.aux_stevino_valve_open ? 1 : 0) << "\n";
+        }
     }
 
     // Cronologia Dialoghi
@@ -450,7 +488,26 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
     std::array<MachineState, 6> m_states{};
     std::array<float, 6> m_params{};
     std::array<bool, 6> m_unlocked{};
+    std::array<CalibrationApproach, 6> m_approaches{};
+    std::array<float, 6> m_stabilizers{{0.68f, 0.68f, 0.68f, 0.68f, 0.68f, 0.70f}};
+    std::array<int, 6> m_trials{};
+    std::array<float, 6> m_app_clean{};
+    std::array<float, 6> m_app_dirty{};
+    std::array<float, 6> m_app_poll{};
     std::array<bool, 6> m_seen{};
+
+    GuidanceAssistMode saved_guidance = GuidanceAssistMode::Empirical;
+    std::array<InquiryStage, 3> saved_inquiry{{
+        InquiryStage::Observe, InquiryStage::Observe, InquiryStage::Observe
+    }};
+    int saved_total_trials = 0;
+    bool saved_slice_synthesis = false;
+    std::string mech_obs{};
+    std::string mech_planters{};
+    bool mech_laminar_ford = false;
+    bool mech_scorched_crest = false;
+    std::array<std::string, static_cast<std::size_t>(StructureId::Count)> struct_obs{};
+    bool struct_aux_valve = false;
 
     std::array<bool, 4> npc_met{};
     std::array<bool, 4> npc_recruited{};
@@ -533,6 +590,34 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
             mech_valves = val;
         } else if (key == "mech_seals") {
             mech_seals = val;
+        } else if (key == "guidance_mode") {
+            const int gm = std::clamp(ParseIntSafe(val, 0), 0, 2);
+            saved_guidance = static_cast<GuidanceAssistMode>(gm);
+        } else if (key == "slice_inquiry") {
+            const auto parts = SplitPipe(val);
+            for (std::size_t i = 0; i < parts.size() && i < 3; ++i) {
+                const int st = std::clamp(ParseIntSafe(parts[i], 0), 0, 4);
+                saved_inquiry[i] = static_cast<InquiryStage>(st);
+            }
+        } else if (key == "total_trials") {
+            saved_total_trials = std::max(0, ParseIntSafe(val, 0));
+        } else if (key == "slice_synthesis") {
+            saved_slice_synthesis = (ParseIntSafe(val, 0) != 0);
+        } else if (key == "mech_obs") {
+            mech_obs = val;
+        } else if (key == "mech_planters") {
+            mech_planters = val;
+        } else if (key == "mech_laminar_ford") {
+            mech_laminar_ford = (ParseIntSafe(val, 0) != 0);
+        } else if (key == "mech_scorched_crest") {
+            mech_scorched_crest = (ParseIntSafe(val, 0) != 0);
+        } else if (key.rfind("struct_obs_", 0) == 0) {
+            const int idx = ParseIntSafe(key.substr(11), -1);
+            if (idx >= 0 && idx < static_cast<int>(StructureId::Count)) {
+                struct_obs[static_cast<std::size_t>(idx)] = val;
+            }
+        } else if (key == "struct_aux_valve") {
+            struct_aux_valve = (ParseIntSafe(val, 0) != 0);
         } else if (key.rfind("struct_switches_", 0) == 0) {
             const int idx = ParseIntSafe(key.substr(16), -1);
             if (idx >= 0 && idx < static_cast<int>(StructureId::Count)) {
@@ -549,11 +634,27 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
             if (idx >= 0 && idx < 6) {
                 const auto parts = SplitPipe(val);
                 if (parts.size() >= 3) {
+                    const auto u = static_cast<std::size_t>(idx);
                     const int st = std::clamp(ParseIntSafe(parts[0], 0), 0, 2);
-                    m_states[static_cast<std::size_t>(idx)] = static_cast<MachineState>(st);
-                    m_params[static_cast<std::size_t>(idx)] = ParseFloatSafe(parts[1], 0.0f);
-                    m_unlocked[static_cast<std::size_t>(idx)] = (ParseIntSafe(parts[2], 1) != 0);
-                    m_seen[static_cast<std::size_t>(idx)] = true;
+                    m_states[u] = static_cast<MachineState>(st);
+                    m_params[u] = ParseFloatSafe(parts[1], 0.0f);
+                    m_unlocked[u] = (ParseIntSafe(parts[2], 1) != 0);
+                    if (parts.size() >= 4) {
+                        const int ap = std::clamp(ParseIntSafe(parts[3], 0), 0, 3);
+                        m_approaches[u] = static_cast<CalibrationApproach>(ap);
+                    }
+                    if (parts.size() >= 5) {
+                        m_stabilizers[u] = Clamp(ParseFloatSafe(parts[4], 0.68f), 0.0f, 1.0f);
+                    }
+                    if (parts.size() >= 6) {
+                        m_trials[u] = std::max(0, ParseIntSafe(parts[5], 0));
+                    }
+                    if (parts.size() >= 9) {
+                        m_app_clean[u] = ParseFloatSafe(parts[6], 0.0f);
+                        m_app_dirty[u] = ParseFloatSafe(parts[7], 0.0f);
+                        m_app_poll[u] = ParseFloatSafe(parts[8], 0.0f);
+                    }
+                    m_seen[u] = true;
                 }
             }
         } else if (key.rfind("npc_", 0) == 0) {
@@ -602,6 +703,10 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
     world.ecosystem.ui_phase = ui_phase;
     world.ecosystem.architect_recruited = architect_recruited;
     world.last_scan.active = has_scanned;
+    world.guidance_mode = saved_guidance;
+    world.slice_inquiry_stage = saved_inquiry;
+    world.total_trials_run = saved_total_trials;
+    world.vertical_slice_synthesis_done = saved_slice_synthesis;
 
     for (std::size_t i = 0; i < world.machines.size(); ++i) {
         if (m_seen[i]) {
@@ -611,6 +716,12 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
                 world.machines[i].min_param,
                 world.machines[i].max_param);
             world.machines[i].unlocked = m_unlocked[i];
+            world.machines[i].approach = m_approaches[i];
+            world.machines[i].stabilizer_value = m_stabilizers[i];
+            world.machines[i].trials_count = m_trials[i];
+            world.machines[i].applied_clean_energy = m_app_clean[i];
+            world.machines[i].applied_dirty_energy = m_app_dirty[i];
+            world.machines[i].applied_pollution_delta = m_app_poll[i];
         }
     }
 
@@ -683,6 +794,22 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
         world.zone_mechanics.sanctuary_seals[i].attuned = attuned;
         world.zone_mechanics.sanctuary_seals[i].glow = attuned ? 1.0f : 0.0f;
     }
+    int obs_count = 0;
+    for (std::size_t i = 0; i < mech_obs.size() && i < world.zone_mechanics.observation_nodes.size(); ++i) {
+        if (mech_obs[i] == '1') {
+            world.zone_mechanics.observation_nodes[i].inspected = true;
+            ++obs_count;
+        }
+    }
+    int planter_count = 0;
+    for (std::size_t i = 0; i < mech_planters.size() && i < world.zone_mechanics.bio_planters.size(); ++i) {
+        if (mech_planters[i] == '1') {
+            world.zone_mechanics.bio_planters[i].planted = true;
+            ++planter_count;
+        }
+    }
+    world.zone_mechanics.laminar_ford_open = mech_laminar_ford;
+    world.zone_mechanics.scorched_crest_open = mech_scorched_crest;
 
     // Ripristina stato delle leve/interruttori e sequenze nei 3 livelli dei portali
     for (int s = 0; s < static_cast<int>(StructureId::Count); ++s) {
@@ -694,6 +821,16 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
             for (std::size_t i = 0; i < bits.size() && i < pz.switches.size(); ++i) {
                 pz.switches[i].active = (bits[i] == '1');
             }
+        }
+        const std::string& sobs = struct_obs[idx];
+        for (std::size_t i = 0; i < sobs.size() && i < pz.observation_nodes.size(); ++i) {
+            if (sobs[i] == '1') {
+                pz.observation_nodes[i].inspected = true;
+                ++obs_count;
+            }
+        }
+        if (static_cast<StructureId>(s) == StructureId::HypogeanCisterns) {
+            pz.aux_stevino_valve_open = struct_aux_valve;
         }
         if (!struct_seqs[idx].empty()) {
             std::stringstream ss(struct_seqs[idx]);
@@ -724,6 +861,9 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
         }
     }
 
+    world.observations_inspected_count = obs_count;
+    world.planters_seeded_count = planter_count;
+
     // Evita che SelectStructure/UnloadMemory sovrascrivano saved_puzzles con il puzzle di default
     world.structure.puzzle.switches.clear();
 
@@ -742,6 +882,7 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
             world.zone_mechanics.RecomputeSolarBeams(world.overworld.tilemap);
         }
     }
+    world.RefreshSystemicWorldState();
 
     if (has_p0_x && has_p0_y) {
         if (Player* p0 = world.players.GetPlayer(0); p0 != nullptr) {

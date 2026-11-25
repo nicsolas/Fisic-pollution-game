@@ -51,6 +51,14 @@ enum class StoryEvent : int {
     HalfRelics,
     TwelveRelics,
     AllRelics,
+    ObservationClueRead,
+    SolarTrialRun,
+    SolarRisky,
+    HydroTrialRun,
+    HydroRisky,
+    BioPlanterSeeded,
+    LaminarFordOpened,
+    VerticalSliceSynthesis,
     Count
 };
 
@@ -109,6 +117,20 @@ struct StorySnapshot {
     int total_relics = 16;
     float pollution_level = kInitialPollution;
     bool simulation_completed = false;
+    CalibrationApproach solar_approach = CalibrationApproach::None;
+    CalibrationApproach hydro_approach = CalibrationApproach::None;
+    InquiryStage inquiry_stage = InquiryStage::Observe;
+    int observations_inspected = 0;
+    int trials_completed = 0;
+    bool white_olive_planted = false;
+    bool laminar_ford_open = false;
+    bool slice_completed = false;
+    bool has_brass_gnomon = false;
+    bool has_first_measure_stele = false;
+    bool has_white_olive_seed = false;
+    bool has_hydraulic_diary = false;
+    bool has_sluice_stele = false;
+    bool has_farewell_prism = false;
 };
 
 // --- Contenuti narrativi (src/core/story_content.cpp, proprietario: @narratore) ---

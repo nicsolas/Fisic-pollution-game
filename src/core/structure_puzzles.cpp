@@ -333,8 +333,17 @@ void StructurePuzzleState::ResetForStructure(StructureId id, float tile_sz) {
     tile_size = (std::isfinite(tile_sz) && tile_sz > 0.0f) ? tile_sz : kTileSize;
     switches.clear();
     gates.clear();
+    observation_nodes.clear();
     expected_sequence.clear();
     current_sequence.clear();
+    aux_stevino_valve_tile = {17, 26};
+    aux_stevino_valve_pos = TileCenterPos(aux_stevino_valve_tile, tile_size);
+    aux_stevino_valve_unlocked = false;
+    aux_stevino_valve_open = false;
+    aux_valve_prompt_visible = false;
+    high_spillway_open = false;
+    trial_water_hammer_timer = 0.0f;
+    archivist_niche_open = false;
     solved = false;
 
     switch (id) {
@@ -345,6 +354,49 @@ void StructurePuzzleState::ResetForStructure(StructureId id, float tile_sz) {
             switches.push_back(MakeSwitch(0, {13, 5}, "A", tile_size));
             switches.push_back(MakeSwitch(1, {15, 22}, "B", tile_size));
             switches.push_back(MakeSwitch(2, {9, 6}, "C", tile_size));
+
+            observation_nodes.push_back(ObservationNode{
+                20,
+                LocationId::HypogeanCisterns,
+                ZoneId::CanalQuarter,
+                {17, 13},
+                TileCenterPos({17, 13}, tile_size),
+                68.0f,
+                false,
+                false,
+                false,
+                "Colonna Piezometrica di Stevino",
+                "Le tacche in bronzo segnano quiete nominale dove il menisco sfiora la decima tacca metrica (~98 kPa).",
+                "Ipotesi Armonica: un battente moderato attorno alla tacca intermedia con smorzatore alto evita la cavitazione."
+            });
+            observation_nodes.push_back(ObservationNode{
+                21,
+                LocationId::HypogeanCisterns,
+                ZoneId::CanalQuarter,
+                {17, 19},
+                TileCenterPos({17, 19}, tile_size),
+                68.0f,
+                false,
+                false,
+                false,
+                "Griglia di Sfogo Supercritico",
+                "I bulloni superiori mostrano segni di colpo d'ariete tra 12.5 m e 15.0 m a valvola spalancata.",
+                "Ipotesi Critica: alzare il battente oltre 12.5 m con stabilizzatore aperto (<0.40) scatena spinta massima e apre lo Sfioratore Alto."
+            });
+            observation_nodes.push_back(ObservationNode{
+                22,
+                LocationId::HypogeanCisterns,
+                ZoneId::CanalQuarter,
+                {17, 31},
+                TileCenterPos({17, 31}, tile_size),
+                68.0f,
+                false,
+                false,
+                false,
+                "Soglia dell'Archivista",
+                "I cilindri di cera temono sia i fumi acidi di pece sia le vibrazioni dei regimi fuori controllo.",
+                "Confronta i 3 esiti nel banco della Turbina: Armonia apre la nicchia di Lorenzo, Critico spalanca la galleria alta."
+            });
 
             StructureGate gate1{};
             gate1.id = 0;
@@ -478,11 +530,41 @@ void StructurePuzzleState::ResetForStructure(StructureId id, float tile_sz) {
 
 void StructurePuzzleState::ApplyGatesToTilemap(Tilemap& tilemap) const noexcept {
     for (const StructureGate& gate : gates) {
+        bool effective_open = gate.open;
+        if (structure_id == StructureId::HypogeanCisterns && gate.id == 2 && aux_stevino_valve_open) {
+            effective_open = true;
+        }
         const TileId tile_id = gate.is_bridge
-            ? (gate.open ? TileId::RuinsWall : TileId::Walkable)
-            : (gate.open ? TileId::Walkable : TileId::SolarGate);
+            ? (effective_open ? TileId::RuinsWall : TileId::Walkable)
+            : (effective_open ? TileId::Walkable : TileId::SolarGate);
         for (const TileCoord& coord : gate.tiles) {
             (void)tilemap.SetTile(coord.row, coord.col, tile_id);
+        }
+    }
+
+    if (structure_id == StructureId::HypogeanCisterns) {
+        const bool spillway_active = high_spillway_open || (trial_water_hammer_timer > 0.0f);
+        // Upper spillway breach at col 28 rows 7..9 + pressurized catwalk to Upper Aqueduct
+        for (int r = 7; r <= 9; ++r) {
+            (void)tilemap.SetTile(r, 28, spillway_active ? TileId::Walkable : TileId::Wall);
+        }
+        for (int c = 29; c <= 32; ++c) {
+            (void)tilemap.SetTile(10, c, spillway_active ? TileId::RuinsWall : TileId::Walkable);
+        }
+        for (int c = 31; c <= 33; ++c) {
+            (void)tilemap.SetTile(12, c, spillway_active ? TileId::RuinsWall : TileId::Walkable);
+        }
+        for (int c = 33; c <= 35; ++c) {
+            (void)tilemap.SetTile(14, c, spillway_active ? TileId::RuinsWall : TileId::Walkable);
+        }
+        if (spillway_active) {
+            for (int c = 12; c <= 16; ++c) {
+                (void)tilemap.SetTile(10, c, TileId::RuinsWall);
+            }
+        }
+        // Archivist niche alcove floor accent at (17, 32)
+        if (archivist_niche_open) {
+            (void)tilemap.SetTile(17, 32, TileId::SanctuaryFloor);
         }
     }
 }
@@ -554,7 +636,11 @@ void StructurePuzzleState::EvaluateGates(
     ApplyGatesToTilemap(tilemap);
 
     const bool was_solved = solved;
-    solved = !gates.empty() && gates.back().open;
+    const bool final_gate_open =
+        !gates.empty() &&
+        (gates.back().open ||
+         (structure_id == StructureId::HypogeanCisterns && aux_stevino_valve_open));
+    solved = final_gate_open;
     if (!was_solved && solved && events != nullptr) {
         events->puzzle_solved = true;
     }
