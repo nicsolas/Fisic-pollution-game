@@ -85,7 +85,9 @@ DistrictTintState g_district_tint{};
 }
 
 [[nodiscard]] constexpr float HashFloat01(int index, int salt) noexcept {
-    const std::uint32_t h = HashU32(static_cast<std::uint32_t>(index * 374761393 + salt * 668265263));
+    const std::uint32_t u_idx = static_cast<std::uint32_t>(index);
+    const std::uint32_t u_salt = static_cast<std::uint32_t>(salt);
+    const std::uint32_t h = HashU32(u_idx * 374761393u + u_salt * 668265263u);
     return static_cast<float>(h & 0x00FFFFFFu) / static_cast<float>(0x01000000u);
 }
 
