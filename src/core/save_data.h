@@ -20,6 +20,7 @@ struct SaveSummary {
     int relics_found = 0;
     int total_relics = 16;
     bool simulation_completed = false;
+    bool hard_physics_mode = false;
     std::string location_name{};
     std::string chapter_title{};
     std::string timestamp{};

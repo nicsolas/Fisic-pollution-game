@@ -134,23 +134,21 @@ const Player* PlayerManager::GetPlayer(int player_id) const noexcept {
     return &players_[static_cast<std::size_t>(player_id)];
 }
 
-std::vector<Player*> PlayerManager::ActivePlayers() {
-    std::vector<Player*> result;
-    result.reserve(kMaxPlayers);
+ActivePlayerList<Player> PlayerManager::ActivePlayers() noexcept {
+    ActivePlayerList<Player> result;
     for (auto& p : players_) {
         if (p.active) {
-            result.push_back(&p);
+            result.Push(&p);
         }
     }
     return result;
 }
 
-std::vector<const Player*> PlayerManager::ActivePlayers() const {
-    std::vector<const Player*> result;
-    result.reserve(kMaxPlayers);
+ActivePlayerList<const Player> PlayerManager::ActivePlayers() const noexcept {
+    ActivePlayerList<const Player> result;
     for (const auto& p : players_) {
         if (p.active) {
-            result.push_back(&p);
+            result.Push(&p);
         }
     }
     return result;

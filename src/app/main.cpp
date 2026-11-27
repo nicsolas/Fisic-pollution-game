@@ -167,15 +167,20 @@ int RunHeadlessE2E() {
         return 1;
     }
 
-    // Exercise normalized diagonal top-down movement (12 fixed steps in {1, 1})
+    // Exercise normalized diagonal top-down movement (warm-up inertia + 8 steady-state steps in {1, 1})
     eco::Player* mutable_p0 = world.players.GetPlayer(0);
     // Use an open spot in DawnTerraces for unobstructed diagonal travel
-    const eco::Vec2 start_p0_pos = p0->pos;
     const eco::Vec2 start_cam = world.overworld.camera_target;
     eco::AllPlayersInput diag_sample{};
     diag_sample.players[0].move_x = 1.0f;
     diag_sample.players[0].move_y = 1.0f;
 
+    for (int i = 0; i < 8; ++i) {
+        input = diag_sample;
+        state_manager.Update(eco::kFixedDt);
+    }
+
+    const eco::Vec2 start_p0_pos = p0->pos;
     for (int i = 0; i < 8; ++i) {
         input = diag_sample;
         state_manager.Update(eco::kFixedDt);
@@ -217,6 +222,12 @@ int RunHeadlessE2E() {
     if (p0->pos.x > wall_left - p0->size.x + 1e-4f || p0->pos.y <= slide_start.y + 8.0f) {
         std::cerr << "[headless-e2e] P0 failed to stop at X wall and slide along Y\n";
         return 1;
+    }
+
+    // Let P0 come to rest from deceleration inertia before verifying drop-in does not teleport P0
+    input = {};
+    for (int i = 0; i < 8; ++i) {
+        state_manager.Update(eco::kFixedDt);
     }
 
     // Exercise mid-game 1-4 player drop-in without teleporting P0

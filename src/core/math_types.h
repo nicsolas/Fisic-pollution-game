@@ -21,10 +21,17 @@ inline constexpr float kPlayerHeight = 30.0f;
 
 // Movement & Side-Scrolling Physics Constants
 inline constexpr float kTopDownSpeed = 220.0f;
+inline constexpr float kTopDownAccel = 2600.0f;
+inline constexpr float kTopDownDecel = 3000.0f;
 inline constexpr float kSideMoveSpeed = 210.0f;
+inline constexpr float kSideGroundAccel = 4200.0f;
+inline constexpr float kSideGroundDecel = 3800.0f;
+inline constexpr float kSideAirAccel = 2200.0f;
+inline constexpr float kSideAirDecel = 1400.0f;
 inline constexpr float kSprintSpeedMultiplier = 1.32f;
 inline constexpr float kGravityAccel = 1200.0f;
 inline constexpr float kJumpForce = 480.0f;
+inline constexpr float kJumpCutGravityMultiplier = 2.4f;
 inline constexpr float kMaxFallSpeed = 900.0f;
 inline constexpr float kMaxVerticalSubStep = 8.0f;
 inline constexpr float kCoyoteTimeDuration = 0.15f;

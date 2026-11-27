@@ -499,6 +499,7 @@ struct WorldContext {
     bool instant_zone_transitions = false;
 
     bool demo_mode = false; // Campagna Completa (La Conca di Meridia) attiva di default
+    bool hard_physics_mode = false; // Modalita' Fisica Pura (Hard): calcolo manuale senza aiuti live
     EmpiricalScanReading last_scan{};
     float sim_time = 0.0f;
     float scan_pulse_timer = 0.0f;

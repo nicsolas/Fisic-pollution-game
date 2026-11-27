@@ -268,22 +268,53 @@ SlideMoveResult MovePlayerTopDown(
     Vec2 external_velocity,
     bool solar_gate_open,
     bool jade_bridge_unlocked) noexcept {
-    Vec2 desired_vel = ComputeTopDownVelocity(move_axis, speed);
-    if (IsFiniteVec2(external_velocity)) {
-        desired_vel.x += external_velocity.x;
-        desired_vel.y += external_velocity.y;
+    const Vec2 desired_vel = ComputeTopDownVelocity(move_axis, speed);
+    Vec2 current_vel{SanitizeFinite(player.vel.x), SanitizeFinite(player.vel.y)};
+    Vec2 voluntary_vel = current_vel;
+
+    if (std::isfinite(dt) && dt > 0.0f) {
+        const Vec2 delta = desired_vel - current_vel;
+        const float dist = std::hypot(delta.x, delta.y);
+        const bool has_input = desired_vel.LengthSquared() > (kEpsilon * kEpsilon);
+        const bool reversing = has_input && (current_vel.Dot(desired_vel) < 0.0f);
+        const float rate = (has_input && !reversing) ? kTopDownAccel : kTopDownDecel;
+        const float max_step = rate * dt;
+        if (!std::isfinite(dist) || dist <= max_step || dist <= kEpsilon) {
+            voluntary_vel = desired_vel;
+        } else {
+            const float scale = max_step / dist;
+            voluntary_vel = {
+                current_vel.x + delta.x * scale,
+                current_vel.y + delta.y * scale
+            };
+        }
+    } else {
+        voluntary_vel = desired_vel;
     }
+
+    Vec2 total_vel = voluntary_vel;
+    if (IsFiniteVec2(external_velocity)) {
+        total_vel.x += external_velocity.x;
+        total_vel.y += external_velocity.y;
+    }
+
     const SlideMoveResult res = MoveAndSlideTopDown(
         player.pos,
         player.size,
-        desired_vel,
+        total_vel,
         dt,
         tilemap,
         bridge_unlocked,
         solar_gate_open,
         jade_bridge_unlocked);
     player.pos = res.position;
-    player.vel = res.velocity;
+    player.vel = voluntary_vel;
+    if (res.hit_x) {
+        player.vel.x = 0.0f;
+    }
+    if (res.hit_y) {
+        player.vel.y = 0.0f;
+    }
     return res;
 }
 
@@ -333,8 +364,6 @@ SideScrollMoveResult MovePlayerSideScrolling(
     const Tilemap& tilemap,
     bool bridge_unlocked,
     float horizontal_speed) noexcept {
-    (void)jump_held;
-
     SideScrollMoveResult result{};
     if (!IsFiniteVec2(player.pos)) {
         player.pos = {0.0f, 0.0f};
@@ -370,11 +399,25 @@ SideScrollMoveResult MovePlayerSideScrolling(
         (player.y_velocity >= 0.0f &&
          IsSupportedByFloor(player.pos, player.size, tilemap, bridge_unlocked));
 
+    const float current_vx = SanitizeFinite(player.vel.x);
+    const bool has_input_x = std::fabs(desired_vx) > kEpsilon;
+    const bool reversing_x = has_input_x && (current_vx * desired_vx < 0.0f);
+    const float base_accel = was_grounded_before_x ? kSideGroundAccel : kSideAirAccel;
+    const float base_decel = was_grounded_before_x ? kSideGroundDecel : kSideAirDecel;
+    const float rate_x = has_input_x
+                             ? (reversing_x ? std::max(base_accel, base_decel) : base_accel)
+                             : base_decel;
+    const float max_dv_x = rate_x * dt;
+    const float diff_vx = desired_vx - current_vx;
+    const float smoothed_vx = (std::fabs(diff_vx) <= max_dv_x)
+                                  ? desired_vx
+                                  : (current_vx + ((diff_vx > 0.0f) ? max_dv_x : -max_dv_x));
+
     // 1. Axis-separated horizontal movement (Y-walk is disabled in side-scrolling mode)
     const SlideMoveResult x_res = MoveAndSlideTopDown(
         player.pos,
         player.size,
-        {desired_vx, 0.0f},
+        {smoothed_vx, 0.0f},
         dt,
         tilemap,
         bridge_unlocked);
@@ -436,10 +479,14 @@ SideScrollMoveResult MovePlayerSideScrolling(
         player.y_velocity = 0.0f;
     } else {
         if (!result.jumped) {
-            const float grav =
+            const float base_grav =
                 (std::isfinite(player.gravity_accel) && player.gravity_accel >= 0.0f)
                     ? player.gravity_accel
                     : kGravityAccel;
+            const bool apply_jump_cut = (!jump_held && player.y_velocity < 0.0f);
+            const float grav = apply_jump_cut
+                                   ? (base_grav * kJumpCutGravityMultiplier)
+                                   : base_grav;
             player.y_velocity = std::min(player.y_velocity + grav * dt, kMaxFallSpeed);
         } else if (player.y_velocity > kMaxFallSpeed) {
             player.y_velocity = kMaxFallSpeed;

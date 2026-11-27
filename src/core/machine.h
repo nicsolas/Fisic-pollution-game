@@ -228,6 +228,7 @@ struct CalibrationModalState {
     bool piezometric_relic_active = false; // Waters_SluiceStele
     bool olive_seed_bonus_active = false;  // Dawn_WhiteOliveSeed
     bool harmonic_band_revealed = false;
+    bool hard_physics_mode = false;
     HypothesisKind selected_hypothesis = HypothesisKind::HarmonicEquilibrium;
     InquiryStage modal_stage = InquiryStage::Observe;
     int trials_run = 0;
@@ -239,7 +240,8 @@ struct CalibrationModalState {
         bool has_precision_relic = false,
         bool has_piezo_relic = false,
         bool has_olive_seed_bonus = false,
-        InquiryStage current_stage = InquiryStage::Observe) noexcept;
+        InquiryStage current_stage = InquiryStage::Observe,
+        bool hard_mode = false) noexcept;
     void SetParameter(float value, const Machine& machine) noexcept;
     void AdjustParameter(float delta, const Machine& machine) noexcept;
     void SetStabilizer(float value, const Machine& machine) noexcept;

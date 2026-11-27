@@ -516,6 +516,7 @@ void CalibrationModalState::Reset() noexcept {
     piezometric_relic_active = false;
     olive_seed_bonus_active = false;
     harmonic_band_revealed = false;
+    hard_physics_mode = false;
     selected_hypothesis = HypothesisKind::HarmonicEquilibrium;
     modal_stage = InquiryStage::Observe;
     trials_run = 0;
@@ -527,16 +528,19 @@ void CalibrationModalState::OpenFor(
     bool has_precision_relic,
     bool has_piezo_relic,
     bool has_olive_seed_bonus,
-    InquiryStage current_stage) noexcept {
+    InquiryStage current_stage,
+    bool hard_mode) noexcept {
     is_open = true;
     target_machine = machine.type;
     precision_relic_active = has_precision_relic;
     piezometric_relic_active = has_piezo_relic;
     olive_seed_bonus_active = has_olive_seed_bonus;
+    hard_physics_mode = hard_mode;
     trials_run = machine.trials_count;
     harmonic_band_revealed =
-        (precision_relic_active && trials_run >= 1) || (trials_run >= 2) ||
-        (machine.approach == CalibrationApproach::CleanSlow);
+        !hard_physics_mode &&
+        ((precision_relic_active && trials_run >= 1) || (trials_run >= 2) ||
+         (machine.approach == CalibrationApproach::CleanSlow));
     modal_stage = current_stage;
     if (static_cast<int>(modal_stage) < static_cast<int>(InquiryStage::Hypothesize)) {
         modal_stage = InquiryStage::Hypothesize;
@@ -646,7 +650,8 @@ TrialExperimentReport CalibrationModalState::RunTrial(
         rep.error_direction = 0;
     }
 
-    if ((precision_relic_active && trials_run >= 1) || trials_run >= 2) {
+    if (!hard_physics_mode &&
+        ((precision_relic_active && trials_run >= 1) || trials_run >= 2)) {
         harmonic_band_revealed = true;
     }
 

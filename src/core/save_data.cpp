@@ -211,6 +211,7 @@ bool SaveWorldToFile(
     out << "total_relics=" << world.collectibles.TotalCount() << "\n";
     out << "simulation_completed=" << (world.simulation_completed ? 1 : 0) << "\n";
     out << "demo_mode=" << (world.demo_mode ? 1 : 0) << "\n";
+    out << "hard_physics_mode=" << (world.hard_physics_mode ? 1 : 0) << "\n";
     out << "sim_time=" << std::fixed << std::setprecision(3) << world.sim_time << "\n";
     out << "has_scanned=" << (world.last_scan.active ? 1 : 0) << "\n";
     out << "guidance_mode=" << static_cast<int>(world.guidance_mode) << "\n";
@@ -442,6 +443,8 @@ SaveSummary ReadSaveSummary(const std::string& path) {
             summary.total_relics = std::max(1, ParseIntSafe(val, 16));
         } else if (key == "simulation_completed") {
             summary.simulation_completed = (ParseIntSafe(val, 0) != 0);
+        } else if (key == "hard_physics_mode") {
+            summary.hard_physics_mode = (ParseIntSafe(val, 0) != 0);
         }
     }
 
@@ -487,6 +490,7 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
     bool architect_recruited = false;
     bool simulation_completed = false;
     bool demo_mode = false;
+    bool saved_hard_physics_mode = false;
     float sim_time = 0.0f;
     bool has_scanned = false;
 
@@ -574,6 +578,8 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
             simulation_completed = (ParseIntSafe(val, 0) != 0);
         } else if (key == "demo_mode") {
             demo_mode = (ParseIntSafe(val, 0) != 0);
+        } else if (key == "hard_physics_mode") {
+            saved_hard_physics_mode = (ParseIntSafe(val, 0) != 0);
         } else if (key == "sim_time") {
             sim_time = std::max(0.0f, ParseFloatSafe(val, 0.0f));
         } else if (key == "has_scanned") {
@@ -703,6 +709,7 @@ bool LoadWorldFromFile(WorldContext& world, const std::string& path) {
     world.EnsureInitialized();
 
     world.demo_mode = demo_mode;
+    world.hard_physics_mode = saved_hard_physics_mode;
     world.sim_time = sim_time;
     world.simulation_completed = simulation_completed;
     world.ecosystem.pollution_level = pollution;

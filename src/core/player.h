@@ -1,12 +1,46 @@
 #pragma once
 
 #include <array>
-#include <vector>
+#include <cstddef>
 
 #include "core/input_types.h"
 #include "core/math_types.h"
 
 namespace eco {
+
+template <typename PlayerT>
+class ActivePlayerList {
+public:
+    constexpr void Push(PlayerT* p) noexcept {
+        if (count_ < kMaxPlayers) {
+            data_[count_++] = p;
+        }
+    }
+
+    [[nodiscard]] constexpr PlayerT* const* begin() const noexcept {
+        return data_.data();
+    }
+
+    [[nodiscard]] constexpr PlayerT* const* end() const noexcept {
+        return data_.data() + count_;
+    }
+
+    [[nodiscard]] constexpr std::size_t size() const noexcept {
+        return count_;
+    }
+
+    [[nodiscard]] constexpr bool empty() const noexcept {
+        return count_ == 0;
+    }
+
+    [[nodiscard]] constexpr PlayerT* operator[](std::size_t idx) const noexcept {
+        return data_[idx];
+    }
+
+private:
+    std::array<PlayerT*, kMaxPlayers> data_{};
+    std::size_t count_ = 0;
+};
 
 [[nodiscard]] ColorRgba ColorForPlayerId(int player_id) noexcept;
 
@@ -55,8 +89,26 @@ public:
     [[nodiscard]] Player* GetPlayer(int player_id) noexcept;
     [[nodiscard]] const Player* GetPlayer(int player_id) const noexcept;
 
-    [[nodiscard]] std::vector<Player*> ActivePlayers();
-    [[nodiscard]] std::vector<const Player*> ActivePlayers() const;
+    [[nodiscard]] ActivePlayerList<Player> ActivePlayers() noexcept;
+    [[nodiscard]] ActivePlayerList<const Player> ActivePlayers() const noexcept;
+
+    template <typename Fn>
+    void ForEachActivePlayer(Fn&& fn) {
+        for (auto& p : players_) {
+            if (p.active) {
+                fn(p);
+            }
+        }
+    }
+
+    template <typename Fn>
+    void ForEachActivePlayer(Fn&& fn) const {
+        for (const auto& p : players_) {
+            if (p.active) {
+                fn(p);
+            }
+        }
+    }
 
     [[nodiscard]] const std::array<Player, kMaxPlayers>& Slots() const noexcept {
         return players_;

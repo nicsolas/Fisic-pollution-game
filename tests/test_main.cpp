@@ -9,6 +9,8 @@
 #include <queue>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "app/game_state.h"
@@ -1861,15 +1863,18 @@ void TestSprintMovement() {
 
     const eco::Player* p0 = world.players.GetPlayer(0);
     CHECK(p0 != nullptr);
-    const eco::Vec2 start_pos = p0->pos;
 
     eco::AllPlayersInput walk_in{};
     walk_in.players[0].move_x = 1.0f;
+    // Raggiungi velocita' di regime (superata la breve rampa di inerzia)
+    for (int i = 0; i < 8; ++i) {
+        (void)world.StepWorld(walk_in, eco::kFixedDt);
+    }
+    const eco::Vec2 steady_walk_start = p0->pos;
     (void)world.StepWorld(walk_in, eco::kFixedDt);
-    const float walk_dx = p0->pos.x - start_pos.x;
+    const float walk_dx = p0->pos.x - steady_walk_start.x;
     CHECK(std::abs(walk_dx - eco::kTopDownSpeed * eco::kFixedDt) < 1e-3f);
 
-    const eco::Vec2 sprint_start = p0->pos;
     eco::AllPlayersInput sprint_in{};
     sprint_in.players[0].move_x = 1.0f;
     sprint_in.players[0].sprint_held = true;
@@ -1877,8 +1882,12 @@ void TestSprintMovement() {
     eco::LatchFrameInput(latched, sprint_in);
     CHECK(latched.players[0].sprint_held);
 
+    for (int i = 0; i < 8; ++i) {
+        (void)world.StepWorld(latched, eco::kFixedDt);
+    }
+    const eco::Vec2 steady_sprint_start = p0->pos;
     (void)world.StepWorld(latched, eco::kFixedDt);
-    const float sprint_dx = p0->pos.x - sprint_start.x;
+    const float sprint_dx = p0->pos.x - steady_sprint_start.x;
     CHECK(std::abs(sprint_dx - eco::kTopDownSpeed * eco::kSprintSpeedMultiplier * eco::kFixedDt) < 1e-3f);
     CHECK(sprint_dx > walk_dx);
 }
@@ -2263,6 +2272,195 @@ void TestVerticalSliceInquiryMultiSolutionRelicsAndSystemicEco() {
     CHECK(IsPureAsciiPrintable(vs.synthesis_headline));
 }
 
+void TestZeroAllocActivePlayers() {
+    eco::PlayerManager mgr;
+    static_assert(noexcept(mgr.ActivePlayers()));
+    static_assert(std::is_same_v<decltype(mgr.ActivePlayers()), eco::ActivePlayerList<eco::Player>>);
+    const eco::PlayerManager& cmgr = mgr;
+    static_assert(noexcept(cmgr.ActivePlayers()));
+    static_assert(std::is_same_v<decltype(cmgr.ActivePlayers()), eco::ActivePlayerList<const eco::Player>>);
+
+    CHECK(mgr.ActivePlayers().size() == 1);
+    CHECK(!mgr.ActivePlayers().empty());
+    CHECK(mgr.ActivePlayers()[0]->player_id == 0);
+
+    CHECK(mgr.JoinPlayer(2, {10.0f, 20.0f}));
+    const auto active = cmgr.ActivePlayers();
+    CHECK(active.size() == 2);
+    CHECK(active[0]->player_id == 0);
+    CHECK(active[1]->player_id == 2);
+
+    int mut_sum = 0;
+    mgr.ForEachActivePlayer([&](eco::Player& p) {
+        mut_sum += (p.player_id + 1);
+        p.pos.x += 1.0f;
+    });
+    CHECK(mut_sum == 4);
+
+    int const_count = 0;
+    cmgr.ForEachActivePlayer([&](const eco::Player& p) {
+        CHECK(p.active);
+        ++const_count;
+    });
+    CHECK(const_count == 2);
+
+    CHECK(mgr.LeavePlayer(0));
+    CHECK(mgr.LeavePlayer(2));
+    CHECK(mgr.ActivePlayers().empty());
+    CHECK(mgr.ActivePlayers().size() == 0);
+}
+
+void TestVariableJumpHeightAndInertia() {
+    // 1. Variable jump height (short-hop vs full-jump)
+    eco::Tilemap room({
+        {1, 1, 1, 1, 1, 1, 1, 1},
+        {1, 0, 0, 0, 0, 0, 0, 1},
+        {1, 0, 0, 0, 0, 0, 0, 1},
+        {1, 0, 0, 0, 0, 0, 0, 1},
+        {1, 0, 0, 0, 0, 0, 0, 1},
+        {1, 0, 0, 0, 0, 0, 0, 1},
+        {1, 1, 1, 1, 1, 1, 1, 1}
+    }, 48.0f);
+
+    auto measure_jump = [&](bool hold_jump) -> std::pair<float, int> {
+        eco::Player p(0);
+        p.pos = {144.0f, 6.0f * 48.0f - p.size.y};
+        eco::MovePlayerSideScrolling(p, 0.0f, false, false, eco::kFixedDt, room);
+        CHECK(p.isGrounded);
+        const float start_y = p.pos.y;
+        float min_y = start_y;
+
+        // Tick 1: takeoff (jump-cut must NOT apply on takeoff tick even if jump_held=false)
+        const auto r0 = eco::MovePlayerSideScrolling(p, 0.0f, true, hold_jump, eco::kFixedDt, room);
+        CHECK(r0.jumped);
+        CHECK_NEAR(p.y_velocity, -eco::kJumpForce, 1e-3f);
+        min_y = std::min(min_y, p.pos.y);
+
+        int land_tick = 0;
+        for (int t = 1; t < 120; ++t) {
+            const bool held = hold_jump && (p.y_velocity < 0.0f);
+            eco::MovePlayerSideScrolling(p, 0.0f, false, held, eco::kFixedDt, room);
+            min_y = std::min(min_y, p.pos.y);
+            if (p.isGrounded) {
+                land_tick = t;
+                break;
+            }
+        }
+        CHECK(land_tick > 0);
+        return {start_y - min_y, land_tick};
+    };
+
+    const auto [full_rise, full_ticks] = measure_jump(true);
+    const auto [short_rise, short_ticks] = measure_jump(false);
+    CHECK(full_rise > 80.0f);
+    CHECK(short_rise > 20.0f);
+    CHECK(short_rise < full_rise * 0.75f);
+    CHECK(short_ticks < full_ticks);
+
+    // 2. Top-down soft inertia: smooth ramp-up, normalized diagonal steady-state, snappy stop
+    eco::Player pt(0);
+    pt.pos = {100.0f, 100.0f};
+    eco::MovePlayerTopDown(pt, {1.0f, 0.0f}, eco::kFixedDt, room);
+    const float v1 = pt.vel.x;
+    CHECK(v1 > 0.0f && v1 < eco::kTopDownSpeed);
+    eco::MovePlayerTopDown(pt, {1.0f, 0.0f}, eco::kFixedDt, room);
+    CHECK(pt.vel.x > v1);
+    for (int i = 0; i < 8; ++i) {
+        eco::MovePlayerTopDown(pt, {1.0f, 0.0f}, eco::kFixedDt, room);
+    }
+    CHECK_NEAR(pt.vel.x, eco::kTopDownSpeed, 1e-3f);
+
+    // Deceleration back to 0 within <= 6 ticks
+    for (int i = 0; i < 6; ++i) {
+        eco::MovePlayerTopDown(pt, {0.0f, 0.0f}, eco::kFixedDt, room);
+    }
+    CHECK_NEAR(pt.vel.x, 0.0f, 1e-4f);
+    CHECK_NEAR(pt.vel.y, 0.0f, 1e-4f);
+
+    // Steady-state diagonal normalization
+    pt.pos = {60.0f, 60.0f};
+    for (int i = 0; i < 10; ++i) {
+        eco::MovePlayerTopDown(pt, {1.0f, 1.0f}, eco::kFixedDt, room);
+    }
+    CHECK_NEAR(pt.vel.Length(), eco::kTopDownSpeed, 1e-2f);
+
+    // 3. Side-scrolling horizontal inertia: >= 1px on tick 1, steady-state speed, snappy stop
+    eco::Player ps(0);
+    ps.pos = {96.0f, 6.0f * 48.0f - ps.size.y};
+    eco::MovePlayerSideScrolling(ps, 0.0f, false, false, eco::kFixedDt, room);
+    const float x0 = ps.pos.x;
+    eco::MovePlayerSideScrolling(ps, 1.0f, false, false, eco::kFixedDt, room);
+    CHECK(ps.pos.x - x0 >= 1.0f);
+    CHECK(ps.vel.x > 0.0f && ps.vel.x < eco::kSideMoveSpeed);
+    for (int i = 0; i < 6; ++i) {
+        eco::MovePlayerSideScrolling(ps, 1.0f, false, false, eco::kFixedDt, room);
+    }
+    CHECK_NEAR(ps.vel.x, eco::kSideMoveSpeed, 1e-3f);
+    const float stop_start_x = ps.pos.x;
+    for (int i = 0; i < 5; ++i) {
+        eco::MovePlayerSideScrolling(ps, 0.0f, false, false, eco::kFixedDt, room);
+    }
+    CHECK_NEAR(ps.vel.x, 0.0f, 1e-4f);
+    CHECK(ps.pos.x - stop_start_x <= 8.0f);
+}
+
+void TestHardPhysicsModeCoreAndSave() {
+    const std::string test_save_path = "test_tmp_hard_mode_save.sav";
+    (void)eco::DeleteSaveFile(test_save_path);
+
+    eco::WorldContext world;
+    world.EnsureInitialized();
+    CHECK(!world.hard_physics_mode);
+
+    world.hard_physics_mode = true;
+    world.guidance_mode = eco::GuidanceAssistMode::AlwaysOn;
+    (void)world.collectibles.Collect(eco::CollectibleId::Dawn_BrassGnomon);
+    (void)world.collectibles.Collect(eco::CollectibleId::Dawn_FirstMeasureStele);
+
+    // Guidance must stay completely off in Hard Physics Mode even with AlwaysOn + Gnomon scan
+    auto& solar = world.GetMachine(eco::MachineType::SolarArray);
+    world.players.GetPlayer(0)->pos = solar.pos;
+    (void)world.TriggerScan(0);
+    const eco::GuidanceDisplayState gd = world.ComputeGuidanceDisplay();
+    CHECK(!gd.show_compass);
+    CHECK(!gd.show_distance_meters);
+    CHECK(!gd.show_edge_arrow);
+    CHECK(!gd.show_world_beacon);
+    CHECK(gd.field_note != nullptr && IsPureAsciiPrintable(gd.field_note));
+
+    // Calibration modal in Hard Mode never auto-reveals harmonic_band even after trials + precision relic
+    world.OpenCalibrationModalFor(eco::MachineType::SolarArray);
+    CHECK(world.calibration_modal.is_open);
+    CHECK(world.calibration_modal.hard_physics_mode);
+    CHECK(!world.calibration_modal.harmonic_band_revealed);
+    for (int t = 0; t < 3; ++t) {
+        const auto rep = world.ExecuteModalTrial();
+        CHECK(rep.executed);
+        CHECK(!world.calibration_modal.harmonic_band_revealed);
+    }
+
+    // Manual exact physics calibration still succeeds in Hard Mode
+    world.calibration_modal.SetParameter(solar.target_param, solar);
+    world.calibration_modal.SetStabilizer(solar.clean_stabilizer_target, solar);
+    CHECK(world.ExecuteModalConfirmClean());
+    CHECK(solar.state == eco::MachineState::CleanActive);
+
+    // Save / ReadSaveSummary / Load persistence of hard_physics_mode
+    CHECK(eco::SaveWorldToFile(world, test_save_path, "2026-11-27 18:20"));
+    const eco::SaveSummary summary = eco::ReadSaveSummary(test_save_path);
+    CHECK(summary.exists);
+    CHECK(summary.hard_physics_mode);
+
+    eco::WorldContext loaded;
+    CHECK(eco::LoadWorldFromFile(loaded, test_save_path));
+    CHECK(loaded.hard_physics_mode);
+
+    loaded.Reset();
+    CHECK(!loaded.hard_physics_mode);
+
+    (void)eco::DeleteSaveFile(test_save_path);
+}
+
 } // namespace
 
 int main() {
@@ -2284,6 +2482,9 @@ int main() {
     TestRedesignedPortalLogicLevelsPhysics();
     TestSprintMovement();
     TestVerticalSliceInquiryMultiSolutionRelicsAndSystemicEco();
+    TestZeroAllocActivePlayers();
+    TestVariableJumpHeightAndInertia();
+    TestHardPhysicsModeCoreAndSave();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " test check(s) failed.\n";

@@ -1221,6 +1221,7 @@ void WorldContext::Reset() {
     banner_is_structure = false;
 
     demo_mode = keep_demo;
+    hard_physics_mode = false;
     instant_zone_transitions = keep_instant;
     last_scan = EmpiricalScanReading{};
     sim_time = 0.0f;
@@ -1885,6 +1886,10 @@ void WorldContext::AdvanceInquiryStageForArea(
 
 GuidanceDisplayState WorldContext::ComputeGuidanceDisplay() const noexcept {
     GuidanceDisplayState out{};
+    if (hard_physics_mode) {
+        out.field_note = "Modalita' Fisica Pura: nessuna guida automatica, usa osservazione e calcoli.";
+        return out;
+    }
     if (guidance_mode == GuidanceAssistMode::MinimalOff) {
         out.field_note = "Guida spenta: orientati con ombre solari, condotti d'ottone, correnti e tacche.";
         return out;
@@ -2202,7 +2207,8 @@ void WorldContext::OpenCalibrationModalFor(MachineType type) noexcept {
         collectibles.IsCollected(CollectibleId::Dawn_FirstMeasureStele),
         collectibles.IsCollected(CollectibleId::Waters_SluiceStele),
         collectibles.IsCollected(CollectibleId::Dawn_WhiteOliveSeed),
-        CurrentAreaInquiryStage());
+        CurrentAreaInquiryStage(),
+        hard_physics_mode);
 }
 
 TrialExperimentReport WorldContext::ExecuteModalTrial() noexcept {
