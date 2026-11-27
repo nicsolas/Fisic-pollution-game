@@ -492,6 +492,7 @@ public:
         const fs::path cached_raylib = fs::path(build_dir_) / "_deps" / "raylib-src";
         std::error_code ec;
         if (fs::exists(cached_raylib, ec) && fs::is_directory(cached_raylib, ec)) {
+            args.push_back("-DCMAKE_DISABLE_FIND_PACKAGE_raylib=ON");
             args.push_back("-DFETCHCONTENT_SOURCE_DIR_RAYLIB=" + cached_raylib.string());
         }
         return RunProcess("cmake", args, {}, {}, 60000);
@@ -640,7 +641,8 @@ public:
 
         const std::string main_cpp = ReadProjectFile("src/app/main.cpp");
         const auto msaa_pos = main_cpp.find("FLAG_MSAA_4X_HINT");
-        const auto init_pos = main_cpp.find("InitWindow");
+        const auto init_pos =
+            (msaa_pos != std::string::npos) ? main_cpp.find("InitWindow(", msaa_pos) : std::string::npos;
         rep.window_config_1280x720_60fps_msaa =
             msaa_pos != std::string::npos &&
             init_pos != std::string::npos &&
@@ -1278,18 +1280,41 @@ public:
 
     NpcSnapshot InteractArchitectNpc(int player_id) override {
         if (world_.current_mode == eco::GameMode::Overworld) {
-            (void)world_.architect_npc.TryInteract(
-                player_id, world_.players, world_.ecosystem);
+            eco::WorldNpc& clara = world_.GetNpc(eco::NpcId::ClaraSereni);
+            const eco::Player* p = world_.players.GetPlayer(player_id);
+            if (p != nullptr && clara.IsPlayerInRange(*p)) {
+                clara.met = true;
+                if (clara.recruited || world_.ecosystem.architect_recruited) {
+                    clara.recruited = true;
+                    clara.hidden_bridge_revealed = true;
+                    world_.ecosystem.SetArchitectRecruited(true);
+                    clara.last_dialogue =
+                        "Clara Sereni: Il Ponte degli Archi e' aperto e la Trama Geodetica e' attiva lungo tutta la Conca.";
+                } else if (world_.ecosystem.clean_energy > 0.0f) {
+                    clara.recruited = true;
+                    clara.hidden_bridge_revealed = true;
+                    world_.ecosystem.SetArchitectRecruited(true);
+                    clara.last_dialogue =
+                        "Clara Sereni: Misura verificata senza fumo. Apro il Ponte degli Archi e ti affido la Trama Geodetica.";
+                } else if (world_.ecosystem.dirty_energy > 0.0f) {
+                    clara.last_dialogue =
+                        "Clara Sereni: Non apro il ponte per energia ottenuta bruciando pece. Porta una misura pulita.";
+                } else {
+                    clara.last_dialogue =
+                        "Clara Sereni: Nessun monumento produce ancora energia pulita. Calibra l'Eliostato sulle Terrazze dell'Alba.";
+                }
+            }
         }
         return GetArchitectNpc();
     }
 
     [[nodiscard]] NpcSnapshot GetArchitectNpc() const override {
+        const eco::WorldNpc& clara = world_.GetNpc(eco::NpcId::ClaraSereni);
         NpcSnapshot snap;
-        snap.pos = {world_.architect_npc.pos.x, world_.architect_npc.pos.y};
-        snap.recruited = world_.architect_npc.recruited;
-        snap.hidden_bridge_revealed = world_.architect_npc.hidden_bridge_revealed;
-        snap.last_dialogue = world_.architect_npc.last_dialogue;
+        snap.pos = {clara.pos.x, clara.pos.y};
+        snap.recruited = clara.recruited || world_.ecosystem.architect_recruited;
+        snap.hidden_bridge_revealed = clara.hidden_bridge_revealed || world_.ecosystem.architect_recruited;
+        snap.last_dialogue = clara.last_dialogue;
         return snap;
     }
 

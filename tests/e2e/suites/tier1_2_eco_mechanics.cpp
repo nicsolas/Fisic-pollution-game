@@ -34,8 +34,8 @@ using eco::e2e::SceneMode;
 using eco::e2e::TileKind;
 using eco::e2e::Vec2;
 
-constexpr const char* kMachinePrompt = "Premi Interagisci per riavviare l'impianto";
-constexpr const char* kBypassLabel = "Usa Generatore di Emergenza a Combustione (Bypass)";
+constexpr const char* kMachinePrompt = "Premi [E] per calibrare il monumento";
+constexpr const char* kBypassLabel = "Usa Fornace a Pece di Emergenza (Bypass)";
 
 std::array<InputFrame, 4> MakeIdleInputs(const IE2EAdapter& adapter) {
     std::array<InputFrame, 4> inputs{};

@@ -577,8 +577,30 @@ struct WindowedOptions {
     int monitor_override = -2; // -2: non impostato da CLI, -1: auto, >=0: indice monitor
 };
 
+#if defined(__linux__)
+bool HasLinuxDisplayEnv() noexcept {
+    const char* wayland = std::getenv("WAYLAND_DISPLAY");
+    const char* xdg = std::getenv("XDG_RUNTIME_DIR");
+    if (wayland != nullptr && wayland[0] != '\0' &&
+        xdg != nullptr && xdg[0] != '\0') {
+        return true;
+    }
+    const char* display = std::getenv("DISPLAY");
+    return display != nullptr && display[0] != '\0';
+}
+#endif
+
 int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
     const int smoke_frames = opt.smoke_frames;
+
+#if defined(__linux__)
+    if (!HasLinuxDisplayEnv()) {
+        std::cerr << "[eco_proto] Errore: nessun display server X11/Wayland rilevato "
+                     "(DISPLAY e WAYLAND_DISPLAY non impostati). "
+                     "Usa --headless-e2e per la verifica senza display.\n";
+        return 1;
+    }
+#endif
 
     // 1. Carica preferenze utente (Monitor, GPU, Audio, Grafica) PRIMA di InitWindow()
     eco::app::GraphicsSettings graphics_settings{};
@@ -599,6 +621,12 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
 
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(eco::kWindowWidth, eco::kWindowHeight, "EQUILIBRIO - La Conca di Meridia");
+    if (!IsWindowReady()) {
+        std::cerr << "[eco_proto] Errore: impossibile inizializzare la finestra grafica "
+                     "(nessun display server X11/Wayland disponibile). "
+                     "Usa --headless-e2e per la verifica senza display.\n";
+        return 1;
+    }
     {
         Image icon = LoadImageFromMemory(
             ".png",
