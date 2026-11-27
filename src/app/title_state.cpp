@@ -371,7 +371,8 @@ void TitleState::Update(float dt) {
     }
 
     const bool has_save = save_summary_.exists;
-    const int item_count = has_save ? 4 : 3;
+    const int item_count = has_save ? 5 : 4;
+    const int hard_mode_idx = has_save ? 2 : 1;
 
     const MenuInputState menu_in = PollMenuInput(dt);
     const bool up_pressed = menu_in.up_pressed;
@@ -386,10 +387,11 @@ void TitleState::Update(float dt) {
     }
 
     const int w = eco::kWindowWidth;
-    const int btn_w = 430;
-    const int btn_h = 44;
+    const int btn_w = 460;
+    const int btn_h = has_save ? 40 : 44;
+    const int btn_pitch = has_save ? 46 : 54;
     const int btn_x = (w - btn_w) / 2;
-    const int menu_top_y = has_save ? 404 : 426;
+    const int menu_top_y = has_save ? 394 : 380;
 
     const Vector2 mouse = GetMousePosition();
     const bool mouse_clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
@@ -398,7 +400,7 @@ void TitleState::Update(float dt) {
     for (int i = 0; i < item_count; ++i) {
         const Rectangle r{
             static_cast<float>(btn_x),
-            static_cast<float>(menu_top_y + i * 52),
+            static_cast<float>(menu_top_y + i * btn_pitch),
             static_cast<float>(btn_w),
             static_cast<float>(btn_h)
         };
@@ -415,6 +417,11 @@ void TitleState::Update(float dt) {
         }
     }
 
+    if (activated < 0 && menu_cursor_ == hard_mode_idx &&
+        (menu_in.left_pressed || menu_in.right_pressed)) {
+        activated = hard_mode_idx;
+    }
+
     if (activated < 0 && (menu_in.confirm_pressed || IsKeyPressed(KEY_E))) {
         activated = menu_cursor_;
     }
@@ -425,10 +432,19 @@ void TitleState::Update(float dt) {
 
     PlayUiSfx(SfxId::UiClick, 0.65f, 1.08f);
 
+    if (activated == hard_mode_idx) {
+        ctx_.toggle_hard_mode_requested = true;
+        ctx_.world.hard_physics_mode = !ctx_.world.hard_physics_mode;
+        return;
+    }
+
+    const bool chosen_hard_mode = ctx_.world.hard_physics_mode;
+
     if (has_save) {
         switch (activated) {
             case 0: { // Riprendi da dove hai lasciato
                 if (eco::LoadWorldFromFile(ctx_.world)) {
+                    ctx_.world.hard_physics_mode = chosen_hard_mode;
                     if (ctx_.world.current_mode == eco::GameMode::Structure) {
                         ctx_.state_manager.RequestTransition(std::make_unique<StructureState>(ctx_));
                     } else {
@@ -436,6 +452,7 @@ void TitleState::Update(float dt) {
                     }
                 } else {
                     ctx_.world.Reset();
+                    ctx_.world.hard_physics_mode = chosen_hard_mode;
                     ctx_.world.EnsureInitialized();
                     ctx_.state_manager.RequestTransition(std::make_unique<IntroState>(ctx_));
                 }
@@ -443,15 +460,16 @@ void TitleState::Update(float dt) {
             }
             case 1: { // Nuova Partita
                 ctx_.world.Reset();
+                ctx_.world.hard_physics_mode = chosen_hard_mode;
                 ctx_.world.EnsureInitialized();
                 ctx_.state_manager.RequestTransition(std::make_unique<IntroState>(ctx_));
                 break;
             }
-            case 2: { // Impostazioni (Schermo, GPU & Audio)
+            case 3: { // Impostazioni (Schermo, GPU & Audio)
                 ctx_.open_settings_requested = true;
                 break;
             }
-            case 3: { // Esci
+            case 4: { // Esci
                 ctx_.quit_requested = true;
                 break;
             }
@@ -462,15 +480,16 @@ void TitleState::Update(float dt) {
         switch (activated) {
             case 0: { // Inizia il Viaggio
                 ctx_.world.Reset();
+                ctx_.world.hard_physics_mode = chosen_hard_mode;
                 ctx_.world.EnsureInitialized();
                 ctx_.state_manager.RequestTransition(std::make_unique<IntroState>(ctx_));
                 break;
             }
-            case 1: { // Impostazioni
+            case 2: { // Impostazioni
                 ctx_.open_settings_requested = true;
                 break;
             }
-            case 2: { // Esci
+            case 3: { // Esci
                 ctx_.quit_requested = true;
                 break;
             }
@@ -539,62 +558,92 @@ void TitleState::Draw() {
             pal::kParchmentText);
 
         const char* stats_line = TextFormat(
-            "Monumenti attivi: %d/5   |   Reliquie: %d/%d   |   Foschia: %d%%",
+            "Monumenti attivi: %d/5   |   Reliquie: %d/%d   |   Foschia: %d%%%s",
             save_summary_.monuments_active,
             save_summary_.relics_found,
             save_summary_.total_relics,
-            static_cast<int>(std::lround(save_summary_.pollution_level)));
+            static_cast<int>(std::lround(save_summary_.pollution_level)),
+            save_summary_.hard_physics_mode ? "   |   FISICA PURA" : "");
         DrawTextShadow(stats_line, 334, 352, 14, Color{236, 208, 138, 255});
     }
 
-    // 4. Menu principale interattivo
+    // 4. Menu principale interattivo (con selettore diretto Modalita' Standard / Fisica Pura)
     const bool has_save = save_summary_.exists;
+    const bool hard_mode = ctx_.world.hard_physics_mode;
+    const char* mode_label = hard_mode
+                                 ? "Modalita': FISICA PURA (HARD - Calcolo Manuale)"
+                                 : "Modalita': STANDARD (Calibrazione Guidata)";
+    const int hard_mode_idx = has_save ? 2 : 1;
+
     std::vector<const char*> labels;
     if (has_save) {
         labels = {
             "Riprendi da dove hai lasciato",
             "Nuova Partita (Ricomincia)",
+            mode_label,
             "Impostazioni (Schermo, Audio & Controller) [O]",
             "Esci dal Gioco"
         };
     } else {
         labels = {
             "Inizia il Viaggio nella Conca",
+            mode_label,
             "Impostazioni (Schermo, Audio & Controller) [O]",
             "Esci dal Gioco"
         };
     }
 
-    const int btn_w = 430;
-    const int btn_h = 44;
+    const int btn_w = 460;
+    const int btn_h = has_save ? 40 : 44;
+    const int btn_pitch = has_save ? 46 : 54;
     const int btn_x = (w - btn_w) / 2;
-    const int menu_top_y = has_save ? 404 : 426;
+    const int menu_top_y = has_save ? 394 : 380;
     const float blink = 0.65f + 0.35f * std::sin(t * 3.8f);
 
     for (std::size_t i = 0; i < labels.size(); ++i) {
         const bool selected = (menu_cursor_ == static_cast<int>(i));
         const Rectangle r{
             static_cast<float>(btn_x),
-            static_cast<float>(menu_top_y + static_cast<int>(i) * 52),
+            static_cast<float>(menu_top_y + static_cast<int>(i) * btn_pitch),
             static_cast<float>(btn_w),
             static_cast<float>(btn_h)
         };
         const bool is_quit = (i + 1 == labels.size());
+        const bool is_mode_row = (static_cast<int>(i) == hard_mode_idx);
         const Color accent = is_quit
                                  ? Color{235, 110, 76, 255}
-                                 : ((i == 0 && has_save) ? pal::kJadeGlow : pal::kBronzeBright);
+                                 : (is_mode_row
+                                        ? (hard_mode ? pal::kAmberGlow : pal::kJadeGlow)
+                                        : ((i == 0 && has_save) ? pal::kJadeGlow : pal::kBronzeBright));
         const Color border = selected
                                  ? Color{accent.r, accent.g, accent.b, static_cast<unsigned char>(175 + 80 * blink)}
-                                 : pal::kUiBorderBronze;
+                                 : (is_mode_row && hard_mode ? pal::WithAlpha(pal::kAmberGlow, 170) : pal::kUiBorderBronze);
         DrawSectionCard(r, border, selected);
 
-        const int tw = MeasureUiText(labels[i], 17);
+        const int font_sz = (is_mode_row || has_save) ? 16 : 17;
+        const int tw = MeasureUiText(labels[i], font_sz);
+        const Color text_col = is_mode_row
+                                   ? (hard_mode ? pal::kAmberGlow : pal::kJadeGlow)
+                                   : (selected ? RAYWHITE : pal::kParchmentText);
         DrawTextShadow(
             labels[i],
             btn_x + (btn_w - tw) / 2,
-            static_cast<int>(r.y) + 12,
-            17,
-            selected ? RAYWHITE : pal::kParchmentText);
+            static_cast<int>(r.y) + (btn_h - font_sz) / 2 - 1,
+            font_sz,
+            selected ? RAYWHITE : text_col);
+    }
+
+    if (!has_save) {
+        const char* mode_desc = hard_mode
+            ? "Fisica Pura attiva: zero tacche target, zero barre verdi live, nessuna bussola automatica."
+            : "Modalita' Standard: curve guidate e indicatori di banda. Premi [A/D] o clicca su Modalita' per cambiare.";
+        const int md_w = MeasureUiText(mode_desc, 13);
+        DrawTextShadow(
+            mode_desc,
+            (w - md_w) / 2,
+            menu_top_y + static_cast<int>(labels.size()) * btn_pitch + 4,
+            13,
+            hard_mode ? pal::kAmberGlow : Color{168, 206, 218, 225});
     }
 
     // 5. Footer controlli

@@ -10,6 +10,13 @@
 #include <string>
 #include <string_view>
 
+#if defined(__linux__)
+#include <csignal>
+#include <execinfo.h>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include "app/audio/audio_engine.h"
 #include "app/game_state_manager.h"
 #include "app/gpu_selector.h"
@@ -589,6 +596,28 @@ struct WindowedOptions {
 };
 
 #if defined(__linux__)
+void CrashSignalHandler(int sig) noexcept {
+    void* frames[48];
+    const int n = backtrace(frames, 48);
+    const int fd = open("saves/last_crash.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd >= 0) {
+        const char hdr[] = "=== EQUILIBRIO CRASH BACKTRACE ===\n";
+        (void)write(fd, hdr, sizeof(hdr) - 1);
+        backtrace_symbols_fd(frames, n, fd);
+        close(fd);
+    }
+    backtrace_symbols_fd(frames, n, STDERR_FILENO);
+    std::signal(sig, SIG_DFL);
+    std::raise(sig);
+}
+
+void InstallCrashBacktraceHandler() noexcept {
+    std::signal(SIGSEGV, CrashSignalHandler);
+    std::signal(SIGABRT, CrashSignalHandler);
+    std::signal(SIGFPE, CrashSignalHandler);
+    std::signal(SIGBUS, CrashSignalHandler);
+}
+
 bool HasLinuxDisplayEnv() noexcept {
     const char* wayland = std::getenv("WAYLAND_DISPLAY");
     const char* xdg = std::getenv("XDG_RUNTIME_DIR");
@@ -602,6 +631,9 @@ bool HasLinuxDisplayEnv() noexcept {
 #endif
 
 int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
+#if defined(__linux__)
+    InstallCrashBacktraceHandler();
+#endif
     const int smoke_frames = opt.smoke_frames;
 
 #if defined(__linux__)
@@ -866,6 +898,16 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
                             state_manager.Update(stepper.fixed_dt);
                             eco::ConsumePressedEdges(pending_input);
                         }
+                    }
+
+                    if (ctx.toggle_hard_mode_requested) {
+                        ctx.toggle_hard_mode_requested = false;
+                        graphics_settings.hard_physics_mode = !graphics_settings.hard_physics_mode;
+                        world.hard_physics_mode = graphics_settings.hard_physics_mode;
+                        if (world.calibration_modal.is_open) {
+                            world.calibration_modal.hard_physics_mode = graphics_settings.hard_physics_mode;
+                        }
+                        (void)eco::app::SaveGraphicsSettings(graphics_settings);
                     }
                 }
             } else {

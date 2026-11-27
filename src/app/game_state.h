@@ -20,6 +20,7 @@ struct AppContext {
     bool quit_requested = false;
     bool open_settings_requested = false;
     bool relaunch_gpu_requested = false;
+    bool toggle_hard_mode_requested = false;
     bool block_state_input_this_frame = false;
     bool overlay_blocking_input = false;
 };
