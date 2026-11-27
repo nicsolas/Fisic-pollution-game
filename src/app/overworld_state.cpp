@@ -11,6 +11,7 @@
 #include "app/render/palette.h"
 #include "app/render/particles.h"
 #include "app/render/procedural_art.h"
+#include "app/render/world_entities.h"
 #include "app/story_ui.h"
 #include "app/structure_state.h"
 #include "core/ecosystem.h"

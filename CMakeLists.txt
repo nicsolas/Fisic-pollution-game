@@ -171,6 +171,7 @@ add_executable(eco_proto
     src/app/render/ui_style.cpp
     src/app/render/procedural_art.cpp
     src/app/render/particles.cpp
+    src/app/render/world_entities.cpp
     src/app/audio/audio_engine.cpp
     src/app/gpu_selector.cpp
 )
