@@ -32,21 +32,54 @@ struct FastRng {
     }
 };
 
+[[nodiscard]] float HannRamp(float x) noexcept {
+    const float u = std::clamp(x, 0.0f, 1.0f);
+    return 0.5f - 0.5f * std::cos(eco::kPi * u);
+}
+
+[[nodiscard]] float SoftLimitSample(float s) noexcept {
+    constexpr float kKnee = 0.85f;
+    constexpr float kHeadroom = 0.13f;
+    const float a = std::fabs(s);
+    if (a <= kKnee) {
+        return s;
+    }
+    const float shaped = kKnee + kHeadroom * std::tanh((a - kKnee) / kHeadroom);
+    return std::copysign(shaped, s);
+}
+
+[[nodiscard]] float MinCooldownForSfx(SfxId id) noexcept {
+    switch (id) {
+        case SfxId::FootstepStone:
+        case SfxId::FootstepGrass:
+            return 0.22f;
+        case SfxId::SliderTick:
+            return 0.065f;
+        case SfxId::UiClick:
+            return 0.045f;
+        case SfxId::Jump:
+        case SfxId::Land:
+            return 0.12f;
+        default:
+            return 0.0f;
+    }
+}
+
 [[nodiscard]] float SmoothEnvelope(float t, float duration, float attack, float release) noexcept {
     if (duration <= 0.0f || t < 0.0f || t > duration) {
         return 0.0f;
     }
     float env = 1.0f;
     if (attack > 0.0f && t < attack) {
-        env = t / attack;
+        env = HannRamp(t / attack);
     }
     if (release > 0.0f && t > duration - release) {
-        env = std::min(env, (duration - t) / release);
+        env = std::min(env, HannRamp((duration - t) / release));
     }
     return std::clamp(env, 0.0f, 1.0f);
 }
 
-[[nodiscard]] Sound BuildSoundFromSamples(const std::vector<float>& samples) {
+[[nodiscard]] Sound BuildSoundFromSamples(const std::vector<float>& samples, bool is_loop = false) {
     const int frame_count = static_cast<int>(samples.size());
     if (frame_count <= 0) {
         return Sound{};
@@ -58,9 +91,19 @@ struct FastRng {
         return Sound{};
     }
 
+    // Micro-fade Hann anti-click (2.5 ms) garantito su tutti gli one-shot SFX
+    const int fade_n = is_loop ? 0 : std::min(frame_count / 4, static_cast<int>(0.0025f * kSampleRate));
     for (int i = 0; i < frame_count; ++i) {
-        const float clamped = std::clamp(samples[static_cast<std::size_t>(i)], -0.98f, 0.98f);
-        pcm[i] = static_cast<std::int16_t>(std::lround(clamped * 32767.0f));
+        float s = samples[static_cast<std::size_t>(i)];
+        if (fade_n > 0) {
+            if (i < fade_n) {
+                s *= HannRamp(static_cast<float>(i) / static_cast<float>(fade_n));
+            } else if (i >= frame_count - fade_n) {
+                s *= HannRamp(static_cast<float>(frame_count - 1 - i) / static_cast<float>(fade_n));
+            }
+        }
+        const float limited = std::clamp(SoftLimitSample(s), -0.98f, 0.98f);
+        pcm[i] = static_cast<std::int16_t>(std::lround(limited * 32767.0f));
     }
 
     Wave wave{};
@@ -833,7 +876,8 @@ enum class NatureLayer : int {
                     std::sin(kTwoPi * f_d3 * t) * 0.20f +
                     std::sin(kTwoPi * f_a3 * t) * 0.12f;
                 const float cycle_t = std::fmod(t, 2.0f);
-                const float tick_env = std::exp(-cycle_t * 28.0f);
+                const float tick_env =
+                    SmoothEnvelope(cycle_t, 2.0f, 0.003f, 0.01f) * std::exp(-cycle_t * 28.0f);
                 const float pend_tick =
                     (std::sin(kTwoPi * 440.0f * cycle_t) * 0.18f +
                      std::sin(kTwoPi * 660.0f * cycle_t) * 0.08f) * tick_env;
@@ -928,6 +972,7 @@ enum class NatureLayer : int {
 
 struct AudioEngine::Impl {
     std::array<Sound, static_cast<std::size_t>(SfxId::Count)> sfx{};
+    std::array<float, static_cast<std::size_t>(SfxId::Count)> sfx_cooldowns{};
     std::array<Sound, static_cast<std::size_t>(MusicLayer::Count)> music{};
     std::array<float, static_cast<std::size_t>(MusicLayer::Count)> music_vol{};
     std::array<Sound, static_cast<std::size_t>(NatureLayer::Count)> nature{};
@@ -1055,13 +1100,13 @@ void AudioEngine::Init(bool silent_mode) {
 
     for (int i = 0; i < static_cast<int>(MusicLayer::Count); ++i) {
         const auto layer = static_cast<MusicLayer>(i);
-        impl_->music[static_cast<std::size_t>(i)] = BuildSoundFromSamples(SynthMusicLoop(layer));
+        impl_->music[static_cast<std::size_t>(i)] = BuildSoundFromSamples(SynthMusicLoop(layer), true);
         impl_->music_vol[static_cast<std::size_t>(i)] = 0.0f;
     }
 
     for (int i = 0; i < static_cast<int>(NatureLayer::Count); ++i) {
         const auto layer = static_cast<NatureLayer>(i);
-        impl_->nature[static_cast<std::size_t>(i)] = BuildSoundFromSamples(SynthNatureLoop(layer));
+        impl_->nature[static_cast<std::size_t>(i)] = BuildSoundFromSamples(SynthNatureLoop(layer), true);
         impl_->nature_vol[static_cast<std::size_t>(i)] = 0.0f;
     }
 
@@ -1145,9 +1190,16 @@ void AudioEngine::PlaySfx(SfxId id, float volume_scale, float pitch) {
     if (idx >= impl_->sfx.size()) {
         return;
     }
+    if (impl_->sfx_cooldowns[idx] > 0.0f) {
+        return;
+    }
     Sound& snd = impl_->sfx[idx];
     if (snd.frameCount == 0) {
         return;
+    }
+    const float cd = MinCooldownForSfx(id);
+    if (cd > 0.0f) {
+        impl_->sfx_cooldowns[idx] = cd;
     }
     SetSoundVolume(snd, std::clamp(volume_scale * effects_volume_, 0.0f, 1.0f));
     SetSoundPitch(snd, std::clamp(pitch, 0.55f, 1.85f));
@@ -1165,9 +1217,16 @@ void AudioEngine::PlayUiSound(SfxId id, float volume_scale, float pitch) {
     if (idx >= impl_->sfx.size()) {
         return;
     }
+    if (impl_->sfx_cooldowns[idx] > 0.0f) {
+        return;
+    }
     Sound& snd = impl_->sfx[idx];
     if (snd.frameCount == 0) {
         return;
+    }
+    const float cd = MinCooldownForSfx(id);
+    if (cd > 0.0f) {
+        impl_->sfx_cooldowns[idx] = cd;
     }
     // I suoni UI usano un pavimento minimo se effects_volume e' basso ma UI e' attiva
     const float gain = std::clamp(volume_scale * std::max(0.35f, effects_volume_), 0.0f, 1.0f);
@@ -1228,6 +1287,11 @@ void AudioEngine::SyncAndUpdate(
 
     const float safe_dt = std::clamp(dt, 0.0f, 0.1f);
     impl_->slider_tick_cooldown = std::max(0.0f, impl_->slider_tick_cooldown - safe_dt);
+    for (float& cd : impl_->sfx_cooldowns) {
+        if (cd > 0.0f) {
+            cd = std::max(0.0f, cd - safe_dt);
+        }
+    }
 
     const bool in_gameplay =
         (active_state_name == "OverworldState" || active_state_name == "StructureState");
@@ -1507,7 +1571,7 @@ void AudioEngine::SyncAndUpdate(
             if (impl_->slider_tick_cooldown <= 0.0f) {
                 const float base_p = stab_changed ? 1.14f : 0.96f;
                 PlayUiSound(SfxId::SliderTick, 0.55f, base_p + 0.07f * impl_->pitch_rng.NextSigned());
-                impl_->slider_tick_cooldown = 0.048f;
+                impl_->slider_tick_cooldown = 0.065f;
             }
             impl_->prev_modal_value = world.calibration_modal.slider_value;
             impl_->prev_stabilizer_value = world.calibration_modal.stabilizer_value;

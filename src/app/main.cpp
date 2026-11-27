@@ -696,6 +696,7 @@ int RunWindowed(const WindowedOptions& opt, int argc, char** argv) {
         world.EnsureInitialized();
         world.guidance_mode = static_cast<eco::GuidanceAssistMode>(
             std::clamp(graphics_settings.guidance_mode_index, 0, 2));
+        world.hard_physics_mode = graphics_settings.hard_physics_mode;
 
         if (opt.collect_all) {
             world.collectibles.CollectAll();

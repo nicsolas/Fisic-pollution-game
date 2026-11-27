@@ -32,6 +32,7 @@ struct GraphicsSettings {
     bool show_fps = false;
     bool compact_tutorial = false; // true = avanzamento dialoghi piu' rapido
     int dialogue_speed_index = 1;  // 0: Lento, 1: Normale, 2: Rapido
+    bool hard_physics_mode = false; // Modalita' Fisica Pura (Hard Mode): zero tacche/anteprime live
 
     // Effetti Ambientali granulari (0.0f .. 1.0f)
     float particle_density = 1.0f;       // Densita' particelle globali

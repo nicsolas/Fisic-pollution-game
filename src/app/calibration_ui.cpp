@@ -308,16 +308,20 @@ void DrawCalibrationDiagram(
     const eco::Machine& machine,
     const eco::WorldContext& world,
     Rectangle diag_r,
-    bool target_revealed) {
+    bool target_revealed,
+    bool hard_mode) {
     DrawRectangleRec(diag_r, Color{10, 18, 28, 245});
-    DrawRectangleLinesEx(diag_r, 1.4f, pal::WithAlpha(pal::kBronze, 200));
+    DrawRectangleLinesEx(diag_r, 1.4f, pal::WithAlpha(hard_mode ? pal::kAmberGlow : pal::kBronze, 200));
 
+    const bool effective_reveal = !hard_mode && target_revealed;
     const float val = world.calibration_modal.slider_value;
     const bool ok_clean = world.calibration_modal.can_confirm_clean;
     const bool ok_risky = world.calibration_modal.can_confirm_risky;
-    const Color live_col = ok_clean
-                               ? pal::kAccentClean
-                               : (ok_risky ? pal::kAmberGlow : Color{86, 202, 240, 255});
+    const Color live_col = hard_mode
+                               ? Color{128, 184, 212, 245}
+                               : (ok_clean
+                                      ? pal::kAccentClean
+                                      : (ok_risky ? pal::kAmberGlow : Color{86, 202, 240, 255}));
     const Vector2 c{diag_r.x + diag_r.width * 0.5f, diag_r.y + diag_r.height * 0.42f};
 
     switch (machine.type) {
@@ -325,13 +329,15 @@ void DrawCalibrationDiagram(
             DrawCircleV(c, 50.0f, Color{16, 26, 38, 255});
             DrawCircleLines(static_cast<int>(c.x), static_cast<int>(c.y), 50.0f, pal::WithAlpha(pal::kBronzeBright, 175));
             const float p_rad = eco::deg2rad(val);
-            if (target_revealed) {
+            if (effective_reveal) {
                 const float s_rad = eco::deg2rad(machine.target_param);
                 DrawArrow2D(c, {c.x + std::cos(s_rad) * 42.0f, c.y + std::sin(s_rad) * 42.0f}, 2.4f, pal::kAmberGlow);
             }
             DrawArrow2D(c, {c.x + std::cos(p_rad) * 38.0f, c.y + std::sin(p_rad) * 38.0f}, 3.0f, live_col);
             DrawTextShadow(
-                target_revealed ? "Oro: Azimut Solare Rilevato" : "Oro: [Sperimenta per svelare]",
+                hard_mode
+                    ? "Fisica Pura: misura ombra sul campo"
+                    : (effective_reveal ? "Oro: Azimut Solare Rilevato" : "Oro: [Sperimenta per svelare]"),
                 static_cast<int>(diag_r.x) + 12,
                 static_cast<int>(diag_r.y + diag_r.height) - 36,
                 11,
@@ -356,7 +362,9 @@ void DrawCalibrationDiagram(
                 static_cast<int>(wh),
                 Color{72, 212, 248, 235},
                 Color{24, 118, 178, 245});
-            if (target_revealed || world.calibration_modal.piezometric_relic_active) {
+            const bool show_hydro_target =
+                !hard_mode && (effective_reveal || world.calibration_modal.piezometric_relic_active);
+            if (show_hydro_target) {
                 const float opt_y = col_r.y + col_r.height * (1.0f - eco::Clamp(machine.target_param / std::max(1.0f, machine.max_param), 0.0f, 1.0f));
                 DrawLineEx({col_r.x - 6.0f, opt_y}, {col_r.x + col_r.width + 6.0f, opt_y}, 2.2f, pal::kAccentClean);
             }
@@ -367,9 +375,12 @@ void DrawCalibrationDiagram(
             DrawTextShadow("STEVINO LIVE", static_cast<int>(diag_r.x) + 78, static_cast<int>(diag_r.y) + 18, 11, pal::kBronzeBright);
             DrawTextShadow(TextFormat("h = %.1f m", val), static_cast<int>(diag_r.x) + 78, static_cast<int>(diag_r.y) + 34, 13, pal::kParchmentText);
             DrawTextShadow(TextFormat("P = %.1f kPa", p_kpa), static_cast<int>(diag_r.x) + 78, static_cast<int>(diag_r.y) + 52, 15, live_col);
-            if (target_revealed || world.calibration_modal.piezometric_relic_active) {
+            if (show_hydro_target) {
                 DrawTextShadow("BANDA ARMONICA", static_cast<int>(diag_r.x) + 78, static_cast<int>(diag_r.y) + 84, 11, pal::kAccentClean);
                 DrawTextShadow(TextFormat("%.1f kPa", opt_kpa), static_cast<int>(diag_r.x) + 78, static_cast<int>(diag_r.y) + 100, 14, pal::kAccentClean);
+            } else if (hard_mode) {
+                DrawTextShadow("Fisica Pura:", static_cast<int>(diag_r.x) + 78, static_cast<int>(diag_r.y) + 88, 11, pal::kAmberGlow);
+                DrawTextShadow("calcola h = P/(rho*g)", static_cast<int>(diag_r.x) + 78, static_cast<int>(diag_r.y) + 104, 11, pal::kAmberGlow);
             } else {
                 DrawTextShadow("Usa [T] o Stele II.2", static_cast<int>(diag_r.x) + 78, static_cast<int>(diag_r.y) + 88, 11, pal::kAmberGlow);
                 DrawTextShadow("per quota d'equilibrio", static_cast<int>(diag_r.x) + 78, static_cast<int>(diag_r.y) + 104, 11, pal::kAmberGlow);
@@ -383,7 +394,7 @@ void DrawCalibrationDiagram(
             const float norm_l = eco::Clamp((val - machine.min_param) / std::max(0.1f, machine.max_param - machine.min_param), 0.0f, 1.0f);
             const float len_px = eco::Lerp(34.0f, 84.0f, norm_l);
 
-            if (target_revealed) {
+            if (effective_reveal) {
                 const float opt_ang = std::sin(world.sim_time * (2.0f * eco::kPi / t_opt)) * 0.48f;
                 const float opt_len = eco::Lerp(34.0f, 84.0f, eco::Clamp((machine.target_param - machine.min_param) / std::max(0.1f, machine.max_param - machine.min_param), 0.0f, 1.0f));
                 const Vector2 opt_bob{pivot.x + std::sin(opt_ang) * opt_len, pivot.y + std::cos(opt_ang) * opt_len};
@@ -400,7 +411,9 @@ void DrawCalibrationDiagram(
 
             DrawTextShadow(TextFormat("T = %.2f s", t_live), static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 36, 12, live_col);
             DrawTextShadow(
-                target_revealed ? TextFormat("T0 = %.2f s", t_opt) : "Premi [T] per misurare T0",
+                hard_mode
+                    ? "Fisica Pura: calcola L = g*(T/2pi)^2"
+                    : (effective_reveal ? TextFormat("T0 = %.2f s", t_opt) : "Premi [T] per misurare T0"),
                 static_cast<int>(diag_r.x) + 12,
                 static_cast<int>(diag_r.y + diag_r.height) - 19,
                 11,
@@ -414,31 +427,53 @@ void DrawCalibrationDiagram(
             const float gy_top = diag_r.y + 18.0f;
             const float gh = gy_bot - gy_top;
 
-            DrawLineEx({gx0, gy_bot}, {gx1, gy_bot}, 1.4f, pal::WithAlpha(pal::kBronzeBright, 150));
-            const float y_thresh = gy_bot - gh * machine.Threshold();
-            DrawLineEx({gx0, y_thresh}, {gx1, y_thresh}, 1.1f, pal::WithAlpha(pal::kAccentClean, 110));
-
-            constexpr int kSamples = 48;
-            Vector2 prev{};
-            for (int i = 0; i <= kSamples; ++i) {
-                const float u = static_cast<float>(i) / static_cast<float>(kSamples);
-                const float f = eco::Lerp(machine.min_param, machine.max_param, u);
-                const float r = machine.EvaluateEfficiency(f);
-                const Vector2 pt{eco::Lerp(gx0, gx1, u), gy_bot - r * gh};
-                if (i > 0) {
-                    DrawLineEx(prev, pt, 2.2f, pal::kJade);
+            if (hard_mode) {
+                // In Fisica Pura: oscilloscopio neutro della sola frequenza impostata (senza curva target!)
+                const float mid_y = (gy_top + gy_bot) * 0.5f;
+                const float amp = gh * 0.36f;
+                DrawLineEx({gx0, mid_y}, {gx1, mid_y}, 1.0f, pal::WithAlpha(pal::kBronzeBright, 120));
+                const float norm_f = eco::Clamp((val - machine.min_param) / std::max(1.0f, machine.max_param - machine.min_param), 0.0f, 1.0f);
+                const float cycles = eco::Lerp(1.5f, 7.5f, norm_f);
+                constexpr int kWaveSamples = 56;
+                Vector2 prev{};
+                for (int i = 0; i <= kWaveSamples; ++i) {
+                    const float u = static_cast<float>(i) / static_cast<float>(kWaveSamples);
+                    const float x = eco::Lerp(gx0, gx1, u);
+                    const float y = mid_y - std::sin(u * cycles * 2.0f * eco::kPi + world.sim_time * 4.2f) * amp;
+                    if (i > 0) {
+                        DrawLineEx(prev, {x, y}, 2.2f, live_col);
+                    }
+                    prev = {x, y};
                 }
-                prev = pt;
-            }
-            const float cur_u = eco::Clamp((val - machine.min_param) / std::max(1.0f, machine.max_param - machine.min_param), 0.0f, 1.0f);
-            const float cur_r = machine.EvaluateEfficiency(val);
-            const Vector2 cur_pt{eco::Lerp(gx0, gx1, cur_u), gy_bot - cur_r * gh};
-            DrawLineEx({cur_pt.x, gy_bot}, cur_pt, 1.5f, pal::WithAlpha(live_col, 165));
-            DrawCircleV(cur_pt, 5.5f, live_col);
-            DrawCircleV(cur_pt, 2.4f, RAYWHITE);
+                DrawTextShadow(TextFormat("f = %.1f Hz", val), static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 34, 12, live_col);
+                DrawTextShadow("Oscilloscopio neutro (Q=3) — Fisica Pura", static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 18, 11, pal::kAmberGlow);
+            } else {
+                DrawLineEx({gx0, gy_bot}, {gx1, gy_bot}, 1.4f, pal::WithAlpha(pal::kBronzeBright, 150));
+                const float y_thresh = gy_bot - gh * machine.Threshold();
+                DrawLineEx({gx0, y_thresh}, {gx1, y_thresh}, 1.1f, pal::WithAlpha(pal::kAccentClean, 110));
 
-            DrawTextShadow(TextFormat("f = %.1f Hz", val), static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 34, 12, live_col);
-            DrawTextShadow("Risonanza Q=3", static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 18, 11, pal::kBronzeBright);
+                constexpr int kSamples = 48;
+                Vector2 prev{};
+                for (int i = 0; i <= kSamples; ++i) {
+                    const float u = static_cast<float>(i) / static_cast<float>(kSamples);
+                    const float f = eco::Lerp(machine.min_param, machine.max_param, u);
+                    const float r = machine.EvaluateEfficiency(f);
+                    const Vector2 pt{eco::Lerp(gx0, gx1, u), gy_bot - r * gh};
+                    if (i > 0) {
+                        DrawLineEx(prev, pt, 2.2f, pal::kJade);
+                    }
+                    prev = pt;
+                }
+                const float cur_u = eco::Clamp((val - machine.min_param) / std::max(1.0f, machine.max_param - machine.min_param), 0.0f, 1.0f);
+                const float cur_r = machine.EvaluateEfficiency(val);
+                const Vector2 cur_pt{eco::Lerp(gx0, gx1, cur_u), gy_bot - cur_r * gh};
+                DrawLineEx({cur_pt.x, gy_bot}, cur_pt, 1.5f, pal::WithAlpha(live_col, 165));
+                DrawCircleV(cur_pt, 5.5f, live_col);
+                DrawCircleV(cur_pt, 2.4f, RAYWHITE);
+
+                DrawTextShadow(TextFormat("f = %.1f Hz", val), static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 34, 12, live_col);
+                DrawTextShadow("Risonanza Q=3", static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 18, 11, pal::kBronzeBright);
+            }
             break;
         }
         case eco::MachineType::ThermalExchanger: {
@@ -461,11 +496,13 @@ void DrawCalibrationDiagram(
 
             DrawTextShadow(TextFormat("Carnot eta = %.1f%%", eta_c), static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 34, 12, live_col);
             DrawTextShadow(
-                target_revealed ? "Equilibrio armonico: 600 K" : "Sperimenta [T] per equilibrio",
+                hard_mode
+                    ? "Fisica Pura: calcola T_calda da eta_C"
+                    : (effective_reveal ? "Equilibrio armonico: 600 K" : "Sperimenta [T] per equilibrio"),
                 static_cast<int>(diag_r.x) + 12,
                 static_cast<int>(diag_r.y + diag_r.height) - 18,
                 11,
-                pal::kAccentClean);
+                hard_mode ? pal::kAmberGlow : pal::kAccentClean);
             break;
         }
         case eco::MachineType::CentralAstrolabe:
@@ -474,31 +511,49 @@ void DrawCalibrationDiagram(
             const float gx1 = diag_r.x + diag_r.width - 14.0f;
             const float mid_y = diag_r.y + 66.0f;
             const float amp = 21.0f;
-            const float dphi = eco::deg2rad(val - machine.target_param);
 
             DrawLineEx({gx0, mid_y}, {gx1, mid_y}, 1.0f, pal::WithAlpha(pal::kBronze, 120));
             constexpr int kSteps = 44;
-            Vector2 prev_ref{};
-            Vector2 prev_cur{};
-            Vector2 prev_sum{};
-            for (int i = 0; i <= kSteps; ++i) {
-                const float u = static_cast<float>(i) / static_cast<float>(kSteps);
-                const float x = eco::Lerp(gx0, gx1, u);
-                const float theta = u * 4.0f * eco::kPi + world.sim_time * 3.0f;
-                const float y_ref = mid_y - std::sin(theta) * (amp * 0.65f);
-                const float y_cur = mid_y - std::sin(theta + dphi) * (amp * 0.65f);
-                const float y_sum = mid_y - (std::sin(theta) + std::sin(theta + dphi)) * (amp * 0.55f);
-                if (i > 0) {
-                    DrawLineEx(prev_ref, {x, y_ref}, 1.5f, pal::WithAlpha(pal::kAmberGlow, 175));
-                    DrawLineEx(prev_cur, {x, y_cur}, 1.5f, pal::WithAlpha(Color{92, 224, 248, 255}, 175));
-                    DrawLineEx(prev_sum, {x, y_sum}, 2.4f, live_col);
+            if (hard_mode) {
+                // In Fisica Pura: solo l'onda della fase impostata (nessun riferimento target!)
+                const float phi_rad = eco::deg2rad(val);
+                Vector2 prev_cur{};
+                for (int i = 0; i <= kSteps; ++i) {
+                    const float u = static_cast<float>(i) / static_cast<float>(kSteps);
+                    const float x = eco::Lerp(gx0, gx1, u);
+                    const float theta = u * 4.0f * eco::kPi + world.sim_time * 3.0f;
+                    const float y_cur = mid_y - std::sin(theta + phi_rad) * (amp * 0.9f);
+                    if (i > 0) {
+                        DrawLineEx(prev_cur, {x, y_cur}, 2.2f, live_col);
+                    }
+                    prev_cur = {x, y_cur};
                 }
-                prev_ref = {x, y_ref};
-                prev_cur = {x, y_cur};
-                prev_sum = {x, y_sum};
+                DrawTextShadow(TextFormat("Fase impostata: %.1f deg", val), static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 34, 11, live_col);
+                DrawTextShadow("Fisica Pura: verifica con [T]", static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 18, 11, pal::kAmberGlow);
+            } else {
+                const float dphi = eco::deg2rad(val - machine.target_param);
+                Vector2 prev_ref{};
+                Vector2 prev_cur{};
+                Vector2 prev_sum{};
+                for (int i = 0; i <= kSteps; ++i) {
+                    const float u = static_cast<float>(i) / static_cast<float>(kSteps);
+                    const float x = eco::Lerp(gx0, gx1, u);
+                    const float theta = u * 4.0f * eco::kPi + world.sim_time * 3.0f;
+                    const float y_ref = mid_y - std::sin(theta) * (amp * 0.65f);
+                    const float y_cur = mid_y - std::sin(theta + dphi) * (amp * 0.65f);
+                    const float y_sum = mid_y - (std::sin(theta) + std::sin(theta + dphi)) * (amp * 0.55f);
+                    if (i > 0) {
+                        DrawLineEx(prev_ref, {x, y_ref}, 1.5f, pal::WithAlpha(pal::kAmberGlow, 175));
+                        DrawLineEx(prev_cur, {x, y_cur}, 1.5f, pal::WithAlpha(Color{92, 224, 248, 255}, 175));
+                        DrawLineEx(prev_sum, {x, y_sum}, 2.4f, live_col);
+                    }
+                    prev_ref = {x, y_ref};
+                    prev_cur = {x, y_cur};
+                    prev_sum = {x, y_sum};
+                }
+                DrawTextShadow("Oro/Ciano: Onde di Fase", static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 34, 11, pal::kAmberGlow);
+                DrawTextShadow("Giada: Interferenza", static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 18, 11, live_col);
             }
-            DrawTextShadow("Oro/Ciano: Onde di Fase", static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 34, 11, pal::kAmberGlow);
-            DrawTextShadow("Giada: Interferenza", static_cast<int>(diag_r.x) + 12, static_cast<int>(diag_r.y + diag_r.height) - 18, 11, live_col);
             break;
         }
     }
@@ -527,11 +582,15 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
 
     DrawTextShadow(world.ActiveLocationName(), 16, 7, 15, pal::kParchmentText);
     DrawTextShadow(
-        TextFormat("Fase %d: %s", static_cast<int>(ov.phase), eco::UiPhaseName(ov.phase)),
+        TextFormat(
+            "Fase %d: %s%s",
+            static_cast<int>(ov.phase),
+            eco::UiPhaseName(ov.phase),
+            world.hard_physics_mode ? " [FISICA PURA]" : ""),
         16,
         29,
         12,
-        phase_col);
+        world.hard_physics_mode ? pal::kAmberGlow : phase_col);
 
     // Indicatori Foschia (Pece) & Energia Armonica
     const int smog_x = 304;
@@ -603,8 +662,9 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             if (world.last_scan.has_target) {
                 const eco::Machine& scanned_m = world.GetMachine(world.last_scan.target_type);
                 const bool show_exact =
-                    has_gnomon || ov.show_raw_numbers || scanned_m.trials_count > 0 ||
-                    scanned_m.state != eco::MachineState::Broken;
+                    !world.hard_physics_mode &&
+                    (has_gnomon || ov.show_raw_numbers || scanned_m.trials_count > 0 ||
+                     scanned_m.state != eco::MachineState::Broken);
                 const char* scan_line =
                     show_exact
                         ? TextFormat(
@@ -657,13 +717,13 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             DrawTextShadow(
                 TextFormat(
                     "GUIDA: %s | Prove: %d | Ponte Archi: %s",
-                    eco::GuidanceAssistModeName(world.guidance_mode),
+                    world.hard_physics_mode ? "Fisica Pura (Hard)" : eco::GuidanceAssistModeName(world.guidance_mode),
                     world.total_trials_run,
                     world.ecosystem.architect_recruited ? "APERTO" : "CHIUSO"),
                 static_cast<int>(px) + 12,
                 static_cast<int>(py) + 54,
                 12,
-                pal::kJadeGlow);
+                world.hard_physics_mode ? pal::kAmberGlow : pal::kJadeGlow);
         } else {
             DrawTextShadow(
                 TextFormat("Osserva il mondo o calibra senza pece per il Rilievo %s", vista_lbl),
@@ -681,7 +741,14 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
     DrawObjectiveCompass(world);
 
     // 4. Banco di Indagine Scientifica & Calibrazione Multi-Soluzione (1280x720)
-    if (world.calibration_modal.is_open) {
+    static float s_hard_reject_timer = 0.0f;
+    if (!world.calibration_modal.is_open) {
+        s_hard_reject_timer = 0.0f;
+    } else {
+        s_hard_reject_timer = std::max(0.0f, s_hard_reject_timer - GetFrameTime());
+        const bool hard_mode = world.hard_physics_mode || world.calibration_modal.hard_physics_mode;
+        constexpr Color kHardNeutralCol{128, 184, 212, 240};
+
         DrawRectangle(0, 0, eco::kWindowWidth, eco::kWindowHeight, Color{5, 10, 16, 212});
         const int box_w = 1120;
         const int box_h = 640;
@@ -689,7 +756,8 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
         const int by = (eco::kWindowHeight - box_h) / 2;
 
         const char* modal_title = TextFormat(
-            "BANCO D'INDAGINE: %s  |  %s  (%s)  |  Stato: %s",
+            "%sBANCO D'INDAGINE: %s  |  %s  (%s)  |  Stato: %s",
+            hard_mode ? "[FISICA PURA] " : "",
             eco::MachineName(machine.type),
             eco::MachineLawName(machine.type),
             eco::MachineFormulaLabel(machine.type),
@@ -698,7 +766,7 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             Rectangle{static_cast<float>(bx), static_cast<float>(by), static_cast<float>(box_w), static_cast<float>(box_h)},
             38,
             modal_title,
-            pal::kBronzeBright);
+            hard_mode ? pal::kAmberGlow : pal::kBronzeBright);
 
         const Vector2 mouse = GetMousePosition();
         const bool mouse_clicked = allow_mouse_input && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
@@ -850,10 +918,11 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             world.last_scan.has_target &&
             world.last_scan.target_type == machine.type;
         const bool target_revealed =
-            world.calibration_modal.harmonic_band_revealed ||
-            world.calibration_modal.trials_run > 0 ||
-            ov.show_raw_numbers ||
-            has_gnomon_for_target;
+            !hard_mode &&
+            (world.calibration_modal.harmonic_band_revealed ||
+             world.calibration_modal.trials_run > 0 ||
+             ov.show_raw_numbers ||
+             has_gnomon_for_target);
 
         const Rectangle left_bench{
             static_cast<float>(bx + 24),
@@ -862,9 +931,15 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             182.0f
         };
         DrawRectangleRec(left_bench, Color{12, 20, 30, 236});
-        DrawRectangleLinesEx(left_bench, 1.3f, pal::WithAlpha(pal::kUiBorderBronze, 195));
+        DrawRectangleLinesEx(left_bench, 1.3f, pal::WithAlpha(hard_mode ? pal::kAmberGlow : pal::kUiBorderBronze, 195));
 
-        if (target_revealed) {
+        if (hard_mode) {
+            const std::string hard_banner = FitModalText(
+                "FISICA PURA: tacche, barre verdi e percentuali live rimosse. Calcola il valore e usa Rotellina/Slider (Shift=Fine)!",
+                660,
+                12);
+            DrawTextShadow(hard_banner.c_str(), bx + 36, by + 117, 12, pal::kAmberGlow);
+        } else if (target_revealed) {
             const float half_w =
                 machine.clean_stabilizer_half_window *
                 (world.calibration_modal.precision_relic_active ? 1.30f : 1.0f);
@@ -888,7 +963,7 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
                 pal::kAmberGlow);
         }
 
-        // Slider 1: Parametro Principale [A/D, Frecce SX/DX, Mouse]
+        // Slider 1: Parametro Principale [A/D, Frecce SX/DX, Mouse, Rotellina]
         const float min_param = machine.min_param;
         const float max_param = machine.max_param;
         const float span_param = std::max(0.001f, max_param - min_param);
@@ -898,22 +973,56 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             660.0f,
             20.0f
         };
+        const Rectangle stab_rect{
+            static_cast<float>(bx + 36),
+            static_cast<float>(by + 204),
+            660.0f,
+            20.0f
+        };
+
+        // Controllo fine tramite rotellina del mouse (Standard e Fisica Pura)
+        if (allow_mouse_input) {
+            const float wheel = GetMouseWheelMove();
+            if (std::fabs(wheel) > 0.01f) {
+                const bool fine_mod =
+                    IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT) ||
+                    world.calibration_modal.precision_relic_active;
+                const bool coarse_mod =
+                    IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+                const Rectangle stab_wheel_zone{
+                    stab_rect.x - 10.0f,
+                    stab_rect.y - 22.0f,
+                    stab_rect.width + 20.0f,
+                    stab_rect.height + 28.0f
+                };
+                if (CheckCollisionPointRec(mouse, stab_wheel_zone)) {
+                    const float stab_step = fine_mod ? 0.005f : (coarse_mod ? 0.05f : 0.01f);
+                    world.calibration_modal.AdjustStabilizer(wheel * stab_step, machine);
+                } else {
+                    const float step_mult = fine_mod ? 0.25f : (coarse_mod ? 5.0f : 1.0f);
+                    world.calibration_modal.AdjustParameter(wheel * machine.step_param * step_mult, machine);
+                }
+                s_hard_reject_timer = 0.0f;
+            }
+        }
+
         if (mouse_down &&
             CheckCollisionPointRec(
                 mouse,
                 Rectangle{slider_rect.x - 8.0f, slider_rect.y - 6.0f, slider_rect.width + 16.0f, slider_rect.height + 12.0f})) {
             const float t = eco::Clamp((mouse.x - slider_rect.x) / slider_rect.width, 0.0f, 1.0f);
             world.calibration_modal.SetParameter(eco::Lerp(min_param, max_param, t), machine);
+            s_hard_reject_timer = 0.0f;
         }
 
         DrawTextShadow(
             TextFormat(
-                "1. Parametro Principale [A/D o SX/DX]: %.2f %s   (Range %.0f..%.0f)%s",
+                "1. Parametro Principale [A/D, Rotellina, Shift=Fine]: %.2f %s  (%.0f..%.0f)%s",
                 world.calibration_modal.slider_value,
                 eco::MachineUnit(machine.type),
                 min_param,
                 max_param,
-                world.calibration_modal.precision_relic_active ? "  [Nonio Fine 0.25x]" : ""),
+                world.calibration_modal.precision_relic_active ? " [Nonio]" : ""),
             bx + 36,
             by + 138,
             13,
@@ -921,16 +1030,16 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
 
         const float norm_slider =
             eco::Clamp((world.calibration_modal.slider_value - min_param) / span_param, 0.0f, 1.0f);
-        DrawProgressBar(
-            slider_rect,
-            norm_slider,
-            world.calibration_modal.can_confirm_clean
-                ? pal::kAccentClean
-                : (world.calibration_modal.can_confirm_risky ? pal::kAmberGlow : Color{68, 168, 232, 235}),
-            pal::kBronzeBright);
+        const Color slider_fill_col =
+            hard_mode
+                ? kHardNeutralCol
+                : (world.calibration_modal.can_confirm_clean
+                       ? pal::kAccentClean
+                       : (world.calibration_modal.can_confirm_risky ? pal::kAmberGlow : Color{68, 168, 232, 235}));
+        DrawProgressBar(slider_rect, norm_slider, slider_fill_col, pal::kBronzeBright);
 
-        // Finestra supercritica sul cursore principale (ambra)
-        {
+        // Finestra supercritica e tacca target sul cursore principale (nascoste in Fisica Pura)
+        if (!hard_mode) {
             const float r0 = eco::Clamp((machine.risky_param_min - min_param) / span_param, 0.0f, 1.0f);
             const float r1 = eco::Clamp((machine.risky_param_max - min_param) / span_param, 0.0f, 1.0f);
             if (r1 > r0) {
@@ -939,26 +1048,21 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
                 DrawRectangleRec(Rectangle{rx, slider_rect.y + 2.0f, rw, slider_rect.height - 4.0f}, Color{248, 178, 64, 72});
                 DrawRectangleLinesEx(Rectangle{rx, slider_rect.y, rw, slider_rect.height}, 1.2f, pal::kAmberGlow);
             }
-        }
-        if (target_revealed) {
-            const float norm_target = eco::Clamp((machine.target_param - min_param) / span_param, 0.0f, 1.0f);
-            const int target_px = static_cast<int>(slider_rect.x + slider_rect.width * norm_target);
-            DrawLine(target_px, static_cast<int>(slider_rect.y - 4), target_px, static_cast<int>(slider_rect.y + slider_rect.height + 4), pal::kAccentClean);
+            if (target_revealed) {
+                const float norm_target = eco::Clamp((machine.target_param - min_param) / span_param, 0.0f, 1.0f);
+                const int target_px = static_cast<int>(slider_rect.x + slider_rect.width * norm_target);
+                DrawLine(target_px, static_cast<int>(slider_rect.y - 4), target_px, static_cast<int>(slider_rect.y + slider_rect.height + 4), pal::kAccentClean);
+            }
         }
 
-        // Slider 2: Stabilizzatore Armonico / Apertura Secondaria [W/S, Frecce SU/GIU, Mouse]
-        const Rectangle stab_rect{
-            static_cast<float>(bx + 36),
-            static_cast<float>(by + 204),
-            660.0f,
-            20.0f
-        };
+        // Slider 2: Stabilizzatore Armonico / Apertura Secondaria [W/S, Frecce SU/GIU, Mouse, Rotellina]
         if (mouse_down &&
             CheckCollisionPointRec(
                 mouse,
                 Rectangle{stab_rect.x - 8.0f, stab_rect.y - 6.0f, stab_rect.width + 16.0f, stab_rect.height + 12.0f})) {
             const float t = eco::Clamp((mouse.x - stab_rect.x) / stab_rect.width, 0.0f, 1.0f);
             world.calibration_modal.SetStabilizer(t, machine);
+            s_hard_reject_timer = 0.0f;
         }
 
         const bool in_harm_stab = machine.IsInHarmonicStabilizerBand(
@@ -968,25 +1072,33 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             (world.calibration_modal.stabilizer_value <= machine.risky_max_stabilizer);
 
         DrawTextShadow(
-            TextFormat(
-                "2. Stabilizzatore / Valvola [W/S o SU/GIU]: %.0f%%   (%s)",
-                world.calibration_modal.stabilizer_value * 100.0f,
-                in_harm_stab
-                    ? "In Banda Armonica Pulita"
-                    : (in_crit_stab ? "Apertura Supercritica (<40%)" : "Fuori Banda")),
+            hard_mode
+                ? TextFormat(
+                      "2. Stabilizzatore / Valvola [W/S, Rotellina]: %.0f%%   (Calibrazione Manuale)",
+                      world.calibration_modal.stabilizer_value * 100.0f)
+                : TextFormat(
+                      "2. Stabilizzatore / Valvola [W/S o SU/GIU]: %.0f%%   (%s)",
+                      world.calibration_modal.stabilizer_value * 100.0f,
+                      in_harm_stab
+                          ? "In Banda Armonica Pulita"
+                          : (in_crit_stab ? "Apertura Supercritica (<40%)" : "Fuori Banda")),
             bx + 36,
             by + 186,
             13,
-            in_harm_stab ? pal::kAccentClean : (in_crit_stab ? pal::kAmberGlow : pal::kParchmentText));
+            hard_mode
+                ? pal::kParchmentText
+                : (in_harm_stab ? pal::kAccentClean : (in_crit_stab ? pal::kAmberGlow : pal::kParchmentText)));
 
         DrawProgressBar(
             stab_rect,
             eco::Clamp(world.calibration_modal.stabilizer_value, 0.0f, 1.0f),
-            in_harm_stab ? pal::kAccentClean : (in_crit_stab ? pal::kAmberGlow : Color{92, 178, 224, 235}),
+            hard_mode
+                ? kHardNeutralCol
+                : (in_harm_stab ? pal::kAccentClean : (in_crit_stab ? pal::kAmberGlow : Color{92, 178, 224, 235})),
             pal::kBronze);
 
-        // Bande visive sullo Stabilizzatore: Critica (< risky_max_stabilizer) e Armonica (clean_stabilizer_target +- window)
-        {
+        // Bande visive sullo Stabilizzatore (nascoste in Fisica Pura)
+        if (!hard_mode) {
             const float cw = stab_rect.width * eco::Clamp(machine.risky_max_stabilizer, 0.0f, 1.0f);
             DrawRectangleLinesEx(Rectangle{stab_rect.x, stab_rect.y, cw, stab_rect.height}, 1.1f, pal::WithAlpha(pal::kAmberGlow, 175));
 
@@ -1001,24 +1113,42 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             DrawRectangleLinesEx(Rectangle{hx, stab_rect.y, hwidth, stab_rect.height}, 1.3f, pal::kAccentClean);
         }
 
-        // Indicatori Rendimento, Resa Critica, Stress & Strumenti Reliquia Attivi
-        const float eff_pct = world.calibration_modal.preview_efficiency * 100.0f;
-        const float thresh_pct = machine.Threshold() * 100.0f;
-        const float risky_pct = world.calibration_modal.preview_risky_output * 100.0f;
-        const float stress_pct = world.calibration_modal.preview_stress * 100.0f;
-        DrawTextShadow(
-            TextFormat(
-                "Rendimento Armonico: %.1f%% (Soglia >= %.0f%%)  |  Resa Critica: %.0f%%  |  Stress: %.0f%%",
-                eff_pct,
-                thresh_pct,
-                risky_pct,
-                stress_pct),
-            bx + 36,
-            by + 234,
-            13,
-            world.calibration_modal.can_confirm_clean
-                ? pal::kAccentClean
-                : (world.calibration_modal.can_confirm_risky ? pal::kAmberGlow : pal::kParchmentText));
+        // Indicatori Rendimento, Resa Critica, Stress (nascosti pre-prova in Fisica Pura)
+        if (hard_mode) {
+            if (s_hard_reject_timer > 0.0f) {
+                DrawTextShadow(
+                    "FUORI BANDA: calibrazione rifiutata! Ricalcola il parametro o esegui [T] SPERIMENTA.",
+                    bx + 36,
+                    by + 234,
+                    13,
+                    pal::kAccentDirty);
+            } else {
+                DrawTextShadow(
+                    "Anteprima live disattivata (Fisica Pura) — Verifica il tuo calcolo con [T] SPERIMENTA o conferma.",
+                    bx + 36,
+                    by + 234,
+                    13,
+                    pal::kAmberGlow);
+            }
+        } else {
+            const float eff_pct = world.calibration_modal.preview_efficiency * 100.0f;
+            const float thresh_pct = machine.Threshold() * 100.0f;
+            const float risky_pct = world.calibration_modal.preview_risky_output * 100.0f;
+            const float stress_pct = world.calibration_modal.preview_stress * 100.0f;
+            DrawTextShadow(
+                TextFormat(
+                    "Rendimento Armonico: %.1f%% (Soglia >= %.0f%%)  |  Resa Critica: %.0f%%  |  Stress: %.0f%%",
+                    eff_pct,
+                    thresh_pct,
+                    risky_pct,
+                    stress_pct),
+                bx + 36,
+                by + 234,
+                13,
+                world.calibration_modal.can_confirm_clean
+                    ? pal::kAccentClean
+                    : (world.calibration_modal.can_confirm_risky ? pal::kAmberGlow : pal::kParchmentText));
+        }
 
         std::string tools_active;
         if (world.calibration_modal.precision_relic_active) {
@@ -1053,7 +1183,7 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
             376.0f,
             182.0f
         };
-        DrawCalibrationDiagram(machine, world, diag_rect, target_revealed);
+        DrawCalibrationDiagram(machine, world, diag_rect, target_revealed, hard_mode);
 
         // ---------------------------------------------------------------------
         // RIGA 3 (by + 298 .. by + 408): 3. SPERIMENTA (Impulso di Prova) & 4. CONSEGUENZA
@@ -1261,14 +1391,23 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
         };
 
         // 1. Scheda Pulita Lenta (Armonia)
+        const bool trial_matches_current =
+            tr.executed &&
+            std::fabs(tr.tested_param - world.calibration_modal.slider_value) < 1e-3f &&
+            std::fabs(tr.tested_stabilizer - world.calibration_modal.stabilizer_value) < 1e-3f;
+        const bool show_clean_ready =
+            hard_mode ? (trial_matches_current && tr.harmonic_band_hit) : world.calibration_modal.can_confirm_clean;
+        const bool show_risky_ready =
+            hard_mode ? (trial_matches_current && tr.critical_band_hit) : world.calibration_modal.can_confirm_risky;
+
         const float clean_poll_drop =
             world.calibration_modal.olive_seed_bonus_active ? 22.0f : machine.clean_pollution_reduction;
         draw_solution_card(
             card_clean,
             "1. PULITA LENTA (ARMONIA)",
-            world.calibration_modal.can_confirm_clean
+            show_clean_ready
                 ? "STATO: PRONTA (Mira + Stab. Armonico)"
-                : "RICHIEDE: Rend. >= Soglia e Stab. Armonico",
+                : (hard_mode ? "FISICA PURA: Verifica con [T] o conferma" : "RICHIEDE: Rend. >= Soglia e Stab. Armonico"),
             TextFormat("Bilancio: +%.0f MW Energia | -%.0f%% Foschia", machine.clean_energy_reward, clean_poll_drop),
             "- Percorsi: purifica i rovi e apre sentieri verdi",
             "- Ecosistema: rifioritura flora e ritorno fauna",
@@ -1277,7 +1416,7 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
                 ? TextFormat("%s CONFERMA ARMONIA PULITA", prompts.confirm)
                 : "[INVIO / Click] CONFERMA ARMONIA PULITA",
             pal::kAccentClean,
-            world.calibration_modal.can_confirm_clean,
+            show_clean_ready,
             hover_clean);
 
         // 2. Scheda Rischiosa ma Efficiente (Regime Critico)
@@ -1294,9 +1433,9 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
         draw_solution_card(
             card_risky,
             "2. RISCHIOSA EFFICIENTE (CRITICA)",
-            world.calibration_modal.can_confirm_risky
+            show_risky_ready
                 ? "STATO: PRONTA (Finestra Supercritica)"
-                : "RICHIEDE: Param. Critico e Stab. <= 40%",
+                : (hard_mode ? "FISICA PURA: Verifica con [T] o conferma" : "RICHIEDE: Param. Critico e Stab. <= 40%"),
             TextFormat("Bilancio: +%.0f MW Max Resa | +%.0f%% Stress", machine.risky_energy_reward, machine.risky_pollution_increase),
             risky_paths,
             risky_eco,
@@ -1305,7 +1444,7 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
                 ? TextFormat("%s ATTIVA REGIME CRITICO", prompts.risky)
                 : "[R / Click] ATTIVA REGIME CRITICO",
             pal::kAmberGlow,
-            world.calibration_modal.can_confirm_risky,
+            show_risky_ready,
             hover_risky);
 
         // 3. Scheda Sporca Immediata (Bypass a Pece)
@@ -1334,13 +1473,23 @@ void DrawHudAndCalibrationModalScreenSpace(eco::WorldContext& world, bool allow_
                 world.calibration_modal.Cancel();
             } else if (CheckCollisionPointRec(mouse, btn_trial)) {
                 (void)world.ExecuteModalTrial();
+                s_hard_reject_timer = 0.0f;
             } else if (CheckCollisionPointRec(mouse, card_clean)) {
-                (void)world.ExecuteModalConfirmClean();
+                if (!world.ExecuteModalConfirmClean() && hard_mode) {
+                    s_hard_reject_timer = 2.6f;
+                }
             } else if (CheckCollisionPointRec(mouse, card_risky)) {
-                (void)world.ExecuteModalConfirmRisky();
+                if (!world.ExecuteModalConfirmRisky() && hard_mode) {
+                    s_hard_reject_timer = 2.6f;
+                }
             } else if (machine.allow_bypass && CheckCollisionPointRec(mouse, card_dirty)) {
                 (void)world.ExecuteModalBypass();
             }
+        }
+        // Feedback visivo anche su conferma da tastiera fuori banda in Fisica Pura
+        if (allow_mouse_input && hard_mode && world.calibration_modal.is_open &&
+            (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER) || IsKeyPressed(KEY_R))) {
+            s_hard_reject_timer = 2.6f;
         }
     }
 }

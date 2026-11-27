@@ -188,7 +188,7 @@ void EnsureControllerBindingsInitialized(GraphicsSettings& settings) noexcept {
 [[nodiscard]] int OptionCountForCategory(PauseSettingsMenu::SettingsCategory cat) noexcept {
     switch (cat) {
         case PauseSettingsMenu::SettingsCategory::Game:
-            return 4;
+            return 5;
         case PauseSettingsMenu::SettingsCategory::Graphics:
             return 6;
         case PauseSettingsMenu::SettingsCategory::Environment:
@@ -330,6 +330,7 @@ void ResetCategoryDefaults(
             settings.compact_tutorial = false;
             settings.show_fps = false;
             settings.dialogue_speed_index = 1;
+            settings.hard_physics_mode = false;
             break;
         case PauseSettingsMenu::SettingsCategory::Graphics:
             settings.monitor_index = -1;
@@ -412,6 +413,8 @@ void AdjustSettingValue(
             } else if (row == 3) {
                 const int n = static_cast<int>(kDialogueSpeedOptions.size());
                 settings.dialogue_speed_index = (settings.dialogue_speed_index + dir + n) % n;
+            } else if (row == 4) {
+                settings.hard_physics_mode = !settings.hard_physics_mode;
             }
             break;
         case PauseSettingsMenu::SettingsCategory::Graphics:
@@ -572,6 +575,8 @@ bool LoadGraphicsSettings(GraphicsSettings& settings, const std::string& path) {
         } else if (key == "dialogue_speed_index") {
             settings.dialogue_speed_index =
                 std::clamp(ParseIntSetting(val, 1), 0, static_cast<int>(kDialogueSpeedOptions.size()) - 1);
+        } else if (key == "hard_physics_mode") {
+            settings.hard_physics_mode = (ParseIntSetting(val, 0) != 0);
         } else if (key == "gpu_preference") {
             if (!val.empty()) {
                 settings.gpu_preference = val;
@@ -663,6 +668,7 @@ bool SaveGraphicsSettings(const GraphicsSettings& settings, const std::string& p
     out << "guidance_mode_index=" << settings.guidance_mode_index << "\n";
     out << "compact_tutorial=" << (settings.compact_tutorial ? 1 : 0) << "\n";
     out << "dialogue_speed_index=" << settings.dialogue_speed_index << "\n";
+    out << "hard_physics_mode=" << (settings.hard_physics_mode ? 1 : 0) << "\n";
     out << "gpu_preference=" << settings.gpu_preference << "\n";
     out << "particle_density=" << settings.particle_density << "\n";
     out << "fog_haze_intensity=" << settings.fog_haze_intensity << "\n";
@@ -861,6 +867,10 @@ bool PauseSettingsMenu::UpdateAndHandleInput(
     JournalOverlay* journal) {
     const int guidance_idx = std::clamp(settings.guidance_mode_index, 0, 2);
     ctx.world.guidance_mode = static_cast<eco::GuidanceAssistMode>(guidance_idx);
+    ctx.world.hard_physics_mode = settings.hard_physics_mode;
+    if (ctx.world.calibration_modal.is_open) {
+        ctx.world.calibration_modal.hard_physics_mode = settings.hard_physics_mode;
+    }
 
     const int dialogue_speed_idx = std::clamp(
         settings.dialogue_speed_index,
@@ -1600,14 +1610,28 @@ void PauseSettingsMenu::DrawOverlay(const AppContext& ctx, const GraphicsSetting
             "Velocita' Scrittura Dialoghi",
             kDialogueSpeedOptions[static_cast<std::size_t>(dialogue_speed_idx)].label,
             pal::kBronzeBright);
+        draw_toggle(
+            4,
+            "Modalita' Fisica Pura (Hard)",
+            settings.hard_physics_mode,
+            settings.hard_physics_mode ? "Attiva (Calcolo Manuale)" : "Standard",
+            settings.hard_physics_mode ? pal::kAmberGlow : pal::kJadeGlow);
 
         const char* guide_desc =
-            (g_mode == eco::GuidanceAssistMode::Empirical)
-                ? "Empirica: nessuna bussola fissa iniziale; leggi ombre/correnti e usa [Q] Lente per il rilievo temporaneo."
-                : ((g_mode == eco::GuidanceAssistMode::AlwaysOn)
-                       ? "Sempre Attiva: bussola obiettivo, metri e indicatori direzionali sempre visibili su schermo."
-                       : "Spenta: bussola e frecce di guida disattivati per un'esplorazione puramente diegetica.");
-        DrawTextShadow(guide_desc, layout.bx + 26, layout.by + 312, 13, g_col);
+            settings.hard_physics_mode
+                ? "Fisica Pura attiva: bussola e frecce di guida sono disattivate per pura esplorazione diegetica."
+                : ((g_mode == eco::GuidanceAssistMode::Empirical)
+                       ? "Empirica: nessuna bussola fissa iniziale; leggi ombre/correnti e usa [Q] Lente per il rilievo temporaneo."
+                       : ((g_mode == eco::GuidanceAssistMode::AlwaysOn)
+                              ? "Sempre Attiva: bussola obiettivo, metri e indicatori direzionali sempre visibili su schermo."
+                              : "Spenta: bussola e frecce di guida disattivati per un'esplorazione puramente diegetica."));
+        DrawTextShadow(guide_desc, layout.bx + 26, layout.by + 362, 13, settings.hard_physics_mode ? pal::kAmberGlow : g_col);
+
+        const char* hard_desc =
+            settings.hard_physics_mode
+                ? "Calibrazione Hard: zero tacche target, zero barre verdi live, zero percentuali pre-prova. Calcola e usa rotellina/slider."
+                : "Modalita' Standard: curve guidate, indicatori di banda e anteprima live nel banco di calibrazione.";
+        DrawTextShadow(hard_desc, layout.bx + 26, layout.by + 386, 13, settings.hard_physics_mode ? pal::kParchmentText : Color{168, 198, 212, 225});
 
         // Info leggera memoria zone separate (diagnostica utile)
         const eco::MemoryMetrics mem = ctx.world.GetMemoryMetrics();
