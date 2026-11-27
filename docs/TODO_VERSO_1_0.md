@@ -7,19 +7,19 @@ Questo documento raccoglie sia gli interventi tecnici/ludici prioritari sullo st
 ## 1. Sprint Corrente — Miglioramenti Immediati (Priorità Alta)
 Interventi sequenziali e verificati con test automatici e versionamento Git dedicato (il multiplayer locale è volutamente congelato/rimandato a dopo la 1.0):
 
-- [ ] **Stabilità & Test Suite**:
-  - Ripristinare la compilazione e l'esecuzione della suite E2E (`tests/e2e/e2e_live_adapter.cpp` e `tests/e2e/run_e2e.sh`), attualmente rotta dopo il refactor da `architect_npc` a `npcs`.
-  - Proteggere `InitWindow()` in `src/app/main.cpp` con verifica `IsWindowReady()` per evitare crash `SIGSEGV (139)` in ambienti senza display server.
-- [ ] **Motore Fisico, Game Feel & Prestazioni Core**:
-  - Eliminare le allocazioni heap per-frame in `PlayerManager::ActivePlayers()` (~30+ chiamate/frame) introducendo iterazione zero-allocazione.
+- [x] **Stabilità & Test Suite**:
+  - Ripristinare la compilazione e l'esecuzione della suite E2E (`tests/e2e/e2e_live_adapter.cpp` e `tests/e2e/run_e2e.sh`), attualmente rotta dopo il refactor da `architect_npc` a `npcs` (300/300 PASS).
+  - Proteggere `InitWindow()` in `src/app/main.cpp` con verifica `HasLinuxDisplayEnv()` + `IsWindowReady()` per evitare crash `SIGSEGV (139)` in ambienti senza display server.
+- [x] **Motore Fisico, Game Feel & Prestazioni Core**:
+  - Eliminare le allocazioni heap per-frame in `PlayerManager::ActivePlayers()` (~30+ chiamate/frame) introducendo `ActivePlayerList<T>` su stack + `ForEachActivePlayer`.
   - Implementare il **salto ad altezza variabile** (*variable jump height* / jump-cut al rilascio di `jump_held`) nel side-scrolling (`src/core/physics2d.cpp`).
   - Aggiungere **inerzia morbida** (accelerazione, decelerazione e attrito controllato) sia in top-down che in side-scrolling senza rompere la precisione dei puzzle.
-- [ ] **Architettura & Pulizia Codice**:
-  - Separare il rendering world-space di protagonista, monumenti, NPC e reliquie da `src/app/calibration_ui.cpp` in un modulo dedicato (`src/app/render/world_entities.*`), riducendo i monoliti.
-  - Migliorare il motore audio procedurale (`src/app/audio/audio_engine.cpp`) con inviluppi anti-click (fade-in/fade-out e ADSR morbido) e throttling su passi/slider.
-- [ ] **Modalità Hard ("Fisica Pura") — Prima Implementazione Giocabile**:
-  - Aggiungere un'opzione selezionabile (`Modalita' Fisica Pura / Hard`) nelle Impostazioni di Gioco e nello stato del mondo.
-  - In modalità Hard, il banco di calibrazione rimuove le tacche del target, gli indicatori verdi live e l'anteprima di efficienza prima della prova/conferma: il giocatore deve studiare il principio fisico, leggere i dati sul campo e calcolare autonomamente il valore da impostare con la rotellina/slider.
+- [x] **Architettura & Pulizia Codice**:
+  - Separare il rendering world-space di protagonista, monumenti, NPC e reliquie da `src/app/calibration_ui.cpp` in un modulo dedicato (`src/app/render/world_entities.*`), riducendo `calibration_ui.cpp` da ~2.700 a ~1.350 righe.
+  - Migliorare il motore audio procedurale (`src/app/audio/audio_engine.cpp`) con inviluppi anti-click (Hann raised-cosine, soft-limiter `tanh`, micro-fade 2.5 ms) e cooldown throttling su passi/slider.
+- [x] **Modalità Hard ("Fisica Pura") — Prima Implementazione Giocabile**:
+  - Aggiungere l'opzione selezionabile (`Modalita' Fisica Pura (Hard)`) nelle Impostazioni di Gioco (`saves/settings.cfg`) e nello stato del mondo (`save_data.*`).
+  - In modalità Hard, il banco di calibrazione (e le tacche world-space) rimuove le tacche del target, gli indicatori verdi live, la guida automatica e l'anteprima di efficienza pre-prova, introducendo la regolazione fine con rotellina del mouse.
 
 ---
 
